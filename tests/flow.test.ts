@@ -132,3 +132,25 @@ test('remote backend: connect with the access password, then generate through it
   // 口令不进入讨论记录或知识库
   assert.ok(!JSON.stringify(getState().session).includes('open-sesame'));
 });
+
+test('demo: unfamiliar terms are marked, explained on tap, and saved with the knowledge card', async () => {
+  update(s => { s.config.concept = '机会成本'; s.config.mode = 'socratic'; });
+  await actions.prepare();
+  actions.startSession();
+  await actions.send('少玩了一天');
+  const reply = getState().session!.entries.filter(e => e.kind === 'msg').at(-1)!;
+  assert.ok(reply.kind === 'msg' && reply.terms?.includes('稀缺性'));
+  await actions.openTerm('稀缺性', reply.id);
+  assert.equal(getState().ui.term?.term, '稀缺性');
+  assert.match(getState().ui.term!.definition, /有限/);
+  assert.deepEqual(getState().session!.glossary!.map(g => g.term), ['稀缺性']);
+  // 没标出来的词查不了
+  update(s => { s.ui.term = null; });
+  await actions.openTerm('机会成本', reply.id);
+  assert.equal(getState().ui.term, null);
+  // 第二次打开直接用记下的解释
+  await actions.openTerm('稀缺性', reply.id);
+  assert.equal(getState().ui.busy, null);
+  await actions.finish();
+  assert.deepEqual(getState().library[0].terms!.map(t => t.term), ['稀缺性']);
+});

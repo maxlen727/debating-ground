@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { MODES } from '../../shared/modes.ts';
 import type { ChatMessage, Entry, Reflection } from '../../shared/types.ts';
-import { QUICK, addReflection, aiTakeover, callOn, currentTurn, dropReflection, finish, generateSeat, hint, nextSpeaker, passTurn, quick, retryAI, send, setReflectionDraft, skipSeat, startRoom, submitReflection } from '../actions.ts';
+import { QUICK, addReflection, aiTakeover, callOn, currentTurn, dropReflection, finish, generateSeat, hint, nextSpeaker, openTerm, passTurn, quick, retryAI, send, setReflectionDraft, skipSeat, startRoom, submitReflection } from '../actions.ts';
 import { Empty, ErrorBanner, Icon, Sheet } from '../components/ui.tsx';
 import { cancelAI } from '../lib/ai.ts';
 import { seatName } from '../lib/debate.ts';
@@ -71,7 +71,24 @@ export function Session() {
           <div className="action-list">
             {QUICK.map(q => <button key={q.kind} className="action" onClick={() => quick(q.kind, sheetMsg.id)}><span>{q.label}</span><Icon name="chevron" size={18} /></button>)}
           </div>
+          {!!sheetMsg.terms?.length && (
+            <div className="stack-sm">
+              <h3 className="section-label">这句里的新词</h3>
+              <div className="row wrap">{sheetMsg.terms.map(t => <button key={t} className="chip term-chip" onClick={() => openTerm(t, sheetMsg.id)}>{t}</button>)}</div>
+            </div>
+          )}
           {(debate || room) && <p className="fineprint">{room ? '解释由讲解助手单独给你，不打断别人的发言。' : '辩论中，解释由讲解助手单独给出，不打断赛程。'}</p>}
+        </Sheet>
+      )}
+      {ui.term && (
+        <Sheet title={ui.term.term} onClose={() => update(st => { st.ui.term = null; })}>
+          {ui.term.definition ? (
+            <>
+              <p className="sheet-text">{ui.term.definition}</p>
+              {ui.term.relation && <p className="term-relation"><b>和「{s.concept}」的关系</b>{ui.term.relation}</p>}
+              <p className="fineprint">{s.review ? '已存进这次的知识卡片。' : '已记下，复盘后会和这次的知识卡片存在一起。'}查词不占用发言轮次。</p>
+            </>
+          ) : <p className="sheet-text muted">正在查这个词……</p>}
         </Sheet>
       )}
       {room && ui.sheet === 'callon' && <CallOnSheet s={s} />}
@@ -240,6 +257,17 @@ function Composer({ s }: { s: S }) {
   );
 }
 
+const termAt = (target: EventTarget) => (target as HTMLElement).closest?.<HTMLElement>('[data-term]')?.dataset.term ?? null;
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// 把发言里 AI 标出的术语加上虚线
+function WithTerms({ text, terms }: { text: string; terms?: string[] }) {
+  if (!terms?.length) return <>{text}</>;
+  const list = [...terms].sort((a, b) => b.length - a.length);
+  const parts = text.split(new RegExp(`(${list.map(escapeRe).join('|')})`, 'g'));
+  return <>{parts.map((part, i) => list.includes(part) ? <span key={i} className="term" data-term={part}>{part}</span> : part)}</>;
+}
+
 function EntryView({ m, s, showTip }: { m: Entry; s: S; showTip: boolean }) {
   if (m.kind === 'sys') return <div className="sysline">{m.text}</div>;
   if (m.kind === 'reflect') return <ReflectCard m={m} concept={s.concept} />;
@@ -259,9 +287,13 @@ function EntryView({ m, s, showTip }: { m: Entry; s: S; showTip: boolean }) {
       <div className="msg-body">
         <div className="msg-meta"><b>{label}</b>{meta && <span>{meta}</span>}{m.skipped && <span>已跳过</span>}</div>
         {me || m.skipped || s.finished
-          ? <div className={'bubble' + (m.skipped ? ' skipped' : '')}>{m.text}</div>
-          : <button className="bubble tappable" onClick={() => update(st => { st.ui.sheet = m.id; })} aria-haspopup="dialog">{m.text}</button>}
-        {showTip && <small className="tip">轻点发言可以追问：没听懂、举例、反驳、分辨事实。</small>}
+          ? <div className={'bubble' + (m.skipped ? ' skipped' : '')} onClick={e => termAt(e.target) && openTerm(termAt(e.target)!, m.id)}><WithTerms text={m.text} terms={m.terms} /></div>
+          : <button className="bubble tappable" aria-haspopup="dialog" onClick={e => {
+              // 点在虚线词上就查词，否则打开追问面板
+              const term = termAt(e.target);
+              if (term) openTerm(term, m.id); else update(st => { st.ui.sheet = m.id; });
+            }}><WithTerms text={m.text} terms={m.terms} /></button>}
+        {showTip && <small className="tip">轻点发言可以追问：没听懂、举例、反驳、分辨事实。{!!m.terms?.length && '带虚线的词，点一下看解释。'}</small>}
       </div>
     </div>
   );

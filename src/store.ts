@@ -1,7 +1,7 @@
 // 全局状态：一个可订阅的对象，持久化到 localStorage。
 // update(fn) 在副本上修改再整体替换，组件用 useApp() 订阅。
 import { useSyncExternalStore } from 'react';
-import type { Entry, ModeId, Persona, Previous, Reflection, Review, Seat, SeatConfig, Source, Stage, Team, Turn, ExplainKind } from '../shared/types.ts';
+import type { Entry, ModeId, Persona, Previous, Reflection, Review, Seat, SeatConfig, Source, Stage, Team, TermCard, Turn, ExplainKind } from '../shared/types.ts';
 import type { RoomMember, RoomStatus, Speaker } from '../shared/room.ts';
 
 export type Screen = 'learn' | 'prepare' | 'session' | 'review' | 'library' | 'card' | 'settings' | 'join';
@@ -40,10 +40,12 @@ export interface Session {
   seats: DebateSeat[]; stages: Stage[]; turns: Turn[]; cursor: number;
   review: (Review & { source: Source; model?: string }) | null;
   room?: RoomLink;
+  glossary?: TermCard[];   // 这次讨论里点开看过的术语
 }
 export interface Card extends Review {
   id: string; sessionId: string; concept: string; topic: string; mode: ModeId; created: number;
   source: Source; model?: string; level: number; due: number; reviews: { at: number; remembered: boolean }[];
+  terms?: TermCard[];      // 讨论中遇到并点开看过的术语
 }
 export interface AiStatus {
   available: boolean; configured: boolean; verified: boolean; baseURL: string; model: string;  // 本机服务
@@ -61,6 +63,7 @@ export interface Ui {
   quiz: Record<string, Record<number, number>>;
   join: { backend: string; roomId: string; invite: string } | null;   // 打开邀请链接后，等待填写名字
   invite: boolean;               // 显示邀请链接面板
+  term: (TermCard & { messageId: string }) | null;   // 打开的术语卡片；definition 为空表示正在查
 }
 export interface AppState { config: Config; plan: Plan | null; session: Session | null; library: Card[]; ai: AiStatus; ui: Ui }
 
@@ -78,7 +81,7 @@ export const defaultConfig = (): Config => ({
     { name: '自由辩论', kind: 'free', rounds: 2 }, { name: '总结陈词', kind: 'closing', rounds: 1 }
   ]
 });
-const defaultUi = (): Ui => ({ screen: 'learn', busy: null, error: '', toast: '', hint: null, explain: null, sheet: null, openCard: null, quiz: {}, join: null, invite: false });
+const defaultUi = (): Ui => ({ screen: 'learn', busy: null, error: '', toast: '', hint: null, explain: null, sheet: null, openCard: null, quiz: {}, join: null, invite: false, term: null });
 
 function load(): AppState {
   const base: AppState = { config: defaultConfig(), plan: null, session: null, library: [], ai: { available: false, configured: false, verified: false, baseURL: '', model: '', remoteVerified: false, remoteModel: '' }, ui: defaultUi() };

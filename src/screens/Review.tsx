@@ -1,5 +1,5 @@
 import { MODES } from '../../shared/modes.ts';
-import type { Review as R } from '../../shared/types.ts';
+import type { Review as R, TermCard } from '../../shared/types.ts';
 import { discussAgain, generateReview, resume } from '../actions.ts';
 import { BusyStrip, Empty, ErrorBanner, Icon, Pill, Quiz, TopBar } from '../components/ui.tsx';
 import { exportSession } from '../lib/exporter.ts';
@@ -17,7 +17,7 @@ export function Ring({ done, total }: { done: number; total: number }) {
   );
 }
 
-export function ReviewBody({ r }: { r: R }) {
+export function ReviewBody({ r, terms }: { r: R; terms?: TermCard[] }) {
   return (
     <>
       <section className="panel">
@@ -30,6 +30,14 @@ export function ReviewBody({ r }: { r: R }) {
         <section className="panel">
           <h3 className="section-label">需要纠正的理解</h3>
           {r.misconceptions.map((m, i) => <div key={i} className="fix"><p className="said">{m.said}</p><p className="right"><Icon name="chevron" size={14} />{m.fix}</p></div>)}
+        </section>
+      )}
+      {!!terms?.length && (
+        <section className="panel">
+          <h3 className="section-label">这次遇到的新词</h3>
+          <dl className="glossary">
+            {terms.map(t => <div key={t.term}><dt>{t.term}</dt><dd>{t.definition}{t.relation && <small>{t.relation}</small>}</dd></div>)}
+          </dl>
         </section>
       )}
     </>
@@ -64,7 +72,7 @@ export function Review() {
                 <small className="muted">{r.source === 'api' ? `由 ${r.model} 根据你的发言和小结生成，供参考` : '演示模式：预设示例或规则统计'} · 已存入知识库</small>
               </div>
             </section>
-            <ReviewBody r={r} />
+            <ReviewBody r={r} terms={s.glossary} />
             {r.quiz.length > 0 && <section className="panel"><h3 className="section-label">检验一下</h3><Quiz id={'s:' + s.id} items={r.quiz} /></section>}
             <p className="fineprint">第一次复习在明天。到时候知识库会提醒你，先凭记忆做题，再看这份复盘。</p>
           </>

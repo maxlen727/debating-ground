@@ -11,7 +11,7 @@ interface SessionState { config: ApiConfig | null; verified: boolean; active: Ab
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json' };
-const PURPOSES: Purpose[] = ['prepare', 'discuss', 'debate', 'hint', 'explain', 'reflect', 'review'];
+const PURPOSES: Purpose[] = ['prepare', 'discuss', 'debate', 'hint', 'explain', 'reflect', 'review', 'term'];
 
 export function createServer({ fetchImpl = fetch, timeoutMs = 90000, root = path.join(here, '..', 'dist') }: { fetchImpl?: typeof fetch; timeoutMs?: number; root?: string } = {}) {
   const sessions = new Map<string, SessionState>();

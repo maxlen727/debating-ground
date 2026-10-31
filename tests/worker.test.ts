@@ -58,7 +58,7 @@ test('generate reuses the shared prompts, never follows redirects, and never ech
   const res = await call('/api/generate', { method: 'POST', body: { purpose: 'discuss', payload: { session, roleId: 'r0' } } });
   assert.equal(res.status, 200);
   const data = await res.json();
-  assert.deepEqual(data, { text: '说得对。', covered: [0], model: 'team-model' });
+  assert.deepEqual(data, { text: '说得对。', covered: [0], terms: [], model: 'team-model' });
   assert.equal(calls[0].url, 'https://example.com/v1/chat/completions');
   assert.equal(calls[0].init.redirect, 'manual', 'Workers do not support redirect: error');
   assert.equal((calls[0].init.headers as Record<string, string>).Authorization, 'Bearer sk-worker-secret');

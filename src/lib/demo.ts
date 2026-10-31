@@ -33,12 +33,23 @@ function genericPrep(c: string, mode: ModeId): PrepareResult {
   };
 }
 
-const COST_REPLIES: [string, number[]][] = [
-  ['你说到了“少玩了一天”，这很重要：代价不只是钱。那如果那天你本来可以去做家教赚 500 元，这时打工的代价又是什么？', [0, 2]],
+const COST_REPLIES: [string, number[], string[]?][] = [
+  ['你说到了“少玩了一天”，这很重要：时间也有稀缺性，代价不只是钱。那如果那天你本来可以去做家教赚 500 元，这时打工的代价又是什么？', [0, 2], ['稀缺性']],
   ['对，关键是你放弃的选项里最好的那一个。睡懒觉、打游戏、做家教都被放弃了，为什么只算做家教？', [1]],
   ['很好。再想一个问题：上个月你已经交了 200 元的健身卡，这笔钱该不该算进周六的选择里？', [3]],
-  ['没错，已经花掉、拿不回来的钱不影响现在的选择。那你会怎样用机会成本来决定周六干什么？', [4]]
+  ['没错，已经花掉、拿不回来的钱不影响现在的选择。那你会怎样用机会成本做一次成本收益分析，决定周六干什么？', [4], ['成本收益分析']]
 ];
+
+// 演示模式里能查到的术语
+const DEMO_TERMS: Record<string, { definition: string; relation: string }> = {
+  稀缺性: { definition: '想要的东西总比能拿到的多：时间、钱、精力都有限，用在一处就不能用在别处。', relation: '正因为资源稀缺，选择才有代价，机会成本才存在。' },
+  成本收益分析: { definition: '把一个选择的所有代价和好处列出来比较，好处大于代价才值得做。', relation: '机会成本是“代价”这一栏里最容易漏掉的一项。' },
+  必要条件: { definition: '一个结论要成立就必须满足的条件；不满足它，结论一定不成立。', relation: '辩论中用来检验对方主张的适用范围。' },
+  举证责任: { definition: '谁提出主张，谁就有责任拿出证据来支持它。', relation: '决定辩论中哪一方需要先证明自己的说法。' },
+  适用边界: { definition: '一个说法在什么条件下成立、超出什么范围就不再成立。', relation: '说清边界，才能避免把概念用错地方。' },
+  代表性: { definition: '一个例子能不能代表整体的情况；不具代表性的例子推不出普遍结论。', relation: '辩论中常用来质疑以偏概全的论证。' }
+};
+const termsIn = (text: string) => Object.keys(DEMO_TERMS).filter(t => text.includes(t)).slice(0, 3);
 
 export const COST_REVIEW: Review = {
   oneLine: '你已经理解机会成本是“放弃的最好选择”，它和沉没成本的区别还需要再巩固。',
@@ -93,14 +104,18 @@ export async function demoRun<P extends Purpose>(purpose: P, payload: PayloadMap
       const p = payload as PayloadMap['discuss'];
       const role = s.personas.find(r => r.id === p.roleId) ?? s.personas[0];
       const step = nextStep();
-      if (cost && s.mode === 'socratic') { const [text, covered] = COST_REPLIES[step % COST_REPLIES.length]; return { text, covered }; }
+      if (cost && s.mode === 'socratic') { const [text, covered, terms] = COST_REPLIES[step % COST_REPLIES.length]; return { text, covered, terms }; }
       const kp = s.keyPoints[step % n];
       const text = s.mode === 'socratic' ? `你说的有一部分是对的。那我们看看「${kp}」：你能用自己的话说说，并举一个例子吗？`
         : s.mode === 'teach' ? `老师，我还是没太懂「${kp}」。能举个生活里的例子吗？`
           : `从${role.title}的角度看，讨论「${s.concept}」时最容易被忽略的是「${kp}」。主持人怎么看？`;
       return { text, covered: [step % n] };
     }
-    case 'debate': { const step = nextStep(); return { text: debateText(s, s.turns[s.cursor]), covered: [step % n] }; }
+    case 'debate': { const step = nextStep(); const text = debateText(s, s.turns[s.cursor]); return { text, covered: [step % n], terms: termsIn(text) }; }
+    case 'term': {
+      const term = (payload as PayloadMap['term']).term;
+      return { data: { term, ...(DEMO_TERMS[term] ?? { definition: `演示模式：连接 API 后，这里会用简单的话解释「${term}」。`, relation: '' }) } };
+    }
     case 'hint': {
       const left = s.keyPoints.filter((_, i) => !s.covered.includes(i));
       return { text: left.length ? `还没讲到「${left[0]}」。试着先举一个你亲身经历过的例子，再说说它和这个要点有什么关系。` : '要点都讲到了。试着用一句话把它们串起来，看看能不能说给别人听懂。' };

@@ -66,7 +66,7 @@ export function CardView() {
         {open ? (
           <>
             <section className="review-hero slim"><p className="display-sm">{c.oneLine}</p></section>
-            <ReviewBody r={c} />
+            <ReviewBody r={c} terms={c.terms} />
           </>
         ) : <button className="ghost block" onClick={() => setShowReview(true)}>先看上次的复盘</button>}
         <button className="ghost block" disabled={!!ui.busy} onClick={() => discussAgain(c)}>从薄弱点再讨论一次</button>
