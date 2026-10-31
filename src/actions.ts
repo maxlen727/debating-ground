@@ -41,14 +41,15 @@ export async function prepare(previous: Previous | null = null) {
   });
 }
 
-function planProblem(): string {
+function planProblem(multiplayer = false): string {
   const { plan, config } = getState();
   if (!plan) return '还没有准备好讨论。';
   if (!plan.topic.trim()) return '请填写讨论题。';
   if (plan.keyPoints.map(k => k.trim()).filter(Boolean).length < 2) return '至少保留两个要点。';
   if (plan.mode === 'debate') {
     if (config.stages.some(st => !st.name.trim())) return '请为每个环节填写名称。';
-    if (!slots(config).some(r => r.type === 'human')) return '至少安排一个“我”的席位，你才能参与交锋。';
+    // 多人辩论里大家在房间里自己选席位，不需要事先安排
+    if (!multiplayer && !slots(config).some(r => r.type === 'human')) return '至少安排一个“我”的席位，你才能参与交锋。';
   }
   return '';
 }
@@ -96,7 +97,7 @@ export async function inviteFriends(name: string) {
   if (!plan || ui.busy) return;
   if (!canInvite(plan.mode)) return toast('多人讨论支持圆桌讨论和正反辩论。');
   if (config.aiMode !== 'remote' || !config.remote.url) return toast('多人讨论需要先在“设置”里连接你的后端。');
-  const problem = planProblem();
+  const problem = planProblem(true);
   if (problem) return toast(problem);
   name = name.trim();
   if (!name) return toast('写下你在讨论里显示的名字。');
@@ -108,6 +109,7 @@ export const joinRoom = (name: string) => name.trim() ? room.join(name.trim()) :
 export const startRoom = () => room.send({ type: 'start' });
 export const callOn = (target: NonNullable<import('../shared/room.ts').Speaker>) => { update(st => { st.ui.sheet = null; }); room.send({ type: 'callOn', target }); };
 export const passTurn = () => room.send({ type: 'pass' });
+export const pickSeat = (seat: string | null) => { update(st => { st.ui.sheet = null; }); room.send({ type: 'seat', seat }); };
 export const aiTakeover = () => room.send({ type: 'aiTakeover' });
 export const retryAI = () => room.send({ type: 'retry' });
 export function leaveRoom() {

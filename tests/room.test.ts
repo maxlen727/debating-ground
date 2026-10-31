@@ -145,43 +145,63 @@ test('AI failure stops the room with a visible error and keeps progress; the hos
   assert.equal((v.entries.at(-1) as { text: string }).text, '好的');
 });
 
-test('debate: members claim human seats in order, AI seats speak by themselves, the host can skip or hand a seat to AI', async () => {
+test('debate: everyone picks a side and seat, empty seats are played by AI, the host can skip or hand a seat to AI', async () => {
   const t = await room('debate');
   const guest = t.connect();
   await t.send(guest, { type: 'hello', invite: t.created.invite, name: '小明' });
-  const listener = t.connect();
-  await t.send(listener, { type: 'hello', invite: t.created.invite, name: '小红' });
+  const third = t.connect();
+  await t.send(third, { type: 'hello', invite: t.created.invite, name: '小红' });
   let v = t.host.last();
-  assert.deepEqual(v.members.map(m => m.seat), ['A1', 'B1', undefined], 'host A1, first guest B1, third person listens');
+  assert.deepEqual(v.members.map(m => m.seat), ['A1', undefined, undefined], 'only the host has a default seat');
+  // 同学自己选阵营和席位，包括原来由 AI 担任的席位
+  await t.send(guest, { type: 'seat', seat: 'B1' });
+  await t.send(third, { type: 'seat', seat: 'B1' });
+  assert.equal(errors(third).at(-1), '小明 已经坐在这个席位了。');
+  await t.send(third, { type: 'seat', seat: 'A2' });
+  await t.send(third, { type: 'seat', seat: 'Z9' });
+  assert.equal(errors(third).at(-1), '找不到这个席位。');
+  v = t.host.last();
+  assert.deepEqual(v.members.map(m => m.seat), ['A1', 'B1', 'A2']);
+  assert.ok(v.entries.some(e => e.kind === 'sys' && e.text === '小红 担任正方 2 辩。'));
+  // 换席位、回到旁听
+  await t.send(third, { type: 'seat', seat: null });
+  await t.send(third, { type: 'seat', seat: 'A2' });
+
   await t.send(t.host, { type: 'start' });
-  // 第一位是 A1（房主）
   await t.send(guest, { type: 'say', text: '我抢先' });
   assert.equal(errors(guest).at(-1), '还没轮到你的席位发言。');
   await t.send(t.host, { type: 'say', text: '我方立论……' });
-  v = t.host.last();
-  assert.equal(v.cursor, 1);
   await t.send(guest, { type: 'say', text: '反方立论……' });
   v = t.host.last();
-  // 接下来 A2 质询、B3 答辩……都是 AI 席位，自动进行，直到再次轮到真人或比赛结束
   const turns = v.setup.turns;
-  assert.ok(v.cursor > 2);
-  assert.ok(v.status === 'finished' || turns[v.cursor].role.type === 'human');
+  // 交叉质询：A2 由小红担任，所以停下来等她；没人坐的 B2 由 AI 自动答辩（每方两席，三辩取末席）
+  assert.equal(turns[v.cursor].role.id, 'A2');
+  assert.equal(v.cursor, 2);
+  await t.send(third, { type: 'say', text: '请问对方三辩……' });
+  v = t.host.last();
   const msgs = v.entries.filter(e => e.kind === 'msg');
-  assert.equal(msgs[0].kind === 'msg' && msgs[0].name, '正方 1 辩（束束）');
-  assert.equal(msgs[1].kind === 'msg' && msgs[1].name, '反方 1 辩（小明）');
+  assert.deepEqual(msgs.slice(0, 3).map(e => e.kind === 'msg' && e.name), ['正方 1 辩（束束）', '反方 1 辩（小明）', '正方 2 辩（小红）']);
+  assert.ok(msgs.some(e => e.kind === 'msg' && e.who === 'B2' && !e.memberId), 'the empty seat was played by AI');
+  // AI 看到的赛程里，有人坐的席位是真人
+  const debatePrompt = t.calls.find(c => c.purpose === 'debate')!.payload.session;
+  assert.deepEqual(debatePrompt.turns!.filter(x => x.role.type === 'human').map(x => x.role.id).filter((x, i, a) => a.indexOf(x) === i).sort(), ['A1', 'A2', 'B1']);
+
   if (v.status === 'live') {
-    const seatOwner = v.members.find(m => m.seat === turns[v.cursor].role.id)!;
-    const other = seatOwner.id === t.host.member ? guest : t.host;
-    if (other !== t.host) {
+    const seat = turns[v.cursor].role.id;
+    const owner = v.members.find(m => m.seat === seat);
+    if (owner && owner.id !== t.host.member) {
+      const cursor = v.cursor;
+      const other = owner.id === guest.member ? third : guest;
       await t.send(other, { type: 'pass' });
       assert.equal(errors(other).at(-1), '只有当前席位的同学或房主可以跳过。');
+      await t.send(t.host, { type: 'aiTakeover' });
+      v = t.host.last();
+      assert.ok(v.cursor > cursor, 'AI spoke for the absent classmate');
     }
-    const cursor = v.cursor;
-    await t.send(t.host, { type: 'aiTakeover' });
-    v = t.host.last();
-    assert.ok(v.cursor > cursor);
-    assert.equal(v.entries.find(e => e.kind === 'msg' && e.stage === turns[cursor].stage && e.who === turns[cursor].role.id && !e.human) !== undefined, true, 'AI spoke for the seat');
   }
+  // 离开席位后，轮到这个席位时由 AI 担任
+  await t.send(third, { type: 'seat', seat: null });
+  assert.equal(t.host.last().members.find(m => m.name === '小红')!.seat, undefined);
 });
 
 test('reviews are personal: only my own words count as the learner’s', async () => {
@@ -246,7 +266,7 @@ test('setup is validated on the backend', () => {
   assert.throws(() => validateSetup({ ...ROUNDTABLE, personas: [] }), /至少需要一位/);
   const d = debateSetup();
   assert.throws(() => validateSetup({ ...d, turns: [{ ...d.turns[0], role: { id: 'Z9' } }] }), /比赛流程无效/);
-  assert.throws(() => validateSetup({ ...d, seats: d.seats.map(s => ({ ...s, type: 'ai' })) }), /真人席位/);
+  assert.doesNotThrow(() => validateSetup({ ...d, seats: d.seats.map(s => ({ ...s, type: 'ai' })) }), 'people pick seats in the room');
   const ok = validateSetup(d) as RoomSetup;
   assert.equal(ok.turns.length, d.turns.length);
   assert.equal(ok.seats[0].name, '正方 1 辩');

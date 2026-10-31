@@ -93,7 +93,7 @@ function InviteSheet({ onClose }: { onClose: () => void }) {
             <span>你的名字</span>
             <input value={name} maxLength={20} placeholder="同学会看到这个名字" onChange={e => setName(e.target.value)} />
           </label>
-          {debate && <p className="note">标为“我”的席位由真人担任：第一个是你，之后加入的同学依次认领；席位满了的同学旁听。</p>}
+          {debate && <p className="note">进房间后，每个人自己选正方或反方的席位，没人坐的席位由 AI 担任。你默认坐第一个标为“我”的席位，也可以换。想让更多同学上场，先在上面把每方的席位数调多一些（最多 4 席）。</p>}
           <p className="fineprint">AI 使用你的后端和额度，同学不需要访问口令。每个房间最多 8 人、150 次 AI 调用，讨论内容临时保存在你的后端，结束 1 小时后自动删除。</p>
           <ErrorBanner />
           <button className="primary block" disabled={!!ui.busy || !name.trim()} onClick={async () => { await inviteFriends(name); }}>{ui.busy ? ui.busy : '创建房间'}</button>

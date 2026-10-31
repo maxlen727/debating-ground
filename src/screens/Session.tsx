@@ -1,12 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { MODES } from '../../shared/modes.ts';
 import type { ChatMessage, Entry, Reflection } from '../../shared/types.ts';
-import { QUICK, addReflection, aiTakeover, callOn, currentTurn, dropReflection, finish, generateSeat, hint, nextSpeaker, openTerm, passTurn, quick, retryAI, send, setReflectionDraft, skipSeat, startRoom, submitReflection } from '../actions.ts';
+import { QUICK, addReflection, aiTakeover, callOn, currentTurn, dropReflection, finish, generateSeat, hint, nextSpeaker, openTerm, passTurn, pickSeat, quick, retryAI, send, setReflectionDraft, skipSeat, startRoom, submitReflection } from '../actions.ts';
 import { Empty, ErrorBanner, Icon, Sheet } from '../components/ui.tsx';
 import { cancelAI } from '../lib/ai.ts';
 import { seatName } from '../lib/debate.ts';
 import { exportSession } from '../lib/exporter.ts';
-import { inviteLink, isPeer, mySpeakingTurn, speakerLabel } from '../lib/room.ts';
+import { inviteLink, isPeer, mySeat, mySpeakingTurn, seatOwner, speakerLabel } from '../lib/room.ts';
 import { go, toast, update, useApp, type Session as S } from '../store.ts';
 
 export function Session() {
@@ -92,6 +92,7 @@ export function Session() {
         </Sheet>
       )}
       {room && ui.sheet === 'callon' && <CallOnSheet s={s} />}
+      {room && ui.sheet === 'seats' && <SeatSheet s={s} />}
       {room?.host && ui.invite && <InviteSheet s={s} />}
 
       <footer className="composer">
@@ -158,6 +159,34 @@ function InviteSheet({ s }: { s: S }) {
   );
 }
 
+function SeatSheet({ s }: { s: S }) {
+  const room = s.room!;
+  const mine = mySeat(s);
+  return (
+    <Sheet title="选择席位" onClose={() => update(st => { st.ui.sheet = null; })}>
+      <div className="seat-pick">
+        {(['A', 'B'] as const).map(team => (
+          <section key={team} className={'team team-' + team}>
+            <b>{team === 'A' ? '正方 · 支持' : '反方 · 反对'}</b>
+            {s.seats.filter(x => x.team === team).map(seat => {
+              const owner = seatOwner(s, seat.id);
+              const me = owner?.id === room.memberId;
+              return (
+                <button key={seat.id} className={'seat-option' + (me ? ' on' : '')} disabled={!!owner && !me} aria-pressed={me} onClick={() => !me && pickSeat(seat.id)}>
+                  <span>{seatName(seat)}</span>
+                  <small>{me ? '你' : owner ? owner.name : 'AI 担任 · 可以坐'}</small>
+                </button>
+              );
+            })}
+          </section>
+        ))}
+      </div>
+      {mine && <button className="ghost block" onClick={() => pickSeat(null)}>离开席位，改为旁听</button>}
+      <p className="fineprint">没人坐的席位由 AI 担任。比赛开始后也可以上场或换席位，轮到你的席位时会提醒你发言。</p>
+    </Sheet>
+  );
+}
+
 function CallOnSheet({ s }: { s: S }) {
   const room = s.room!;
   return (
@@ -185,12 +214,18 @@ function RoomComposer({ s }: { s: S }) {
           <button className="secondary" onClick={() => update(st => { st.ui.invite = true; })}>邀请同学</button>
           <button className="primary grow" disabled={!room.connected} onClick={startRoom}>开始讨论</button>
         </div>
+        {s.mode === 'debate' && <SeatPrompt s={s} />}
       </>
-    ) : <p className="lobby-note">等房主开始讨论……</p>;
+    ) : (
+      <>
+        <p className="lobby-note">等房主开始讨论……</p>
+        {s.mode === 'debate' && <SeatPrompt s={s} primary />}
+      </>
+    );
   }
 
   const t = s.turns[s.cursor];
-  const humanSeat = s.mode === 'debate' && t?.role.type === 'human';
+  const humanSeat = s.mode === 'debate' && !!t && !!seatOwner(s, t.role.id);
   return (
     <>
       {room.error ? (
@@ -209,10 +244,20 @@ function RoomComposer({ s }: { s: S }) {
         {room.host && s.mode === 'roundtable' && <button className="tool" disabled={!!room.aiBusy} onClick={() => update(st => { st.ui.sheet = 'callon'; })}><Icon name="people" size={16} />点名</button>}
         {room.host && humanSeat && !mine && !room.aiBusy && <button className="tool" onClick={aiTakeover}>让 AI 代答</button>}
         {(mine || room.host) && !room.aiBusy && <button className="tool" onClick={passTurn}>{mine ? '这次先跳过' : '跳过当前发言'}</button>}
+        {s.mode === 'debate' && <button className="tool" onClick={() => update(st => { st.ui.sheet = 'seats'; })}><Icon name="people" size={16} />{mySeat(s) ? '换席位' : '上场辩论'}</button>}
       </div>
       {mine ? <DraftInput s={s} placeholder={s.mode === 'debate' ? `${t?.action ?? '发言'}：我方认为……因为……` : '说说你的想法……'} /> : <p className="lobby-note">{room.aiBusy ? '稍等，AI 正在发言。' : '轮到你时，这里会出现输入框。'}</p>}
     </>
   );
+}
+
+// 辩论开始前：提醒每个人选好自己的席位
+function SeatPrompt({ s, primary = false }: { s: S; primary?: boolean }) {
+  const seat = s.seats.find(x => x.id === mySeat(s));
+  const open = () => update(st => { st.ui.sheet = 'seats'; });
+  return seat
+    ? <button className="ghost block" onClick={open}>你是{seatName(seat)} · 换席位</button>
+    : <button className={(primary ? 'primary' : 'secondary') + ' block'} onClick={open}>选择阵营和席位</button>;
 }
 
 function DraftInput({ s, placeholder }: { s: S; placeholder: string }) {
