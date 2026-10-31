@@ -59,7 +59,7 @@ export function Learn() {
         </section>
 
         {library.length === 0 && <p className="fineprint">讨论结束后会生成理解复盘，存成知识卡片，按 1、3、7、14 天的间隔提醒你回顾。</p>}
-        {config.aiMode === 'demo' && <p className="fineprint">当前是演示模式：“机会成本”有完整示例，其他概念用通用模板。在设置里连接自己的 API 后，AI 会真正参与讨论。</p>}
+        {config.aiMode === 'demo' && <p className="fineprint">当前是演示模式：“机会成本”有完整示例，其他概念用通用模板。要让 AI 真正参与讨论，需要在电脑上运行思辨场，并在设置里连接自己的 API。</p>}
       </div>
 
       <div className="dock">
