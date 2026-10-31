@@ -61,7 +61,7 @@ export function CardView() {
     <div className="screen card-view">
       <TopBar title={c.concept} sub={`${MODES[c.mode].name} · 已复习 ${c.reviews.length} 次`} back="library" />
       <div className="stack pad">
-        <p className="lede">{c.topic}</p>
+        <p className="lede topic">{c.topic}</p>
         {c.quiz.length > 0 && <section className="panel"><h3 className="section-label">先凭记忆作答</h3><Quiz id={'c:' + c.id} items={c.quiz} /></section>}
         {open ? (
           <>

@@ -1,13 +1,16 @@
 import { MODES, MODE_ORDER } from '../../shared/modes.ts';
 import type { ModeId } from '../../shared/types.ts';
 import { prepare, openCard } from '../actions.ts';
+import { useRef } from 'react';
 import { BusyStrip, ErrorBanner, Icon } from '../components/ui.tsx';
+import { CaretField } from '../components/SmoothCaret.tsx';
 import { go, update, useApp } from '../store.ts';
 
 const EXAMPLES = ['机会成本', '贝叶斯定理', '边际效用', '认知失调', '光速不变原理', '梯度下降'];
 const GLYPH: Record<ModeId, string> = { socratic: '问', roundtable: '圆', teach: '讲', debate: '辩' };
 
 export function Learn() {
+  const conceptRef = useRef<HTMLInputElement>(null);
   const { config, library, session, ui, ai } = useApp();
   const due = library.filter(c => c.due <= Date.now());
   const unfinished = session && !session.finished;
@@ -35,9 +38,11 @@ export function Learn() {
           <h2 className="display">今天想弄懂<br />什么？</h2>
           <label className="concept-field">
             <span className="sr-only">想弄懂的概念</span>
-            <input id="concept" value={config.concept} maxLength={80} placeholder="写下一个概念，比如：机会成本" disabled={busy}
-              onChange={e => update(s => { s.config.concept = e.target.value; })}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) prepare(); }} />
+            <CaretField fieldRef={conceptRef}>
+              <input id="concept" ref={conceptRef} value={config.concept} maxLength={80} placeholder="写下一个概念，比如：机会成本" disabled={busy}
+                onChange={e => update(s => { s.config.concept = e.target.value; })}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) prepare(); }} />
+            </CaretField>
           </label>
           <div className="chips scroll-x" role="list">
             {EXAMPLES.map(c => <button role="listitem" key={c} className={'chip' + (config.concept === c ? ' on' : '')} disabled={busy} onClick={() => update(s => { s.config.concept = c; })}>{c}</button>)}

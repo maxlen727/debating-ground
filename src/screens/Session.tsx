@@ -3,6 +3,7 @@ import { MODES } from '../../shared/modes.ts';
 import type { ChatMessage, Entry, Reflection } from '../../shared/types.ts';
 import { QUICK, addReflection, aiTakeover, callOn, currentTurn, dropReflection, finish, generateSeat, hint, nextSpeaker, openTerm, passTurn, pickSeat, quick, retryAI, send, setReflectionDraft, skipSeat, startRoom, submitReflection } from '../actions.ts';
 import { Empty, ErrorBanner, Icon, Sheet } from '../components/ui.tsx';
+import { CaretField } from '../components/SmoothCaret.tsx';
 import { Reveal } from '../components/Reveal.tsx';
 import { useLive } from '../lib/stream.ts';
 import { cancelAI } from '../lib/ai.ts';
@@ -92,7 +93,7 @@ export function Session() {
         </Sheet>
       )}
       {ui.term && (
-        <Sheet title={ui.term.term} onClose={() => update(st => { st.ui.term = null; })}>
+        <Sheet title={ui.term.term} className="term-sheet" onClose={() => update(st => { st.ui.term = null; })}>
           {ui.term.definition ? (
             <>
               <p className="sheet-text">{ui.term.definition}</p>
@@ -311,9 +312,11 @@ function DraftInput({ s, placeholder }: { s: S; placeholder: string }) {
   const submit = () => send(s.draft);
   return (
     <div className="input-row">
-      <textarea id="draft" ref={ref} rows={1} value={s.draft} maxLength={s.room ? 2000 : 4000} aria-label="你的发言" placeholder={placeholder}
-        onChange={e => update(st => { st.session!.draft = e.target.value; })}
-        onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && window.matchMedia('(pointer: fine)').matches) { e.preventDefault(); submit(); } }} />
+      <CaretField fieldRef={ref} className="grow">
+        <textarea id="draft" ref={ref} rows={1} value={s.draft} maxLength={s.room ? 2000 : 4000} aria-label="你的发言" placeholder={placeholder}
+          onChange={e => update(st => { st.session!.draft = e.target.value; })}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && window.matchMedia('(pointer: fine)').matches) { e.preventDefault(); submit(); } }} />
+      </CaretField>
       <button className="send" aria-label="发送" disabled={!!ui.busy || !s.draft.trim()} onClick={submit}><Icon name="send" /></button>
     </div>
   );
@@ -358,7 +361,10 @@ function WithTerms({ text, terms }: { text: string; terms?: string[] }) {
 }
 
 function EntryView({ m, s, showTip }: { m: Entry; s: S; showTip: boolean }) {
-  if (m.kind === 'sys') return <div className="sysline">{m.text}</div>;
+  if (m.kind === 'sys') {
+    const topic = m.text.match(/^(讨论题|辩题)：([\s\S]+)$/);
+    return topic ? <div className="topic-line"><small>{topic[1]}</small><p>{topic[2]}</p></div> : <div className="sysline">{m.text}</div>;
+  }
   if (m.kind === 'reflect') return <ReflectCard m={m} concept={s.concept} />;
   const me = !!m.human;
   const peer = isPeer(m);
@@ -390,6 +396,7 @@ function EntryView({ m, s, showTip }: { m: Entry; s: S; showTip: boolean }) {
 
 function ReflectCard({ m, concept }: { m: Reflection; concept: string }) {
   const { ui, session } = useApp();
+  const draftRef = useRef<HTMLTextAreaElement>(null);
   const live = useLive();
   const streaming = live?.kind === 'reflect' && live.id === m.id && !!live.text;
   return (
@@ -403,7 +410,7 @@ function ReflectCard({ m, concept }: { m: Reflection; concept: string }) {
       ) : (
         <>
           <p className="muted">你现在怎么理解「{concept}」？一两句话就好。{session?.room && '小结只有你能看到。'}</p>
-          <textarea value={m.draft} rows={2} maxLength={1000} aria-label="我的小结" onChange={e => setReflectionDraft(m.id, e.target.value)} />
+          <CaretField fieldRef={draftRef}><textarea ref={draftRef} value={m.draft} rows={2} maxLength={1000} aria-label="我的小结" onChange={e => setReflectionDraft(m.id, e.target.value)} /></CaretField>
           <div className="row end">
             <button className="ghost small" onClick={() => dropReflection(m.id)}>跳过</button>
             <button className="primary small" disabled={!!ui.busy || !m.draft.trim()} onClick={() => submitReflection(m.id)}>提交小结</button>
