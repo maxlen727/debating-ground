@@ -38,11 +38,11 @@ Worker 使用的 `server/ai.ts` 和 `shared/` 是复制进 `worker/src/vendor/` 
 ## 项目结构
 
 ```
-shared/        前端与服务端共用的类型（types.ts）和模式定义（modes.ts）
+shared/        前端与服务端共用的类型（types.ts）、模式定义（modes.ts）和多人房间协议（room.ts）
 server/
   ai.ts        提示词组装、调用 Chat Completions、校验模型输出（本机服务和 Worker 共用）
   server.ts    本机服务：托管界面、代理 /api、在内存中管理密钥
-worker/        可自部署的后端（Cloudflare Worker）
+worker/        可自部署的后端（Cloudflare Worker），多人房间在 src/room.ts
 src/
   store.ts     全局状态与本地持久化（localStorage: sibian-v3）
   actions.ts   学习流程的全部操作
@@ -62,7 +62,9 @@ docs/          本文档站（VitePress）
 
 - `tests/ai.test.ts`：提示词组装、要点标记解析、结构化输出校验、接口调用与超时。
 - `tests/server.test.ts`：密钥只在内存中、会话隔离、拒绝外部来源、静态文件。
-- `tests/worker.test.ts`：Worker 的访问口令、跨域限制、缺少配置时拒绝服务、不跟随重定向。
+- `tests/worker.test.ts`：Worker 的访问口令、跨域限制、缺少配置时拒绝服务、不跟随重定向、房间路由。
+- `tests/room.test.ts`：多人房间的加入、轮流发言、失败与重试、辩论席位、个人复盘、上限与过期删除。
+- `tests/room-flow.test.ts`：房主用真实的 actions 创建房间、邀请、发言、小结、结束并生成自己的复盘。
 - `tests/flow.test.ts`：在 Node 里直接驱动 actions，走完“准备 → 讨论 → 小结 → 复盘 → 知识卡片 → 复习”；API 失败、取消、辩论轮次。
 
 改提示词时更新 `tests/ai.test.ts`，改流程时更新 `tests/flow.test.ts`。
