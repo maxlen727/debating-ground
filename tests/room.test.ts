@@ -300,3 +300,34 @@ test('room AI turns carry terms, and only marked terms can be looked up', async 
   await t.send(t.host, { type: 'ask', reqId: 'c', purpose: 'term', entryId: ai.id, term: '稀缺性' });
   assert.equal((t.host.inbox.at(-1) as { ok: boolean }).ok, true);
 });
+
+test('seats left for classmates wait for someone instead of being played by AI', async () => {
+  const t = setup();
+  const d = debateSetup();
+  d.seats = d.seats.map(x => x.id === 'B1' ? { ...x, type: 'peer' } : x);   // 反方一辩留给同学
+  const created = await t.core.init({ roomId: 'p'.repeat(22), setup: d, hostName: '束束' });
+  const host = t.connect();
+  await t.send(host, { type: 'resume', token: created.hostToken });
+  await t.send(host, { type: 'start' });
+  await t.send(host, { type: 'say', text: '我方立论……' });
+  let v = host.last();
+  assert.equal(v.setup.turns[v.cursor].role.id, 'B1', 'waiting for a classmate to take 反方一辩');
+  assert.equal(v.aiBusy, null);
+  assert.equal(t.calls.length, 0, 'no AI call for an empty classmate seat');
+  // 同学中途入座后由他发言
+  const guest = t.connect();
+  await t.send(guest, { type: 'hello', invite: created.invite, name: '小明' });
+  await t.send(guest, { type: 'seat', seat: 'B1' });
+  await t.send(guest, { type: 'say', text: '反方立论……' });
+  v = host.last();
+  assert.ok(v.cursor > 1);
+  // 没人来时，房主可以让 AI 代答空着的同学席位
+  const t2 = setup();
+  const c2 = await t2.core.init({ roomId: 'q'.repeat(22), setup: d, hostName: '束束' });
+  const h2 = t2.connect();
+  await t2.send(h2, { type: 'resume', token: c2.hostToken });
+  await t2.send(h2, { type: 'start' });
+  await t2.send(h2, { type: 'say', text: '我方立论……' });
+  await t2.send(h2, { type: 'aiTakeover' });
+  assert.ok(h2.last().cursor > 1);
+});

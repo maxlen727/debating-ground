@@ -154,3 +154,17 @@ test('demo: unfamiliar terms are marked, explained on tap, and saved with the kn
   await actions.finish();
   assert.deepEqual(getState().library[0].terms!.map(t => t.term), ['稀缺性']);
 });
+
+test('single-player debate: a seat left for classmates is played by AI', async () => {
+  update(s => {
+    s.config.mode = 'debate';
+    s.config.seats.B[0] = { type: 'peer', bg: '' };
+    s.plan = { mode: 'debate', concept: '机会成本', topic: '上大学的最大成本是学费', keyPoints: ['放弃的最佳选择', '区别于沉没成本'], opening: '', personas: [], source: 'demo', previous: null };
+  });
+  actions.startSession();
+  await actions.send('我方立论……');
+  const t = actions.currentTurn(getState().session);
+  assert.equal(t?.role.id, 'B1');
+  await actions.generateSeat();
+  assert.ok(getState().session!.cursor >= 2, 'AI spoke for 反方一辩');
+});

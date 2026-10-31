@@ -81,7 +81,7 @@ export function speakerLabel(s: Session): string {
     const t = s.turns[s.cursor];
     if (!t) return '';
     const owner = room.members.find(m => m.seat === t.role.id);
-    const who = owner ? (owner.id === room.memberId ? '你' : owner.name) : 'AI';
+    const who = owner ? (owner.id === room.memberId ? '你' : owner.name) : t.role.type === 'ai' ? 'AI' : '等同学入座';
     return `${seatName(t.role)}（${who}）· ${t.action}`;
   }
   const sp: Speaker = room.speaker;
