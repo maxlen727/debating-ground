@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { ApiError, normalizeConfig, buildRequest, finalize, complete, type ApiConfig } from './ai.ts';
+import { ApiError, normalizeConfig, buildRequest, finalize, complete, streamGenerate, STREAMABLE, type ApiConfig } from './ai.ts';
 import type { Purpose } from '../shared/types.ts';
 
 interface SessionState { config: ApiConfig | null; verified: boolean; active: AbortController | null; touched: number }
@@ -63,6 +63,14 @@ export function createServer({ fetchImpl = fetch, timeoutMs = 90000, root = path
           const controller = new AbortController(); s.active = controller;
           res.on('close', () => { if (!res.writableEnded) controller.abort(); });
           try {
+            // 浏览器要求流式、而且这种用途输出的是文字：用 SSE 边生成边发
+            if (data.stream === true && purpose !== 'test' && STREAMABLE.includes(purpose)) {
+              res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
+              const ok = await streamGenerate(config, request, { fetchImpl, timeoutMs, signal: controller.signal }, chunk => { if (!res.destroyed) res.write(chunk); });
+              if (ok) s.verified = true;
+              if (!res.destroyed) res.end();
+              return;
+            }
             const result = await complete(config, request.messages, { fetchImpl, timeoutMs, signal: controller.signal });
             s.verified = true;
             const output = finalize(request, result);
