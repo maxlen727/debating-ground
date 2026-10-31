@@ -8,7 +8,10 @@ export type Screen = 'learn' | 'prepare' | 'session' | 'review' | 'library' | 'c
 export interface Config {
   concept: string;
   mode: ModeId;
-  aiMode: 'demo' | 'api';
+  // demo：演示模板；api：本机服务；remote：自己部署的后端（Cloudflare Worker）
+  aiMode: 'demo' | 'api' | 'remote';
+  // 自己部署的后端：地址和访问口令保存在这台设备的浏览器里（不是 AI 服务商的密钥）
+  remote: { url: string; password: string };
   counts: Record<Team, number>;
   seats: Record<Team, SeatConfig[]>;
   stages: Stage[];
@@ -30,7 +33,10 @@ export interface Card extends Review {
   id: string; sessionId: string; concept: string; topic: string; mode: ModeId; created: number;
   source: Source; model?: string; level: number; due: number; reviews: { at: number; remembered: boolean }[];
 }
-export interface AiStatus { available: boolean; configured: boolean; verified: boolean; baseURL: string; model: string }
+export interface AiStatus {
+  available: boolean; configured: boolean; verified: boolean; baseURL: string; model: string;  // 本机服务
+  remoteVerified: boolean; remoteModel: string;                                             // 自己部署的后端
+}
 export interface Ui {
   screen: Screen;
   busy: string | null;           // 正在进行的 AI 请求说明
@@ -47,7 +53,7 @@ export interface AppState { config: Config; plan: Plan | null; session: Session 
 const STORE = 'sibian-v3';
 
 export const defaultConfig = (): Config => ({
-  concept: '机会成本', mode: 'socratic', aiMode: 'demo',
+  concept: '机会成本', mode: 'socratic', aiMode: 'demo', remote: { url: '', password: '' },
   counts: { A: 2, B: 2 },
   seats: {
     A: [{ type: 'human', bg: '' }, { type: 'ai', bg: '经济学研究者，习惯用数据和模型说话。' }],
@@ -61,7 +67,7 @@ export const defaultConfig = (): Config => ({
 const defaultUi = (): Ui => ({ screen: 'learn', busy: null, error: '', toast: '', hint: null, explain: null, sheet: null, openCard: null, quiz: {} });
 
 function load(): AppState {
-  const base: AppState = { config: defaultConfig(), plan: null, session: null, library: [], ai: { available: false, configured: false, verified: false, baseURL: '', model: '' }, ui: defaultUi() };
+  const base: AppState = { config: defaultConfig(), plan: null, session: null, library: [], ai: { available: false, configured: false, verified: false, baseURL: '', model: '', remoteVerified: false, remoteModel: '' }, ui: defaultUi() };
   try {
     const saved = JSON.parse(localStorage.getItem(STORE) ?? 'null');
     if (saved) return { ...base, config: { ...base.config, ...saved.config }, plan: saved.plan ?? null, session: saved.session ?? null, library: Array.isArray(saved.library) ? saved.library : [], ui: { ...base.ui, screen: saved.screen === 'session' && saved.session && !saved.session.finished ? 'session' : 'learn' } };

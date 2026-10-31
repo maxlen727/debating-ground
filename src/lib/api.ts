@@ -1,16 +1,34 @@
-// 与本机服务通信
-import { update } from '../store.ts';
+// 与后端通信：本机服务（同源，127.0.0.1:4173）或自己部署的后端（Cloudflare Worker，跨域 + 访问口令）
+import { getState, update } from '../store.ts';
 import type { AiStatus } from '../store.ts';
 
-export async function apiRequest<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(path, { ...options, credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Sibian-Client': 'web', ...(options.headers ?? {}) } });
+export type Target = 'local' | 'remote';
+
+async function readJSON(res: Response, fallback: string) {
   let data: { error?: string } & Record<string, unknown>;
-  try { data = await res.json(); } catch { throw new Error('本机服务没有返回有效响应，请用 npm start 启动完整版本。'); }
+  try { data = await res.json(); } catch { throw new Error(fallback); }
   if (!res.ok) throw new Error(data.error || '请求失败。');
-  return data as T;
+  return data;
 }
 
-type Public = Omit<AiStatus, 'available'>;
+export async function apiRequest<T = unknown>(path: string, options: RequestInit = {}, target: Target = 'local'): Promise<T> {
+  if (target === 'remote') {
+    const { url, password } = getState().config.remote;
+    if (!url) throw new Error('还没有连接你的后端，请在“设置”里填写后端地址和访问口令。');
+    let res: Response;
+    try {
+      res = await fetch(url.replace(/\/+$/, '') + path, { ...options, credentials: 'omit', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + password, ...(options.headers ?? {}) } });
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') throw e;
+      throw new Error('连不上你的后端。请检查地址是否正确、后端是否已部署，以及 ALLOWED_ORIGINS 是否包含当前网站。');
+    }
+    return readJSON(res, '后端没有返回有效响应，请确认地址指向思辨场后端。') as Promise<T>;
+  }
+  const res = await fetch(path, { ...options, credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Sibian-Client': 'web', ...(options.headers ?? {}) } });
+  return readJSON(res, '本机服务没有返回有效响应，请用 npm start 启动完整版本。') as Promise<T>;
+}
+
+type Public = Pick<AiStatus, 'configured' | 'verified' | 'baseURL' | 'model'>;
 
 export async function refreshStatus() {
   if (typeof location === 'undefined' || !/^https?:$/.test(location.protocol)) return;
@@ -18,8 +36,14 @@ export async function refreshStatus() {
     const data = await apiRequest<Public>('/api/config');
     update(s => { s.ai = { ...s.ai, ...data, available: true }; });
   } catch { update(s => { s.ai.available = false; }); }
+  // 读取后端状态不调用模型，不产生费用
+  const { aiMode, remote } = getState().config;
+  if (aiMode === 'remote' && remote.url) {
+    try { const data = await apiRequest<Public>('/api/config', {}, 'remote'); update(s => { s.ai.remoteModel = data.model; }); } catch { /* 进入讨论时再提示 */ }
+  }
 }
 
+/* ---------- 本机服务 ---------- */
 export async function connect(input: { baseURL: string; model: string; apiKey: string }, signal: AbortSignal) {
   try {
     const data = await apiRequest<Public>('/api/config', { method: 'POST', signal, body: JSON.stringify(input) });
@@ -34,4 +58,26 @@ export const testConnection = (signal: AbortSignal) => apiRequest('/api/test', {
 export async function disconnect(signal: AbortSignal) {
   const data = await apiRequest<Public>('/api/config', { method: 'DELETE', signal });
   update(s => { s.ai = { ...s.ai, ...data }; s.config.aiMode = 'demo'; });
+}
+
+/* ---------- 自己部署的后端 ---------- */
+export function checkRemoteURL(raw: string): string {
+  let u: URL;
+  try { u = new URL(raw.trim()); } catch { throw new Error('请填写完整的后端地址，例如 https://debating-ground-api.你的子域.workers.dev'); }
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
+  if (u.protocol !== 'https:' && !(u.protocol === 'http:' && local)) throw new Error('后端地址需要使用 HTTPS。');
+  if (u.username || u.password || u.search || u.hash) throw new Error('后端地址不能包含账号、口令或查询参数。');
+  return u.origin + u.pathname.replace(/\/+$/, '');
+}
+
+export async function connectRemote(url: string, password: string, signal: AbortSignal) {
+  const clean = checkRemoteURL(url);
+  update(s => { s.config.remote = { url: clean, password }; s.ai.remoteVerified = false; });
+  const data = await apiRequest<Public>('/api/config', { signal }, 'remote');
+  update(s => { s.ai.remoteModel = data.model; });
+  await apiRequest('/api/test', { method: 'POST', signal, body: '{}' }, 'remote');
+  update(s => { s.ai.remoteVerified = true; s.config.aiMode = 'remote'; });
+}
+export function forgetRemote() {
+  update(s => { s.config.remote = { url: '', password: '' }; s.ai.remoteVerified = false; s.ai.remoteModel = ''; if (s.config.aiMode === 'remote') s.config.aiMode = 'demo'; });
 }

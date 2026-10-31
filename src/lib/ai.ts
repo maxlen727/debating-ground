@@ -40,6 +40,14 @@ export async function runAI<P extends Purpose>(purpose: P, payload: PayloadMap[P
     const r = await task(label, signal => apiRequest<ResultMap[P]>('/api/generate', { method: 'POST', signal, body: JSON.stringify({ purpose, payload }) }));
     return r && { ...r, source: 'api' as const };
   }
+  if (config.aiMode === 'remote') {
+    if (!config.remote.url) {
+      update(s => { s.ui.error = '还没有连接你的后端。请在“设置”里填写后端地址和访问口令，或切换到演示模式。'; });
+      return null;
+    }
+    const r = await task(label, signal => apiRequest<ResultMap[P]>('/api/generate', { method: 'POST', signal, body: JSON.stringify({ purpose, payload }) }, 'remote'));
+    return r && { ...r, source: 'api' as const };
+  }
   const r = await task(label, () => demoRun(purpose, payload, demoDelay) as Promise<ResultMap[P]>);
   return r && { ...r, source: 'demo' as const };
 }

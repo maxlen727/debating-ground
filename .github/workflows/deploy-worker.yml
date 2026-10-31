@@ -1,0 +1,44 @@
+name: 部署后端（Cloudflare Worker）
+
+# PR：只检查能否打包，不需要任何凭据
+# 合并到 main：部署到 Cloudflare。需要仓库 Secrets：CLOUDFLARE_API_TOKEN、CLOUDFLARE_ACCOUNT_ID
+# AI 服务商的密钥等加密变量只设置在 Cloudflare 上（见 docs/guide/self-host.md），部署代码不会覆盖它们
+on:
+  pull_request:
+    paths: ['worker/**', 'server/ai.ts', 'shared/**', '.github/workflows/deploy-worker.yml']
+  push:
+    branches: [main]
+    paths: ['worker/**', 'server/ai.ts', 'shared/**', '.github/workflows/deploy-worker.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-worker-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: 检查能否打包
+        working-directory: worker
+        run: npx --yes wrangler@4 deploy --dry-run --outdir ../.worker-dist
+      - name: 检查 Cloudflare 凭据
+        id: creds
+        if: github.event_name != 'pull_request'
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -n "$TOKEN" ] && [ -n "$ACCOUNT" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"
+          else echo "::notice::没有设置 CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID，跳过部署。"; fi
+      - name: 部署
+        if: steps.creds.outputs.ok == 'true'
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: worker

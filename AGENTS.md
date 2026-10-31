@@ -6,7 +6,7 @@
 
 思辨场是一个学习应用：用户写下一个概念，和 AI 讨论、追问、辩论，把它真正弄懂；结束后生成理解复盘，存成知识卡片并按间隔复习。**目标是学懂概念，不是练口才**，所有设计决定都服务于这一点。
 
-最终产物是 Android App（计划用 Capacitor 打包 `dist/`）。当前形态是“本机 Node 服务 + Web 界面 + 用户自带 API Key”。
+最终产物是 Android App（计划用 Capacitor 打包 `dist/`）。当前形态是“Web 界面 + 两种后端：本机 Node 服务，或用户自己部署的 Cloudflare Worker”，都使用用户自己的 API Key。
 
 ## 仓库地图
 
@@ -14,7 +14,8 @@
 | --- | --- | --- |
 | `shared/` | 前后端共用的类型（`types.ts`）和模式定义（`modes.ts`） | 改了类型，前后端要一起改，并跑类型检查 |
 | `server/ai.ts` | 提示词组装、Chat Completions 调用、输出解析与校验 | 提示词是产品的核心，改动必须更新 `tests/ai.test.ts` |
-| `server/server.ts` | 托管 `dist/`，代理 `/api/*`，会话与密钥管理 | 涉及安全，见下方“不能破坏的约定” |
+| `server/server.ts` | 本机服务：托管 `dist/`，代理 `/api/*`，会话与密钥管理 | 涉及安全，见下方“不能破坏的约定” |
+| `worker/` | 可自部署的后端（Cloudflare Worker），与本机服务提供同样的 `/api`，复用 `server/ai.ts` | 涉及安全；改了 `ai.ts` 也要确认 Worker 测试通过 |
 | `src/store.ts` | 全局状态与 localStorage 持久化 | 改存储结构要写迁移，不能让用户丢知识库 |
 | `src/actions.ts` | 学习流程的全部操作 | 业务逻辑放这里，不要写进组件 |
 | `src/lib/` | AI 调用入口、演示模板、赛制、间隔复习、导出 | |
@@ -33,18 +34,19 @@ npm run build        # 构建界面到 dist/
 npm run server       # 本机服务 127.0.0.1:4173
 npm run dev          # 界面热更新 127.0.0.1:5173（需同时运行 server）
 npm run docs:dev     # 文档站热更新
+cd worker && npx wrangler dev   # 本地运行后端（先把 .dev.vars.example 复制为 .dev.vars）
 ```
 
 **每次提交前必须通过 `npm run check && npm test && npm run build`。** 没跑过就不要说“已完成”。如果某项失败且与你的改动无关，在 PR 里写明，不要顺手大改。
 
 ## 不能破坏的约定
 
-1. **API Key 只存在本机服务的内存里。** 不写入磁盘、localStorage、日志、导出文件、测试快照或错误信息。不要为了调试打印请求头或请求体。
+1. **AI 服务商的 API Key 只存在后端：本机服务的内存里，或 Worker 的加密变量里。** 浏览器里不保存它；不写入磁盘、localStorage、日志、导出文件、测试快照或错误信息。不要为了调试打印请求头或请求体。Worker 必须在没有设置 `ACCESS_PASSWORD` 时拒绝服务，只对 `ALLOWED_ORIGINS` 返回跨域许可，并保持关闭请求日志。浏览器里只能保存后端地址和访问口令，而且它们不能进入讨论记录、知识库或导出文件。
 2. **AI 失败不能悄悄降级。** API 模式下请求失败、超时、截断或格式错误时，显示错误并保持讨论进度不变；不要自动换成演示模板，不要编造回复。
 3. **演示模式必须始终可用。** 没有网络和密钥时，“机会成本”能走完整个流程。新增 AI 用途时同时在 `src/lib/demo.ts` 补演示内容。
 4. **复盘只依据学习者本人的发言和小结**，AI 角色说出来的内容不算学习者懂了。
 5. **辩论模式下 AI 只做辩手**，不当教练；但不得为了立场歪曲概念或事实。追问解释走讲解助手，不进入比赛记录。
-6. **服务端不加运行时依赖**，保持“Node 原生运行 TypeScript”。只用可擦除的类型语法（不用 enum、namespace、参数属性），导入写 `.ts` 后缀。
+6. **服务端和 Worker 不加运行时依赖**，保持“Node 原生运行 TypeScript”。Workers 不支持 `redirect: 'error'`，Worker 里调用 `complete()` 要传 `redirect: 'manual'`。只用可擦除的类型语法（不用 enum、namespace、参数属性），导入写 `.ts` 后缀。
 7. **结构化输出必须校验。** 模型返回的 JSON 一律经过 `finalize` 清洗和兜底，前端不信任未校验的字段。
 8. **不改已发布的存储键的含义。** 改 `sibian-v3` 的结构时升级版本号，并在 `store.ts` 的 `load()` 里迁移旧数据。
 
