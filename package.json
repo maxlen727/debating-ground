@@ -1,0 +1,1 @@
+{"name":"sibian-prototype","version":"0.4.0","private":true,"engines":{"node":">=22"},"scripts":{"start":"node server.cjs","check":"node --check dist/app.js && node --check dist/connection.js && node --check server.cjs && node --check ai.cjs","test":"node --test tests/*.test.cjs"}}
