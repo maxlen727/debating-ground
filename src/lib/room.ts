@@ -7,6 +7,7 @@ import type { Plan, RoomLink, Session } from '../store.ts';
 import type { DebateConfig } from './debate.ts';
 import { apiRequest } from './api.ts';
 import { task } from './ai.ts';
+import { clearLive, getLive, setLive, updateLive } from './stream.ts';
 import { debateTurns, seatName, slots } from './debate.ts';
 
 /* ---------- 邀请链接 ---------- */
@@ -150,6 +151,14 @@ function handle(msg: ServerMessage, target?: { backend: string; roomId: string; 
     return;
   }
   if (msg.type === 'state') return applyView(msg.room);
+  if (msg.type === 'stream') {
+    const s = getState().session;
+    if (!s?.room) return;
+    if (getLive()?.id === msg.id) return updateLive(msg.id, msg.text);
+    const who = s.mode === 'debate' ? s.turns[s.cursor]?.role.id : s.room.speaker?.id;
+    setLive({ id: msg.id, kind: 'msg', label: s.room.aiBusy ?? '', text: msg.text, who });
+    return;
+  }
   if (msg.type === 'answer') {
     const p = pending.get(msg.reqId);
     pending.delete(msg.reqId);
@@ -186,6 +195,9 @@ function applyView(view: RoomView) {
     if (next.finished && !wasFinished && st.ui.screen === 'session') st.ui.screen = 'review';
   });
   const now = getState().session!;
+  // AI 发言写进记录（或失败）后，生成中的气泡交给正式发言接着显示
+  const live = getLive();
+  if (live?.kind === 'msg' && !view.aiBusy) clearLive(live.id);
   if (now.finished && !wasFinished) void onFinished?.();
 }
 // 讨论结束时由 actions 生成个人复盘（避免两个模块互相引用）

@@ -28,6 +28,45 @@ export async function apiRequest<T = unknown>(path: string, options: RequestInit
   return readJSON(res, '本机服务没有返回有效响应，请用 npm start 启动完整版本。') as Promise<T>;
 }
 
+// 流式请求：后端用 SSE 发来 delta（新增文字）、done（完整结果）、error（失败，已显示的文字要撤回）。
+// 旧版后端不认识 stream，会直接返回 JSON，这时按普通请求处理。
+export async function apiStream<T>(path: string, body: Record<string, unknown>, onText: (text: string) => void, signal: AbortSignal, target: Target = 'local'): Promise<T> {
+  const options: RequestInit = { method: 'POST', signal, body: JSON.stringify({ ...body, stream: true }), headers: { Accept: 'text/event-stream' } };
+  let res: Response;
+  if (target === 'remote') {
+    const { url, password } = getState().config.remote;
+    if (!url) throw new Error('还没有连接你的后端，请在“设置”里填写后端地址和访问口令。');
+    try {
+      res = await fetch(url.replace(/\/+$/, '') + path, { ...options, credentials: 'omit', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + password, Accept: 'text/event-stream' } });
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') throw e;
+      throw new Error('连不上你的后端。请检查地址是否正确、后端是否已部署，以及 ALLOWED_ORIGINS 是否包含当前网站。');
+    }
+  } else {
+    res = await fetch(path, { ...options, credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Sibian-Client': 'web', Accept: 'text/event-stream' } });
+  }
+  if (!(res.headers.get('Content-Type') ?? '').includes('text/event-stream') || !res.body)
+    return readJSON(res, target === 'remote' ? '后端没有返回有效响应，请确认地址指向思辨场后端。' : '本机服务没有返回有效响应，请用 npm start 启动完整版本。') as Promise<T>;
+  const reader = res.body.getReader(), decoder = new TextDecoder();
+  let buffer = '', text = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split('\n\n'); buffer = events.pop() ?? '';
+    for (const block of events) {
+      const name = block.match(/^event: (.+)$/m)?.[1];
+      const raw = block.match(/^data: (.*)$/m)?.[1];
+      if (!name || raw === undefined) continue;
+      const data = JSON.parse(raw);
+      if (name === 'delta') { text += data.t; onText(text); }
+      else if (name === 'done') { await reader.cancel().catch(() => {}); return data as T; }
+      else if (name === 'error') throw new Error(data.error || '请求失败。');
+    }
+  }
+  throw new Error('连接在生成过程中断开了，本次内容未采用，请重试。');
+}
+
 type Public = Pick<AiStatus, 'configured' | 'verified' | 'baseURL' | 'model'>;
 
 export async function refreshStatus() {

@@ -1,6 +1,6 @@
 {
   "name": "debating-ground",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "description": "思辨场：通过和 AI 讨论、追问、辩论，把一个概念真正弄懂，并把理解落盘、定期回顾。",

@@ -72,7 +72,8 @@
 - [ ] 安卓 App，单人模式直连服务商
 - [x] 可自部署的后端（Cloudflare Workers），网页版也能用真实 AI
 - [x] 多台设备联网讨论（圆桌、辩论）
-- [ ] 流式输出、知识库跨设备同步
+- [x] 流式输出：AI 边想边说，文字平滑地逐字出现
+- [ ] 知识库跨设备同步
 
 完整内容见[路线图](https://maxlen727.github.io/debating-ground/product/roadmap)。
 

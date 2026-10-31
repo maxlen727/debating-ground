@@ -33,7 +33,7 @@ function setup(generate?: Generate) {
   });
   const core = new RoomCore({
     load: async () => stored && structuredClone(stored), save: async r => { stored = structuredClone(r); }, destroy: async () => { stored = undefined; },
-    sockets: () => sockets.filter(s => s.open), setAlarm: async at => { alarm = at; }, generate: async (p, x) => { if (!generate) return gen(p, x); calls.push({ purpose: p, payload: x as Payload }); return generate(p, x); }, now: () => now
+    sockets: () => sockets.filter(s => s.open), setAlarm: async at => { alarm = at; }, generate: async (p, x, onText) => { if (!generate) return gen(p, x); calls.push({ purpose: p, payload: x as Payload }); return generate(p, x, onText); }, now: () => now
   });
   const connect = (): Client => {
     const c: Client = {
@@ -299,4 +299,21 @@ test('room AI turns carry terms, and only marked terms can be looked up', async 
   await t.send(t.host, { type: 'finish' });
   await t.send(t.host, { type: 'ask', reqId: 'c', purpose: 'term', entryId: ai.id, term: '稀缺性' });
   assert.equal((t.host.inbox.at(-1) as { ok: boolean }).ok, true);
+});
+
+test('room AI speech is relayed to everyone while it is being written, then saved under the same id', async () => {
+  const t = await room('roundtable', async (_p, _x, onText) => {
+    for (const part of ['机会', '机会成本', '机会成本就是放弃的最好选择。']) { onText?.(part); await new Promise(r => setTimeout(r, 200)); }
+    return { text: '机会成本就是放弃的最好选择。', covered: [] };
+  });
+  const guest = t.connect();
+  await t.send(guest, { type: 'hello', invite: t.created.invite, name: '小明' });
+  await t.send(t.host, { type: 'start' });
+  await t.send(t.host, { type: 'say', text: '我先说' });
+  const streams = guest.inbox.filter((m): m is Extract<ServerMessage, { type: 'stream' }> => m.type === 'stream');
+  assert.ok(streams.length >= 2, 'several partial updates');
+  assert.equal(new Set(streams.map(m => m.id)).size, 1);
+  assert.equal(streams.at(-1)!.text, '机会成本就是放弃的最好选择。');
+  const saved = guest.last().entries.at(-1)!;
+  assert.equal(saved.id, streams[0].id, 'the final message keeps the stream id');
 });
