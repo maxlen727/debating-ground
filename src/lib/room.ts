@@ -156,7 +156,11 @@ function handle(msg: ServerMessage, target?: { backend: string; roomId: string; 
     if (msg.ok) p?.resolve(msg.result); else p?.reject(new Error(msg.error));
     return;
   }
-  if (msg.type === 'error') return toast(msg.message);
+  if (msg.type === 'error') {
+    // 旧版后端不认识新加的操作（例如选席位），只会回“不支持的操作”；告诉用户该怎么办
+    if (msg.message === '不支持的操作。') return toast(getState().session?.room?.host ? '你的后端版本较旧，不支持这个操作。请按文档“怎么更新后端”更新后再试。' : '房主的后端版本较旧，不支持这个操作。请房主更新后端。');
+    return toast(msg.message);
+  }
   if (msg.type === 'closed') {
     clearTimeout(retryTimer);
     if (getState().ui.screen === 'join') { update(st => { st.ui.error = msg.reason; }); return; }

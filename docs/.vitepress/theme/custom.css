@@ -11,6 +11,8 @@
   --vp-font-family-base: "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
 }
 .dark {
+  /* 浅色的 bg-alt 是 App 的米白底色；深色必须一起改，否则侧边栏在深色模式下是浅底浅字 */
+  --vp-c-bg-alt: #111715;
   --vp-c-brand-1: #8FCBB2;
   --vp-c-brand-2: #A7D8C3;
   --vp-c-brand-3: #6FB89B;
