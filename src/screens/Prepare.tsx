@@ -1,12 +1,14 @@
 import { MODES, STAGE_KINDS } from '../../shared/modes.ts';
 import type { StageKind, Team } from '../../shared/types.ts';
-import { prepare, startSession } from '../actions.ts';
-import { BusyStrip, ErrorBanner, Icon, Stepper, TopBar } from '../components/ui.tsx';
+import { useState } from 'react';
+import { canInvite, inviteFriends, prepare, startSession } from '../actions.ts';
+import { BusyStrip, ErrorBanner, Icon, Sheet, Stepper, TopBar } from '../components/ui.tsx';
 import { debateTurns } from '../lib/debate.ts';
-import { update, useApp } from '../store.ts';
+import { go, update, useApp } from '../store.ts';
 
 export function Prepare() {
   const { plan, config, ui } = useApp();
+  const [inviting, setInviting] = useState(false);
   if (!plan) return <div className="screen"><TopBar title="准备讨论" back="learn" /></div>;
   const debate = plan.mode === 'debate';
   const busy = !!ui.busy;
@@ -70,8 +72,40 @@ export function Prepare() {
           <button className="secondary" disabled={busy} onClick={() => { update(s => { s.config.concept = plan.concept; s.config.mode = plan.mode; }); prepare(plan.previous); }}>重新生成</button>
           <button className="primary grow" disabled={busy} onClick={startSession}>开始讨论</button>
         </div>
+        {canInvite(plan.mode) && <button className="ghost block" disabled={busy} onClick={() => setInviting(true)}><Icon name="people" size={18} />邀请同学一起讨论</button>}
       </div>
+      {inviting && <InviteSheet onClose={() => setInviting(false)} />}
     </div>
+  );
+}
+
+function InviteSheet({ onClose }: { onClose: () => void }) {
+  const { config, plan, ui } = useApp();
+  const [name, setName] = useState(config.name);
+  const ready = config.aiMode === 'remote' && !!config.remote.url;
+  const debate = plan?.mode === 'debate';
+  return (
+    <Sheet title="邀请同学一起讨论" onClose={onClose}>
+      {ready ? (
+        <>
+          <p className="sheet-text">创建一个讨论房间，把链接发给同学。大家用自己的手机加入，{debate ? '按赛制轮流上场' : '轮流发言，每个人说完由一位 AI 嘉宾接话'}。</p>
+          <label className="field">
+            <span>你的名字</span>
+            <input value={name} maxLength={20} placeholder="同学会看到这个名字" onChange={e => setName(e.target.value)} />
+          </label>
+          {debate && <p className="note">标为“我”的席位由真人担任：第一个是你，之后加入的同学依次认领；席位满了的同学旁听。</p>}
+          <p className="fineprint">AI 使用你的后端和额度，同学不需要访问口令。每个房间最多 8 人、150 次 AI 调用，讨论内容临时保存在你的后端，结束 1 小时后自动删除。</p>
+          <ErrorBanner />
+          <button className="primary block" disabled={!!ui.busy || !name.trim()} onClick={async () => { await inviteFriends(name); }}>{ui.busy ? ui.busy : '创建房间'}</button>
+        </>
+      ) : (
+        <>
+          <p className="sheet-text">多人讨论需要一个属于你的后端：房间和 AI 都在那里运行。</p>
+          <p className="note">先在“设置”里选择“我的后端”并连接。还没有后端的话，可以一键部署到你自己的 Cloudflare 账号（免费额度就够）。</p>
+          <button className="primary block" onClick={() => go('settings')}>去设置</button>
+        </>
+      )}
+    </Sheet>
   );
 }
 

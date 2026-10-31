@@ -1,8 +1,9 @@
 // 学习流程的所有操作：准备 → 讨论 → 小结 → 复盘 → 知识库
-import type { ChatMessage, ExplainKind, Previous, SessionSnapshot } from '../shared/types.ts';
+import type { ChatMessage, ExplainKind, Previous, Review, SessionSnapshot } from '../shared/types.ts';
 import { getState, go, toast, uid, update } from './store.ts';
 import type { Card, Session } from './store.ts';
 import { runAI } from './lib/ai.ts';
+import * as room from './lib/room.ts';
 import { debateTurns, seatName, slots } from './lib/debate.ts';
 import { DAY, schedule } from './lib/srs.ts';
 
@@ -40,18 +41,31 @@ export async function prepare(previous: Previous | null = null) {
   });
 }
 
+function planProblem(): string {
+  const { plan, config } = getState();
+  if (!plan) return '还没有准备好讨论。';
+  if (!plan.topic.trim()) return '请填写讨论题。';
+  if (plan.keyPoints.map(k => k.trim()).filter(Boolean).length < 2) return '至少保留两个要点。';
+  if (plan.mode === 'debate') {
+    if (config.stages.some(st => !st.name.trim())) return '请为每个环节填写名称。';
+    if (!slots(config).some(r => r.type === 'human')) return '至少安排一个“我”的席位，你才能参与交锋。';
+  }
+  return '';
+}
+function endOld() {
+  const old = session();
+  if (old?.room) room.leave();
+  if (old && !old.finished && old.entries.some(m => m.kind === 'msg' && m.human)) toast('上一次讨论没有复盘，已结束。');
+}
+
 export function startSession() {
-  const { plan, config, session: old } = getState();
+  const { plan, config } = getState();
   if (!plan) return;
+  const problem = planProblem();
+  if (problem) return toast(problem);
   const topic = plan.topic.trim();
   const keyPoints = plan.keyPoints.map(k => k.trim()).filter(Boolean).slice(0, 6);
-  if (!topic) return toast('请填写讨论题。');
-  if (keyPoints.length < 2) return toast('至少保留两个要点。');
-  if (plan.mode === 'debate') {
-    if (config.stages.some(st => !st.name.trim())) return toast('请为每个环节填写名称。');
-    if (!slots(config).some(r => r.type === 'human')) return toast('至少安排一个“我”的席位，你才能参与交锋。');
-  }
-  if (old && !old.finished && old.entries.some(m => m.kind === 'msg' && m.human)) toast('上一次讨论没有复盘，已结束。');
+  endOld();
   update(s => {
     const base: Session = {
       id: uid(), created: Date.now(), mode: plan.mode, concept: plan.concept, topic, keyPoints,
@@ -75,6 +89,36 @@ export function startSession() {
   });
 }
 
+/* ---------- 多人讨论 ---------- */
+export const canInvite = (mode: string) => mode === 'roundtable' || mode === 'debate';
+export async function inviteFriends(name: string) {
+  const { plan, config, ui } = getState();
+  if (!plan || ui.busy) return;
+  if (!canInvite(plan.mode)) return toast('多人讨论支持圆桌讨论和正反辩论。');
+  if (config.aiMode !== 'remote' || !config.remote.url) return toast('多人讨论需要先在“设置”里连接你的后端。');
+  const problem = planProblem();
+  if (problem) return toast(problem);
+  name = name.trim();
+  if (!name) return toast('写下你在讨论里显示的名字。');
+  update(st => { st.config.name = name; });
+  endOld();
+  await room.createRoom(room.setupFrom(plan, config), name);
+}
+export const joinRoom = (name: string) => name.trim() ? room.join(name.trim()) : toast('写下你在讨论里显示的名字。');
+export const startRoom = () => room.send({ type: 'start' });
+export const callOn = (target: NonNullable<import('../shared/room.ts').Speaker>) => { update(st => { st.ui.sheet = null; }); room.send({ type: 'callOn', target }); };
+export const passTurn = () => room.send({ type: 'pass' });
+export const aiTakeover = () => room.send({ type: 'aiTakeover' });
+export const retryAI = () => room.send({ type: 'retry' });
+export function leaveRoom() {
+  room.leave();
+  update(st => { st.session = null; st.ui.screen = 'learn'; });
+}
+room.setOnFinished(async () => {
+  const s = session();
+  if (s && (s.entries.some(m => m.kind === 'msg' && m.human) || s.room?.reflections.some(r => r.text))) await generateReview();
+});
+
 /* ---------- 讨论 ---------- */
 function pushLearner(text: string) {
   update(st => {
@@ -88,6 +132,11 @@ export async function send(text: string) {
   const s = session(); text = text.trim();
   if (!s || s.finished || getState().ui.busy) return;
   if (!text) return toast('先写下你的想法，再发送。');
+  if (s.room) {
+    if (!room.mySpeakingTurn(s)) return toast('还没轮到你发言。');
+    if (room.send({ type: 'say', text })) update(st => { st.session!.draft = ''; st.ui.hint = null; });
+    return;
+  }
   if (s.mode === 'debate') return submitSeat(text);
   pushLearner(text);
   const role = s.personas[s.nextRole % s.personas.length];
@@ -117,6 +166,7 @@ export function nextSpeaker() {
 
 export function submitSeat(text: string, skipped = false) {
   const s = session(); const t = currentTurn(s); if (!s || !t) return;
+  if (s.room) { room.send(skipped ? { type: 'pass' } : { type: 'say', text }); return; }
   const human = t.role.type === 'human';
   update(st => {
     const ss = st.session!;
@@ -131,6 +181,7 @@ export const skipSeat = () => submitSeat('主席宣布：本席放弃本次发�
 
 export async function generateSeat() {
   const s = session(); const t = currentTurn(s); if (!s || !t || getState().ui.busy) return;
+  if (s.room) { room.send({ type: 'aiTakeover' }); return; }
   const res = await runAI('debate', { session: snapshot(s) }, `${seatName(t.role)}正在组织发言`);
   const now = session();
   if (!res || now?.id !== s.id || now.cursor !== s.cursor || now.finished) return;
@@ -154,9 +205,18 @@ export async function quick(kind: ExplainKind | 'disagree', messageId: string) {
   update(st => { st.ui.sheet = null; });
   const quote = m.text.length > 26 ? m.text.slice(0, 26) + '…' : m.text;
   if (kind === 'disagree') {
-    if (s.mode === 'debate' && currentTurn(s)?.role.type !== 'human') return toast('轮到你的席位时，再在发言里反驳这一点。');
+    if (s.room && !room.mySpeakingTurn(s)) return toast('轮到你发言时，再在发言里回应这一点。');
+    if (!s.room && s.mode === 'debate' && currentTurn(s)?.role.type !== 'human') return toast('轮到你的席位时，再在发言里反驳这一点。');
     update(st => { st.session!.draft = `我不同意「${quote}」，因为`; });
     globalThis.requestAnimationFrame?.(() => { const d = document.getElementById('draft') as HTMLTextAreaElement | null; d?.focus(); d?.setSelectionRange(d.value.length, d.value.length); });
+    return;
+  }
+  if (s.room) {
+    // 多人讨论不打断别人的轮次：解释只给自己看
+    const label = QUICK.find(q => q.kind === kind)!.label;
+    update(st => { st.ui.explain = { kind, label, quote, text: '' }; });
+    const res = await room.ask<{ text: string }>({ type: 'ask', purpose: 'explain', entryId: m.id, kind }, '讲解助手正在看这句话');
+    update(st => { if (res && st.ui.explain) st.ui.explain.text = res.text; else st.ui.explain = null; });
     return;
   }
   if (s.mode !== 'debate') {
@@ -176,6 +236,11 @@ export async function quick(kind: ExplainKind | 'disagree', messageId: string) {
 
 export async function hint() {
   const s = session(); if (!s || getState().ui.busy) return;
+  if (s.room) {
+    const res = await room.ask<{ text: string }>({ type: 'ask', purpose: 'hint' }, '正在想一条提示');
+    if (res) update(st => { st.ui.hint = res.text; });
+    return;
+  }
   const t = currentTurn(s);
   const res = await runAI('hint', { session: snapshot(s), covered: s.covered, task: t ? `${seatName(t.role)}要进行${t.action}` : undefined }, '正在想一条提示');
   if (res) update(st => { st.ui.hint = res.text; });
@@ -188,16 +253,34 @@ function maybeReflect() {
 export function addReflection(auto = false) {
   const s = session(); if (!s) return;
   if (s.entries.some(m => m.kind === 'reflect' && !m.text)) { if (!auto) toast('先完成上面那张小结卡。'); return; }
-  update(st => { st.session!.entries.push({ id: uid(), kind: 'reflect', text: '', feedback: '', draft: '' }); });
+  update(st => {
+    const card = { id: uid(), kind: 'reflect' as const, text: '', feedback: '', draft: '' };
+    st.session!.entries.push(card);
+    // 多人讨论的小结只留在自己的设备上，记下它跟在哪条发言后面
+    st.session!.room?.reflections.push({ ...card, after: s.entries.at(-1)?.id ?? '' });
+  });
 }
-export function setReflectionDraft(id: string, draft: string) {
-  update(st => { const m = st.session?.entries.find(x => x.id === id); if (m?.kind === 'reflect') m.draft = draft; });
+// 小结卡在 entries 里显示；多人讨论时 room.reflections 里还有一份，两份一起改
+function editReflection(st: { session: Session | null }, id: string, fn: (m: { text: string; feedback: string; draft: string }) => void) {
+  const m = st.session?.entries.find(x => x.id === id); if (m?.kind === 'reflect') fn(m);
+  const r = st.session?.room?.reflections.find(x => x.id === id); if (r) fn(r);
 }
-export function dropReflection(id: string) { update(st => { st.session!.entries = st.session!.entries.filter(x => x.id !== id); }); }
+export function setReflectionDraft(id: string, draft: string) { update(st => editReflection(st, id, m => { m.draft = draft; })); }
+export function dropReflection(id: string) {
+  update(st => {
+    st.session!.entries = st.session!.entries.filter(x => x.id !== id);
+    if (st.session!.room) st.session!.room.reflections = st.session!.room.reflections.filter(x => x.id !== id);
+  });
+}
 export async function submitReflection(id: string) {
   const s = session(); if (!s || getState().ui.busy) return;
   const m = s.entries.find(x => x.id === id); if (m?.kind !== 'reflect') return;
   const answer = m.draft.trim(); if (!answer) return toast('用一两句话写下你的理解。');
+  if (s.room) {
+    const res = await room.ask<{ text: string }>({ type: 'ask', purpose: 'reflect', answer }, '正在看你的小结');
+    if (res) update(st => editReflection(st, id, e => { e.text = answer; e.feedback = res.text; }));
+    return;
+  }
   const res = await runAI('reflect', { session: snapshot(s), answer }, '正在看你的小结');
   if (!res) return;
   update(st => {
@@ -210,15 +293,19 @@ export async function submitReflection(id: string) {
 /* ---------- 复盘与知识库 ---------- */
 export async function finish() {
   if (getState().ui.busy) return;
+  const r = session()?.room;
+  if (r) { if (r.host) room.send({ type: 'finish' }); return; }
   update(st => { const s = st.session!; s.finished = true; s.draft = ''; st.ui.hint = null; st.ui.explain = null; st.ui.screen = 'review'; });
   const s = session()!;
   if (s.entries.some(m => (m.kind === 'msg' && m.human) || (m.kind === 'reflect' && m.text))) await generateReview();
 }
-export function resume() { update(st => { st.session!.finished = false; st.ui.screen = 'session'; }); }
+export function resume() { if (session()?.room) return; update(st => { st.session!.finished = false; st.ui.screen = 'session'; }); }
 
 export async function generateReview() {
   const s = session(); if (!s) return;
-  const res = await runAI('review', { session: snapshot(s) }, '正在复盘整场讨论');
+  const res = s.room
+    ? await room.ask<{ data: Review; model?: string }>({ type: 'ask', purpose: 'review', reflections: s.room.reflections.filter(r => r.text).map(r => r.text) }, '正在复盘你在这场讨论里的理解').then(r => r && { ...r, source: 'api' as const })
+    : await runAI('review', { session: snapshot(s) }, '正在复盘整场讨论');
   if (!res || session()?.id !== s.id) return;
   update(st => {
     const ss = st.session!;

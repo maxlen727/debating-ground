@@ -21,7 +21,7 @@ export function sessionMarkdown(s: Session) {
   return `# 思辨场讨论记录\n\n概念：${s.concept}\n讨论题：${s.topic}\n讨论方式：${MODES[s.mode].name}\n要点：${s.keyPoints.map((k, i) => (s.covered.includes(i) ? '●' : '○') + k).join(' ')}\n\n`
     + s.entries.map(m => m.kind === 'sys' ? '' : m.kind === 'reflect'
       ? (m.text ? `### 小结\n\n${m.text}\n\n> ${m.feedback}\n` : '')
-      : `### ${m.name}${m.action ? ' · ' + m.action : ''} · ${m.human ? '真人' : m.source === 'api' ? 'AI · ' + m.model : 'AI · 演示'}\n\n${m.text}\n`).filter(Boolean).join('\n')
+      : `### ${m.name}${m.action ? ' · ' + m.action : ''} · ${m.human || m.memberId ? '真人' : m.source === 'api' ? 'AI · ' + m.model : 'AI · 演示'}\n\n${m.text}\n`).filter(Boolean).join('\n')
     + (s.review ? '\n# 理解复盘\n\n' + reviewMarkdown({ ...s.review, concept: s.concept, topic: s.topic, mode: s.mode, created: s.created }) : '');
 }
 

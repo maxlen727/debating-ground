@@ -29,7 +29,7 @@ test('the access password is required and compared exactly', async () => {
   assert.equal(calls.length, 0, 'no model call without the password');
   const ok = await call('/api/config');
   assert.equal(ok.status, 200);
-  assert.deepEqual(await ok.json(), { configured: true, verified: false, baseURL: '', model: 'team-model' });
+  assert.deepEqual(await ok.json(), { configured: true, verified: false, baseURL: '', model: 'team-model', rooms: false });
 });
 
 test('fails closed when the deployer forgot the password or the AI settings', async () => {
@@ -71,6 +71,35 @@ test('a provider redirect is refused instead of followed', async () => {
   const res = await handler.fetch(new Request('https://api.example.workers.dev/api/test', { method: 'POST', headers: { Authorization: 'Bearer open-sesame', Origin: PAGES } }), env);
   assert.equal(res.status, 502);
   assert.match((await res.json()).error, /重定向/);
+});
+
+test('rooms: creating needs the access password, joining goes straight to the room with no password', async () => {
+  const seen: { url: string; method: string; body: string; upgrade: string | null }[] = [];
+  const ROOMS = {
+    idFromName: (name: string) => name,
+    get: (id: unknown) => ({ fetch: async (req: Request) => { seen.push({ url: req.url, method: req.method, body: req.method === 'POST' ? await req.text() : '', upgrade: req.headers.get('Upgrade') }); return Response.json({ roomId: id, invite: 'i', hostToken: 't', expiresAt: 1 }); } })
+  };
+  const { call } = setup();
+  const withRooms = { ...env, ROOMS };
+  assert.equal((await call('/api/rooms', { method: 'POST', body: {}, e: env })).status, 503, 'older deployments say they need updating');
+  assert.equal((await call('/api/rooms', { method: 'POST', password: null, body: {}, e: withRooms })).status, 401);
+  const created = await call('/api/rooms', { method: 'POST', body: { setup: { mode: 'roundtable' }, hostName: '束束', roomId: 'chosen-by-client' }, e: withRooms });
+  assert.equal(created.status, 200);
+  const sent = JSON.parse(seen[0].body);
+  assert.equal(seen[0].url, 'https://room/init');
+  assert.match(sent.roomId, /^[A-Za-z0-9_-]{22}$/);
+  assert.notEqual(sent.roomId, 'chosen-by-client', 'the backend picks the room id');
+  assert.equal((await call('/api/config', { e: withRooms }).then(r => r.json())).rooms, true);
+
+  const handler = createHandler();
+  const ws = (path: string, headers: Record<string, string>) => handler.fetch(new Request('https://api.example.workers.dev' + path, { headers }), withRooms);
+  const id = 'a'.repeat(22);
+  assert.equal((await ws(`/api/rooms/${id}/ws`, { Origin: PAGES })).status, 426);
+  assert.equal((await ws(`/api/rooms/${id}/ws`, { Origin: 'https://evil.example', Upgrade: 'websocket' })).status, 403, 'other websites cannot open a room socket');
+  assert.equal((await ws('/api/rooms/short/ws', { Origin: PAGES, Upgrade: 'websocket' })).status, 404);
+  const ok = await ws(`/api/rooms/${id}/ws`, { Origin: PAGES, Upgrade: 'websocket' });
+  assert.equal(ok.status, 200);
+  assert.deepEqual(seen.at(-1), { url: 'https://room/ws', method: 'GET', body: '', upgrade: 'websocket' });
 });
 
 test('worker/ stays self-contained so the Deploy to Cloudflare button can build it alone', async () => {

@@ -17,6 +17,7 @@
   --a-bg: #DDE7D8; --a-fg: #3D5E45;
   --b-bg: #F1E0D2; --b-fg: #96583A;
   --c-bg: #DCE3EE; --c-fg: #455D7D;
+  --p-bg: #E8E2EE; --p-fg: #5B4876;   /* 多人讨论里的同学 */
   --good: #2D6E45; --good-soft: #E0EEDF;
   --warn: #8A5F12; --warn-soft: #F6EBD3;
   --bad: #A2432D; --bad-soft: #F7E0D8;
@@ -31,7 +32,7 @@
   :root {
     --page: #0B0F0E; --bg: #111715; --surface: #151B19; --raised: #1C2421; --ink: #E4EBE7; --muted: #98A49E; --line: #2A3430;
     --brand: #8FCBB2; --brand-ink: #0D1714; --accent: #E2996F; --accent-soft: #3A2A20; --lit: #21382D; --lit-ink: #A3D9B9;
-    --a-bg: #233328; --a-fg: #A7CDB0; --b-bg: #3A2A21; --b-fg: #E7B293; --c-bg: #232D3B; --c-fg: #A9BEDB;
+    --a-bg: #233328; --a-fg: #A7CDB0; --b-bg: #3A2A21; --b-fg: #E7B293; --c-bg: #232D3B; --c-fg: #A9BEDB; --p-bg: #2C2636; --p-fg: #C9B8E2;
     --good: #8AD2A3; --good-soft: #1C3326; --warn: #E3BE6E; --warn-soft: #382E18; --bad: #EE9A86; --bad-soft: #3D231C;
     --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 8px 24px rgb(0 0 0 / 30%);
     color-scheme: dark;
@@ -316,3 +317,25 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--b
 @media (max-width: 360px) { .modes { grid-template-columns: 1fr; } .two { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 .note a, .fineprint a { color: var(--brand); text-decoration: underline; text-underline-offset: 2px; }
+
+/* ---------- 多人讨论 ---------- */
+.tone-peer { background: var(--p-bg); color: var(--p-fg); }
+.msg.peer .bubble { border-color: color-mix(in srgb, var(--p-fg) 25%, var(--line)); }
+.room-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 max(16px, env(safe-area-inset-right, 0px)) 8px max(16px, env(safe-area-inset-left, 0px)); }
+.room-bar .members { flex: 1; min-width: 0; gap: 6px; }
+.room-bar .chip-btn { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; }
+.member { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 13px; padding: 4px 10px; border-radius: 16px; background: var(--bg); border: 1px solid var(--line); }
+.member.me { border-color: var(--brand); }
+.member.away { color: var(--muted); }
+.member small { font-size: 11px; color: var(--muted); }
+.presence { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+.presence.on { background: var(--good); }
+.room-status { width: 100%; font-size: 12.5px; color: var(--warn); }
+.lobby-note { font-size: 13.5px; color: var(--muted); text-align: center; padding: 4px 0; }
+.alert .link { flex: none; padding: 5px 8px; color: var(--bad); font-weight: 600; }
+.invite-link { display: block; padding: 10px 12px; border-radius: 10px; font-size: 12.5px; line-height: 1.6; word-break: break-all; user-select: all; }
+.join-card { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding: 20px 8px 4px; }
+.join-card h2 { font: 600 22px/1.4 var(--f-display); text-wrap: balance; }
+.join-card p { max-width: 30em; font-size: 14.5px; }
+.join-mark { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 18px; background: var(--p-bg); color: var(--p-fg); }
+.ghost.block { display: inline-flex; justify-content: center; align-items: center; gap: 6px; }

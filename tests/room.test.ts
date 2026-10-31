@@ -1,0 +1,263 @@
+// 多人房间：在 Node 里驱动 RoomCore，模拟房主和同学的连接
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { RoomCore, snapshotFor, validateSetup, type Generate, type SocketLike, type StoredRoom } from '../worker/src/room.ts';
+import type { RoomSetup, RoomView, ServerMessage } from '../shared/room.ts';
+import { ROOM_LIMITS } from '../shared/room.ts';
+import type { Purpose, SessionSnapshot } from '../shared/types.ts';
+import { debateTurns, slots } from '../src/lib/debate.ts';
+import { defaultConfig } from '../src/store.ts';
+
+const ROUNDTABLE = {
+  mode: 'roundtable', concept: '机会成本', topic: '选择的代价是什么？', keyPoints: ['放弃的最高价值', '沉没成本无关', '隐性成本'],
+  personas: [{ name: '林教授', title: '经济学', persona: '' }, { name: '周老师', title: '心理学', persona: '' }], opening: '大家先说说，什么叫机会成本？', model: 'm'
+};
+function debateSetup() {
+  const c = defaultConfig();
+  c.seats.B[0] = { type: 'human', bg: '' };   // 两个真人席位：A1、B1
+  return { mode: 'debate', concept: '机会成本', topic: '机会成本应计入决策', keyPoints: ['放弃的最高价值', '沉没成本无关'], seats: slots(c).map(s => ({ ...s, name: '' })), stages: c.stages, turns: debateTurns(c) };
+}
+
+interface Client extends SocketLike { inbox: ServerMessage[]; member: string | null; open: boolean; last(): RoomView }
+function setup(generate?: Generate) {
+  let stored: StoredRoom | undefined;
+  let now = 1_000_000;
+  const sockets: Client[] = [];
+  type Payload = { session: SessionSnapshot };
+  const calls: { purpose: Purpose; payload: Payload }[] = [];
+  let alarm = 0;
+  const gen: Generate = generate ?? (async (purpose, payload) => {
+    calls.push({ purpose, payload: payload as Payload });
+    if (purpose === 'review') return { data: { oneLine: '复盘', points: [], misconceptions: [], quiz: [] }, model: 'm' };
+    return { text: `AI 回复 ${calls.length}`, covered: [0], model: 'm' };
+  });
+  const core = new RoomCore({
+    load: async () => stored && structuredClone(stored), save: async r => { stored = structuredClone(r); }, destroy: async () => { stored = undefined; },
+    sockets: () => sockets.filter(s => s.open), setAlarm: async at => { alarm = at; }, generate: async (p, x) => { if (!generate) return gen(p, x); calls.push({ purpose: p, payload: x as Payload }); return generate(p, x); }, now: () => now
+  });
+  const connect = (): Client => {
+    const c: Client = {
+      inbox: [], member: null, open: true,
+      send(d) { this.inbox.push(JSON.parse(d)); }, close() { this.open = false; }, memberId() { return this.member; }, setMember(id) { this.member = id; },
+      last() { const m = [...this.inbox].reverse().find(x => x.type === 'state' || x.type === 'welcome') as { room: RoomView }; return m.room; }
+    };
+    sockets.push(c); return c;
+  };
+  const send = (c: Client, m: object) => core.onMessage(c, JSON.stringify(m));
+  return { core, connect, send, calls, get stored() { return stored; }, get alarm() { return alarm; }, tick(ms: number) { now += ms; } };
+}
+
+async function room(kind: 'roundtable' | 'debate' = 'roundtable', generate?: Generate) {
+  const t = setup(generate);
+  const created = await t.core.init({ roomId: 'r'.repeat(22), setup: kind === 'debate' ? debateSetup() : ROUNDTABLE, hostName: '束束' });
+  const host = t.connect();
+  await t.send(host, { type: 'resume', token: created.hostToken });
+  // 不用展开：stored、alarm 是 getter，要读到最新值
+  return Object.assign(t, { created, host });
+}
+const errors = (c: { inbox: ServerMessage[] }) => c.inbox.filter((m): m is Extract<ServerMessage, { type: 'error' }> => m.type === 'error').map(m => m.message);
+
+test('joining needs the room invite, not the backend password, and the invite is stored only as a hash', async () => {
+  const t = await room();
+  assert.equal(t.host.inbox[0].type, 'welcome');
+  const stranger = t.connect();
+  await t.send(stranger, { type: 'hello', invite: 'wrong', name: '路人' });
+  assert.equal(stranger.inbox[0].type, 'closed');
+  assert.equal(stranger.open, false);
+  const guest = t.connect();
+  await t.send(guest, { type: 'hello', invite: t.created.invite, name: '小明' });
+  const welcome = guest.inbox[0] as Extract<ServerMessage, { type: 'welcome' }>;
+  assert.equal(welcome.type, 'welcome');
+  assert.deepEqual(welcome.room.members.map(m => [m.name, m.host, m.online]), [['束束', true, true], ['小明', false, true]]);
+  const saved = JSON.stringify(t.stored);
+  assert.ok(!saved.includes(t.created.invite) && !saved.includes(t.created.hostToken) && !saved.includes(welcome.token), 'secrets are not stored in plain text');
+  assert.ok(!JSON.stringify(welcome.room).includes('Hash'), 'hashes never leave the room');
+  // 断线后凭成员凭据回来，还是同一个人
+  guest.open = false;
+  const again = t.connect();
+  await t.send(again, { type: 'resume', token: welcome.token });
+  assert.equal((again.inbox[0] as { memberId: string }).memberId, welcome.memberId);
+  assert.equal(again.last().members.length, 2);
+});
+
+test('roundtable: people speak in turn and an AI guest answers after each person', async () => {
+  const t = await room();
+  const guest = t.connect();
+  await t.send(guest, { type: 'hello', invite: t.created.invite, name: '小明' });
+  await t.send(guest, { type: 'say', text: '我先说' });
+  assert.deepEqual(errors(guest), ['讨论还没有开始。']);
+  await t.send(guest, { type: 'start' });
+  assert.deepEqual(errors(guest).at(-1), '只有房主可以这样做。');
+  await t.send(t.host, { type: 'start' });
+  const hostId = t.host.member!, guestId = guest.member!;
+  assert.deepEqual(t.host.last().speaker, { kind: 'member', id: hostId });
+  await t.send(guest, { type: 'say', text: '抢话' });
+  assert.equal(errors(guest).at(-1), '还没轮到你发言。');
+
+  await t.send(t.host, { type: 'say', text: '机会成本是放弃的最好选择。' });
+  let v = guest.last();
+  assert.deepEqual(v.entries.filter(e => e.kind === 'msg').map(e => e.kind === 'msg' && e.name), ['林教授', '束束', '周老师']);
+  assert.deepEqual(v.speaker, { kind: 'member', id: guestId }, 'next person after the AI guest');
+  assert.deepEqual(v.covered, [0]);
+  // AI 看到的所有真人都是学习者
+  assert.match(JSON.stringify(t.calls[0].payload.session.messages), /束束（学习者）/);
+
+  await t.send(guest, { type: 'say', text: '沉没成本不该算进去。' });
+  v = t.host.last();
+  assert.equal(v.entries.filter(e => e.kind === 'msg').at(-1)!.kind === 'msg' && (v.entries.at(-1) as { name: string }).name, '林教授');
+  assert.deepEqual(v.speaker, { kind: 'member', id: hostId }, 'wraps around to the host');
+
+  // 房主可以点名，也可以跳过
+  await t.send(t.host, { type: 'callOn', target: { kind: 'member', id: guestId } });
+  assert.deepEqual(t.host.last().speaker, { kind: 'member', id: guestId });
+  await t.send(t.host, { type: 'pass' });
+  assert.deepEqual(t.host.last().speaker, { kind: 'member', id: hostId });
+  const before = t.calls.length;
+  await t.send(t.host, { type: 'callOn', target: { kind: 'ai', id: 'r1' } });
+  assert.equal(t.calls.length, before + 1);
+});
+
+test('roundtable skips people who are offline', async () => {
+  const t = await room();
+  const guest = t.connect();
+  await t.send(guest, { type: 'hello', invite: t.created.invite, name: '小明' });
+  await t.send(t.host, { type: 'start' });
+  guest.open = false;
+  await t.core.onClose();
+  await t.send(t.host, { type: 'say', text: '我先说' });
+  assert.deepEqual(t.host.last().speaker, { kind: 'member', id: t.host.member });
+});
+
+test('AI failure stops the room with a visible error and keeps progress; the host retries', async () => {
+  let fail = true;
+  const t = await room('roundtable', async () => { if (fail) throw new Error('boom'); return { text: '好的', covered: [] }; });
+  await t.send(t.host, { type: 'start' });
+  await t.send(t.host, { type: 'say', text: '我先说' });
+  let v = t.host.last();
+  assert.equal(v.error, 'AI 发言失败。');
+  assert.equal(v.aiBusy, null);
+  assert.equal(v.speaker?.kind, 'ai', 'still the AI guest’s turn');
+  assert.equal(v.entries.filter(e => e.kind === 'msg').length, 2, 'nothing was made up');
+  fail = false;
+  await t.send(t.host, { type: 'retry' });
+  v = t.host.last();
+  assert.equal(v.error, '');
+  assert.equal((v.entries.at(-1) as { text: string }).text, '好的');
+});
+
+test('debate: members claim human seats in order, AI seats speak by themselves, the host can skip or hand a seat to AI', async () => {
+  const t = await room('debate');
+  const guest = t.connect();
+  await t.send(guest, { type: 'hello', invite: t.created.invite, name: '小明' });
+  const listener = t.connect();
+  await t.send(listener, { type: 'hello', invite: t.created.invite, name: '小红' });
+  let v = t.host.last();
+  assert.deepEqual(v.members.map(m => m.seat), ['A1', 'B1', undefined], 'host A1, first guest B1, third person listens');
+  await t.send(t.host, { type: 'start' });
+  // 第一位是 A1（房主）
+  await t.send(guest, { type: 'say', text: '我抢先' });
+  assert.equal(errors(guest).at(-1), '还没轮到你的席位发言。');
+  await t.send(t.host, { type: 'say', text: '我方立论……' });
+  v = t.host.last();
+  assert.equal(v.cursor, 1);
+  await t.send(guest, { type: 'say', text: '反方立论……' });
+  v = t.host.last();
+  // 接下来 A2 质询、B3 答辩……都是 AI 席位，自动进行，直到再次轮到真人或比赛结束
+  const turns = v.setup.turns;
+  assert.ok(v.cursor > 2);
+  assert.ok(v.status === 'finished' || turns[v.cursor].role.type === 'human');
+  const msgs = v.entries.filter(e => e.kind === 'msg');
+  assert.equal(msgs[0].kind === 'msg' && msgs[0].name, '正方 1 辩（束束）');
+  assert.equal(msgs[1].kind === 'msg' && msgs[1].name, '反方 1 辩（小明）');
+  if (v.status === 'live') {
+    const seatOwner = v.members.find(m => m.seat === turns[v.cursor].role.id)!;
+    const other = seatOwner.id === t.host.member ? guest : t.host;
+    if (other !== t.host) {
+      await t.send(other, { type: 'pass' });
+      assert.equal(errors(other).at(-1), '只有当前席位的同学或房主可以跳过。');
+    }
+    const cursor = v.cursor;
+    await t.send(t.host, { type: 'aiTakeover' });
+    v = t.host.last();
+    assert.ok(v.cursor > cursor);
+    assert.equal(v.entries.find(e => e.kind === 'msg' && e.stage === turns[cursor].stage && e.who === turns[cursor].role.id && !e.human) !== undefined, true, 'AI spoke for the seat');
+  }
+});
+
+test('reviews are personal: only my own words count as the learner’s', async () => {
+  const t = await room();
+  const guest = t.connect();
+  await t.send(guest, { type: 'hello', invite: t.created.invite, name: '小明' });
+  await t.send(t.host, { type: 'start' });
+  await t.send(t.host, { type: 'say', text: '房主的理解' });
+  await t.send(guest, { type: 'say', text: '小明的理解' });
+  await t.send(guest, { type: 'ask', reqId: 'x', purpose: 'review', reflections: [] });
+  assert.match(JSON.stringify(guest.inbox.at(-1)), /讨论结束后才能复盘/);
+  await t.send(guest, { type: 'finish' });
+  assert.equal(errors(guest).at(-1), '只有房主可以这样做。');
+  await t.send(t.host, { type: 'finish' });
+  assert.equal(t.host.last().status, 'finished');
+  assert.ok(t.alarm <= 1_000_000 + ROOM_LIMITS.afterFinishMs, 'room is deleted an hour after finishing');
+
+  await t.send(guest, { type: 'ask', reqId: 'r1', purpose: 'review', reflections: ['我的小结'] });
+  const answer = guest.inbox.at(-1) as Extract<ServerMessage, { type: 'answer' }>;
+  assert.equal(answer.type, 'answer'); assert.equal(answer.ok, true); assert.equal(answer.reqId, 'r1');
+  const msgs = t.calls.at(-1)!.payload.session.messages;
+  assert.deepEqual(msgs.filter(m => m.name.includes('学习者')).map(m => m.text), ['小明的理解', '我的小结']);
+  assert.ok(msgs.some(m => m.name === '束束（同学）' && m.text === '房主的理解'));
+  // 只发给提问的人
+  assert.ok(!t.host.inbox.some(m => m.type === 'answer'));
+  // 旁听者没有发言，不能复盘
+  const late = t.connect();
+  await t.send(late, { type: 'hello', invite: t.created.invite, name: '迟到' });
+  assert.equal(late.inbox[0].type, 'closed', 'finished rooms do not accept new members');
+});
+
+test('limits protect the host’s AI quota', async () => {
+  const t = await room();
+  await t.send(t.host, { type: 'start' });
+  for (let i = 0; i < ROOM_LIMITS.personalCalls; i++) await t.send(t.host, { type: 'ask', reqId: String(i), purpose: 'hint' });
+  await t.send(t.host, { type: 'ask', reqId: 'over', purpose: 'hint' });
+  assert.match(JSON.stringify(t.host.inbox.at(-1)), /次数已经用完/);
+  // 人数上限
+  const joined = [];
+  for (let i = 0; i < ROOM_LIMITS.members + 1; i++) { const c = t.connect(); await t.send(c, { type: 'hello', invite: t.created.invite, name: '同学' + i }); joined.push(c); }
+  assert.equal(joined.at(-1)!.inbox[0].type, 'closed');
+  assert.equal(t.host.last().members.length, ROOM_LIMITS.members);
+  // 过长的发言、伪造的讲解目标
+  await t.send(t.host, { type: 'say', text: 'x'.repeat(ROOM_LIMITS.textLength + 1) });
+  assert.equal(errors(t.host).at(-1), '发言无效。');
+});
+
+test('the room deletes itself when it expires', async () => {
+  const t = await room();
+  assert.equal(t.alarm, 1_000_000 + ROOM_LIMITS.lifetimeMs);
+  await t.core.alarm();
+  assert.ok(t.stored, 'not yet');
+  t.tick(ROOM_LIMITS.lifetimeMs);
+  await t.core.alarm();
+  assert.equal(t.stored, undefined);
+  assert.equal(t.host.inbox.at(-1)!.type, 'closed');
+});
+
+test('setup is validated on the backend', () => {
+  assert.throws(() => validateSetup({ ...ROUNDTABLE, mode: 'socratic' }), /只支持圆桌讨论和正反辩论/);
+  assert.throws(() => validateSetup({ ...ROUNDTABLE, keyPoints: ['一'] }), /2 到 6/);
+  assert.throws(() => validateSetup({ ...ROUNDTABLE, personas: [] }), /至少需要一位/);
+  const d = debateSetup();
+  assert.throws(() => validateSetup({ ...d, turns: [{ ...d.turns[0], role: { id: 'Z9' } }] }), /比赛流程无效/);
+  assert.throws(() => validateSetup({ ...d, seats: d.seats.map(s => ({ ...s, type: 'ai' })) }), /真人席位/);
+  const ok = validateSetup(d) as RoomSetup;
+  assert.equal(ok.turns.length, d.turns.length);
+  assert.equal(ok.seats[0].name, '正方 1 辩');
+});
+
+test('snapshot labels only the viewer as the learner', () => {
+  const room = {
+    setup: validateSetup(ROUNDTABLE), members: [{ id: 'h', name: '束束' }, { id: 'g', name: '小明' }], status: 'live', cursor: 0,
+    entries: [{ id: '1', kind: 'msg', who: 'h', memberId: 'h', name: '束束', text: 'a', source: 'human' }, { id: '2', kind: 'msg', who: 'r0', name: '林教授', text: 'b', source: 'api' }]
+  } as unknown as StoredRoom;
+  assert.deepEqual(snapshotFor(room, null).messages.map(m => m.name), ['束束（学习者）', '林教授']);
+  assert.deepEqual(snapshotFor(room, 'g').messages.map(m => m.name), ['束束（同学）', '林教授']);
+  assert.deepEqual(snapshotFor(room, 'h').messages.map(m => m.name), ['束束（学习者）', '林教授']);
+});

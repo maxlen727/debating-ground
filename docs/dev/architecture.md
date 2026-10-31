@@ -1,6 +1,6 @@
 # 架构
 
-## 当前形态（v0.6）
+## 当前形态（v0.7）
 
 ```
 浏览器（React 界面）
@@ -10,6 +10,10 @@
    │
    └─ 自己部署的后端 worker/src/index.ts ─────▶ AI 服务商
        （Cloudflare Worker，跨域 + 访问口令，密钥在加密变量里）
+          │
+          └─ 多人房间 worker/src/room.ts（Durable Object，一场讨论一个）
+               ▲ WebSocket，凭房间邀请码加入
+          同学的浏览器
 ```
 
 两种后端提供同样的 `/api/config`、`/api/test`、`/api/generate`，都复用 `server/ai.ts` 组装提示词和校验输出。演示模式不经过后端，回复来自 `src/lib/demo.ts`。
@@ -51,12 +55,20 @@ Worker 与本机服务的差别：
 - `update(draft => …)` 在副本上修改再整体替换，组件通过 `useApp()` 订阅。
 - 持久化到 `localStorage` 的 `sibian-v3`。修改结构时升级版本号，并在 `load()` 里迁移旧数据。
 
+## 多人房间
+
+- **创建**：房主带访问口令请求 `POST /api/rooms`，提交准备好的讨论设置（`RoomSetup`，见 `shared/room.ts`）。后端重新校验设置（席位、赛制、长度），随机生成房间编号、邀请码和房主凭据；只保存邀请码和凭据的 SHA-256 哈希。
+- **加入**：浏览器连接 `wss://…/api/rooms/<编号>/ws`（只接受 `ALLOWED_ORIGINS` 的网站），第一条消息带邀请码和名字（`hello`），或者带自己的成员凭据（`resume`，用于断线重连）。同学不需要访问口令。
+- **状态以后端为准**：浏览器只发意图（`say`、`pass`、`callOn`、`aiTakeover`、`retry`、`start`、`finish`），房间判断是否轮到这个人，然后把完整状态（`RoomView`）广播给所有人。界面用 `src/lib/room.ts` 的 `toSession()` 把它映射成本地的 `Session`，所以讨论页、复盘和知识库沿用单人模式的代码。
+- **AI 发言**在房间里进行，使用 `server/ai.ts` 的同一套提示词与校验。AI 看到的快照里，所有真人都标为“学习者”。
+- **个人请求**（`ask`：提示、讲解、小结、复盘）只回复给提问的人。快照里只有这个人标为“学习者”，其他真人标为“同学”，所以复盘只依据他自己的发言和小结。小结只存在各自的设备上，复盘时一起提交。
+- **上限与清理**：人数、AI 调用次数、每人个人请求次数、发言长度、记录条数都有上限（`ROOM_LIMITS`）。房间用 Durable Object 的 alarm 在结束 1 小时后或创建 4 小时后删除全部存储。
+- **测试**：`RoomCore` 不依赖 Workers 运行时，`tests/room.test.ts` 直接驱动它；`tests/room-flow.test.ts` 让真实的 actions 通过假 WebSocket 连到 `RoomCore`。
+
 ## 规划中的形态
 
 ```
 安卓 App（单人）──────────────▶ AI 服务商        密钥在 Android Keystore
-
-多人房间 ──▶ 自己部署的 Worker + Durable Objects（一场讨论一个房间）──▶ AI 服务商
 ```
 
 见[路线图](../product/roadmap)和[密钥与隐私](../guide/api-and-privacy)。
