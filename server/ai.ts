@@ -217,13 +217,16 @@ export function finalize(request: BuiltRequest, result: { text: string; model: s
 }
 
 /* ---------- 调用 Chat Completions ---------- */
-export async function complete(config: ApiConfig, messages: ChatMessage[], { fetchImpl = fetch, signal, timeoutMs = 90000 }: { fetchImpl?: typeof fetch; signal?: AbortSignal; timeoutMs?: number } = {}) {
+// redirect：Node 用 'error'；Cloudflare Workers 不支持 'error'，用 'manual' 并在下面把 3xx 当作失败。
+// 两种方式效果相同：为保护密钥，绝不跟随服务商的重定向。
+export async function complete(config: ApiConfig, messages: ChatMessage[], { fetchImpl = fetch, signal, timeoutMs = 90000, redirect = 'error' }: { fetchImpl?: typeof fetch; signal?: AbortSignal; timeoutMs?: number; redirect?: 'error' | 'manual' } = {}) {
   if (signal?.aborted) throw new ApiError('请求已取消。', 499);
   const controller = new AbortController(); let timedOut = false;
   const cancel = () => controller.abort(); signal?.addEventListener('abort', cancel, { once: true });
   const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
   try {
-    const res = await fetchImpl(config.endpoint, { method: 'POST', redirect: 'error', signal: controller.signal, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + config.apiKey }, body: JSON.stringify({ model: config.model, messages, stream: false }) });
+    const res = await fetchImpl(config.endpoint, { method: 'POST', redirect, signal: controller.signal, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + config.apiKey }, body: JSON.stringify({ model: config.model, messages, stream: false }) });
+    if (res.status >= 300 && res.status < 400) { await res.body?.cancel(); throw new ApiError('接口返回了重定向。为保护密钥，不跟随重定向，请填写服务商文档里的准确地址。', 502); }
     if (!res.ok) {
       await res.body?.cancel();
       const labels: Record<number, string> = { 401: '密钥无效或已过期', 403: '接口拒绝访问，请检查权限', 404: '接口地址或模型不存在', 429: '额度不足或请求过于频繁' };

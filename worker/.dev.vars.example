@@ -1,0 +1,6 @@
+# 本地运行 npx wrangler dev 时使用。复制为 .dev.vars 再填写（.dev.vars 不会提交）。
+API_KEY=
+API_BASE_URL=https://api.example.com/v1
+MODEL=
+ACCESS_PASSWORD=
+ALLOWED_ORIGINS=http://127.0.0.1:5173,http://127.0.0.1:4173

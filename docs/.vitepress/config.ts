@@ -35,6 +35,7 @@ export default defineConfig({
         ] },
         { text: '连接 AI', items: [
           { text: '密钥与隐私', link: '/guide/api-and-privacy' },
+          { text: '自己部署后端', link: '/guide/self-host' },
           { text: '常见问题', link: '/guide/faq' }
         ] }
       ],

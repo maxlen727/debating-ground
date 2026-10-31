@@ -16,7 +16,7 @@ export function Learn() {
     <div className="screen learn">
       <header className="learn-head">
         <div className="brand"><span className="brand-mark" aria-hidden="true">〞</span>思辨场</div>
-        <button className="chip-btn" onClick={() => go('settings')}>{config.aiMode === 'api' ? (ai.configured ? '自带 API' : 'API 未连接') : '演示模式'}</button>
+        <button className="chip-btn" onClick={() => go('settings')}>{config.aiMode === 'remote' ? (ai.remoteVerified || config.remote.url ? '我的后端' : '后端未连接') : config.aiMode === 'api' ? (ai.configured ? '本机服务' : '本机未连接') : '演示模式'}</button>
       </header>
 
       <div className="stack pad">
@@ -59,7 +59,7 @@ export function Learn() {
         </section>
 
         {library.length === 0 && <p className="fineprint">讨论结束后会生成理解复盘，存成知识卡片，按 1、3、7、14 天的间隔提醒你回顾。</p>}
-        {config.aiMode === 'demo' && <p className="fineprint">当前是演示模式：“机会成本”有完整示例，其他概念用通用模板。要让 AI 真正参与讨论，需要在电脑上运行思辨场，并在设置里连接自己的 API。</p>}
+        {config.aiMode === 'demo' && <p className="fineprint">当前是演示模式：“机会成本”有完整示例，其他概念用通用模板。要让 AI 真正参与讨论，在设置里连接你自己部署的后端，或者在电脑上运行思辨场。</p>}
       </div>
 
       <div className="dock">

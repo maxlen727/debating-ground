@@ -38,22 +38,24 @@
 
 ## 怎么开始
 
-**在线体验**：打开 [maxlen727.github.io/debating-ground/app](https://maxlen727.github.io/debating-ground/app/)，不用安装。在线版是演示模式，AI 回复来自预设模板，推荐用“机会成本”体验完整流程。
+**在线体验**：打开 [maxlen727.github.io/debating-ground/app](https://maxlen727.github.io/debating-ground/app/)，不用安装。在线版默认是演示模式，AI 回复来自预设模板，推荐用“机会成本”体验完整流程。
 
-**和真实 AI 讨论**：目前需要在电脑上运行。安装 [Node.js](https://nodejs.org/) 22.18 以上，下载本项目后：
+**和真实 AI 讨论**，有两种方式：
 
-- Windows：双击 `start.cmd`
-- macOS / Linux：`npm install && npm run build && npm start`
+- **在网页上**：把思辨场的后端[部署到你自己的 Cloudflare 账号](https://maxlen727.github.io/debating-ground/guide/self-host)（免费额度就够），然后在在线版的 **设置** 里选择 **我的后端**，填写后端地址和访问口令。
+- **在电脑上运行**：安装 [Node.js](https://nodejs.org/) 22.18 以上，下载本项目后：
 
-然后打开 http://127.0.0.1:4173 ，在 **设置** 里填写你的 AI 服务商地址、模型和 API Key。支持兼容 OpenAI Chat Completions 协议的服务。详见[快速开始](https://maxlen727.github.io/debating-ground/guide/getting-started)。
+  Windows 双击 `start.cmd`；macOS / Linux 运行 `npm install && npm run build && npm start`。
+
+  然后打开 http://127.0.0.1:4173 ，在 **设置** 里填写你的 AI 服务商地址、模型和 API Key。支持兼容 OpenAI Chat Completions 协议的服务。详见[快速开始](https://maxlen727.github.io/debating-ground/guide/getting-started)。
 
 ## 你的密钥去了哪里
 
 只要密钥经过某台服务器，那台服务器就能看到它，我们没法用技术手段证明自己没偷看。所以思辨场的方向是**尽量让密钥不经过我们**：
 
-- **现在**：思辨场在你自己的电脑上运行，密钥只保存在本机服务的内存里，不写入硬盘、浏览器存储或日志，直接发往你选择的服务商。
+- **在电脑上运行**：密钥只保存在本机服务的内存里，不写入硬盘、浏览器存储或日志，直接发往你选择的服务商。
+- **自己部署的后端**：后端运行在你自己的 Cloudflare 账号里，密钥存成加密变量，浏览器里不需要密钥，只保存后端地址和访问口令。部署在你自己的账号里，你只需要信任你自己。
 - **安卓 App（开发中）**：单人模式由手机直接请求 AI 服务商，密钥存在系统的安全存储里。**思辨场团队的服务器全程碰不到它。**
-- **自己部署后端（规划中）**：多人联网和网页版需要后端时，可以一键部署到你自己的 Cloudflare 账号，只需要信任你自己。
 
 不管用哪种方式，都建议**专门为思辨场新建一个 Key 并设置消费上限**，不用了就作废。讨论记录和知识库只保存在你的设备上，不接入任何第三方统计。详见[密钥与隐私](https://maxlen727.github.io/debating-ground/guide/api-and-privacy)。
 
@@ -63,7 +65,7 @@
 - [x] 理解复盘、知识库与间隔复习
 - [x] 移动优先的界面，深色模式
 - [ ] 安卓 App，单人模式直连服务商
-- [ ] 可一键自部署的后端（Cloudflare Workers）
+- [x] 可自部署的后端（Cloudflare Workers），网页版也能用真实 AI
 - [ ] 多台设备联网讨论
 - [ ] 流式输出、知识库跨设备同步
 

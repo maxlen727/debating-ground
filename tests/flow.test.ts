@@ -16,7 +16,7 @@ const realFetch = globalThis.fetch;
 function mockFetch(fn: (body: { purpose: string; payload: Record<string, unknown> }) => Response | Promise<Response>) {
   globalThis.fetch = (async (_url: unknown, init?: RequestInit) => fn(JSON.parse(String(init?.body ?? '{}')))) as typeof fetch;
 }
-const apiOn = () => update(s => { s.config.aiMode = 'api'; s.ai = { available: true, configured: true, verified: true, baseURL: '', model: 'chosen' }; });
+const apiOn = () => update(s => { s.config.aiMode = 'api'; s.ai = { available: true, configured: true, verified: true, baseURL: '', model: 'chosen', remoteVerified: false, remoteModel: '' }; });
 const learningPlan = () => update(s => {
   s.plan = { mode: 'socratic', concept: '机会成本', topic: '代价是什么？', keyPoints: ['放弃的最佳选择', '区别于沉没成本'], opening: '你觉得呢？', personas: [{ id: 'r0', tone: 'c', name: '苏珩', title: '追问者', persona: '' }], source: 'api', model: 'chosen', previous: null };
 });
@@ -107,4 +107,28 @@ test('spaced repetition and debate turn order', () => {
   assert.deepEqual(turns.slice(0, 2).map(t => t.role.id), ['A1', 'B1']);
   assert.equal(turns.find(t => t.action === '质询')!.target, 'B2');
   assert.deepEqual(turns.slice(-2).map(t => t.role.id), ['B2', 'A2']);
+});
+
+test('remote backend: connect with the access password, then generate through it', async () => {
+  const seen: { url: string; auth: string | null; body: string }[] = [];
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    seen.push({ url: String(url), auth: new Headers(init?.headers).get('Authorization'), body: String(init?.body ?? '') });
+    if (String(url).endsWith('/api/config')) return new Response(JSON.stringify({ configured: true, verified: false, baseURL: '', model: 'team-model' }));
+    if (String(url).endsWith('/api/test')) return new Response(JSON.stringify({ text: '连接成功。', model: 'team-model' }));
+    return new Response(JSON.stringify({ text: '那做家教的 500 元呢？', covered: [1], model: 'team-model' }));
+  }) as typeof fetch;
+  const { connectRemote, checkRemoteURL } = await import('../src/lib/api.ts');
+  assert.throws(() => checkRemoteURL('http://api.example.com'), /HTTPS/);
+  await connectRemote('https://api.example.workers.dev/', 'open-sesame', new AbortController().signal);
+  assert.equal(getState().config.aiMode, 'remote');
+  assert.equal(getState().config.remote.url, 'https://api.example.workers.dev');
+  assert.equal(getState().ai.remoteVerified, true);
+  learningPlan(); actions.startSession();
+  await actions.send('少玩了一天。');
+  const gen = seen.at(-1)!;
+  assert.equal(gen.url, 'https://api.example.workers.dev/api/generate');
+  assert.equal(gen.auth, 'Bearer open-sesame');
+  assert.deepEqual(getState().session!.covered, [1]);
+  // 口令不进入讨论记录或知识库
+  assert.ok(!JSON.stringify(getState().session).includes('open-sesame'));
 });
