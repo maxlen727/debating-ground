@@ -21,6 +21,7 @@
 | `src/screens/`、`src/components/` | React 界面 | 只负责展示和调用 actions |
 | `src/styles.css` | 全部样式与设计令牌 | 颜色只用令牌，见“界面规范” |
 | `tests/` | `node:test` 测试 | |
+| `docs/` | 产品文档站（VitePress），截图在 `docs/public/screenshots/` | 用户可见的行为变了，同一个 PR 里更新对应文档页 |
 
 ## 命令
 
@@ -31,6 +32,7 @@ npm test             # 全部测试
 npm run build        # 构建界面到 dist/
 npm run server       # 本机服务 127.0.0.1:4173
 npm run dev          # 界面热更新 127.0.0.1:5173（需同时运行 server）
+npm run docs:dev     # 文档站热更新
 ```
 
 **每次提交前必须通过 `npm run check && npm test && npm run build`。** 没跑过就不要说“已完成”。如果某项失败且与你的改动无关，在 PR 里写明，不要顺手大改。
@@ -92,5 +94,5 @@ npm run dev          # 界面热更新 127.0.0.1:5173（需同时运行 server�
 1. 代码改完，`npm run check && npm test && npm run build` 全部通过。
 2. 新行为有测试覆盖（流程改动加到 `tests/flow.test.ts`，提示词改动加到 `tests/ai.test.ts`）。
 3. 界面改动在手机宽度、浅色和深色下检查过。
-4. 用户可见的行为变了，就更新 `README.md`。
+4. 用户可见的行为变了，就更新 `README.md` 和 `docs/` 里对应的页面；界面明显变了，重新截图。
 5. PR 描述如实写明做了什么、没做什么、有什么不确定。
