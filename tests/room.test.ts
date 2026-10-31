@@ -261,3 +261,22 @@ test('snapshot labels only the viewer as the learner', () => {
   assert.deepEqual(snapshotFor(room, 'g').messages.map(m => m.name), ['束束（同学）', '林教授']);
   assert.deepEqual(snapshotFor(room, 'h').messages.map(m => m.name), ['束束（学习者）', '林教授']);
 });
+
+test('room AI turns carry terms, and only marked terms can be looked up', async () => {
+  const t = await room('roundtable', async (purpose, payload) => {
+    if (purpose === 'term') return { data: { term: (payload as { term: string }).term, definition: '释义', relation: '' } };
+    return { text: '时间有稀缺性。', covered: [], terms: ['稀缺性'] };
+  });
+  await t.send(t.host, { type: 'start' });
+  await t.send(t.host, { type: 'say', text: '我先说' });
+  const ai = t.host.last().entries.filter(e => e.kind === 'msg').at(-1)!;
+  assert.ok(ai.kind === 'msg' && ai.terms?.[0] === '稀缺性');
+  await t.send(t.host, { type: 'ask', reqId: 'a', purpose: 'term', entryId: ai.id, term: '稀缺性' });
+  assert.deepEqual((t.host.inbox.at(-1) as { result: { data: { definition: string } } }).result.data.definition, '释义');
+  await t.send(t.host, { type: 'ask', reqId: 'b', purpose: 'term', entryId: ai.id, term: '随便问个词' });
+  assert.match(JSON.stringify(t.host.inbox.at(-1)), /找不到这个词/);
+  // 讨论结束后还能查
+  await t.send(t.host, { type: 'finish' });
+  await t.send(t.host, { type: 'ask', reqId: 'c', purpose: 'term', entryId: ai.id, term: '稀缺性' });
+  assert.equal((t.host.inbox.at(-1) as { ok: boolean }).ok, true);
+});

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeConfig, buildRequest, finalize, splitCover, extractJSON, complete } from '../server/ai.ts';
+import { normalizeConfig, buildRequest, finalize, splitCover, splitTerms, extractJSON, complete } from '../server/ai.ts';
 import type { SessionSnapshot } from '../shared/types.ts';
 
 const cfg = { baseURL: 'https://example.com/v1/', apiKey: 'test-secret', model: 'chosen-model' };
@@ -91,4 +91,36 @@ test('abort and timeout propagate as recoverable errors', async () => {
   await assert.rejects(complete(normalizeConfig(cfg), [], { signal: controller.signal }), /取消/);
   const waits = ((_url: unknown, { signal }: RequestInit) => new Promise((_, reject) => signal!.addEventListener('abort', () => reject(signal!.reason), { once: true }))) as typeof fetch;
   await assert.rejects(complete(normalizeConfig(cfg), [], { fetchImpl: waits, timeoutMs: 15 }), /超时/);
+});
+
+test('discussion and debate turns mark unfamiliar terms, but never the concept or its key points', () => {
+  for (const r of [buildRequest('discuss', { session: learning, roleId: 'r0' }), buildRequest('debate', { session: debate })]) {
+    assert.match(r.messages[0].content, /\[\[术语:词1,词2\]\]/);
+    assert.match(r.messages[0].content, /不要写讨论的概念本身或要点清单/);
+    assert.deepEqual(r.exclude, ['机会成本', '放弃的最佳选择', '区别于沉没成本']);
+  }
+  const r = buildRequest('discuss', { session: learning, roleId: 'r0' });
+  const raw = '时间也有稀缺性，就像边际效用递减一样。想想沉没成本呢？\n[[要点:1]]\n[[术语:稀缺性、边际效用,沉没成本,机会成本,不存在的词]]';
+  const out = finalize(r, { text: raw, model: 'm' }) as { text: string; covered: number[]; terms: string[] };
+  assert.equal(out.text, '时间也有稀缺性，就像边际效用递减一样。想想沉没成本呢？', 'both markers are removed');
+  assert.deepEqual(out.covered, [0]);
+  assert.deepEqual(out.terms, ['稀缺性', '边际效用'], 'key points, the concept and words not in the text are dropped');
+  // 标记写在要点标记前面也能识别；没有术语就是空数组
+  assert.deepEqual(splitTerms('甲乙丙\n[[术语:甲乙]]\n[[要点:]]').terms, ['甲乙']);
+  assert.deepEqual((finalize(r, { text: '好的。\n[[要点:]]', model: 'm' }) as { terms: string[] }).terms, []);
+  // 小结反馈不标术语
+  assert.equal('terms' in finalize(buildRequest('reflect', { session: learning, answer: '放弃的' }), { text: '对。\n[[要点:1]]', model: 'm' }), false);
+});
+
+test('term cards explain the word without teaching the key points', () => {
+  const r = buildRequest('term', { session: learning, term: '稀缺性', quote: '时间也有稀缺性' });
+  assert.equal(r.output, 'term');
+  assert.match(r.messages[0].content, /definition/); assert.match(r.messages[0].content, /不要讲解资料中 keyPoints/);
+  assert.equal(user(r).term, '稀缺性');
+  assert.deepEqual(user(r).keyPoints, learning.keyPoints);
+  assert.throws(() => buildRequest('term', { session: learning, term: '沉没成本' }), /留给讨论/);
+  assert.throws(() => buildRequest('term', { session: learning, term: '' }));
+  const card = finalize(r, { text: '```json\n{"definition":"资源有限。","relation":"所以选择有代价。"}\n```', model: 'm' }) as { data: { term: string; definition: string; relation: string } };
+  assert.deepEqual(card.data, { term: '稀缺性', definition: '资源有限。', relation: '所以选择有代价。' });
+  assert.throws(() => finalize(r, { text: '{"relation":"x"}', model: 'm' }), /没有返回这个词的解释/);
 });

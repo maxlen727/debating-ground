@@ -1,5 +1,5 @@
 // 学习流程的所有操作：准备 → 讨论 → 小结 → 复盘 → 知识库
-import type { ChatMessage, ExplainKind, Previous, Review, SessionSnapshot } from '../shared/types.ts';
+import type { ChatMessage, ExplainKind, Previous, Review, SessionSnapshot, TermCard } from '../shared/types.ts';
 import { getState, go, toast, uid, update } from './store.ts';
 import type { Card, Session } from './store.ts';
 import { runAI } from './lib/ai.ts';
@@ -152,7 +152,7 @@ export async function speak(roleId: string, task?: string) {
   if (!res || session()?.id !== s.id) return;
   update(st => {
     const ss = st.session!;
-    ss.entries.push({ id: uid(), kind: 'msg', who: role.id, name: role.name, text: res.text, source: res.source, model: res.model });
+    ss.entries.push({ id: uid(), kind: 'msg', who: role.id, name: role.name, text: res.text, source: res.source, model: res.model, terms: res.terms?.length ? res.terms : undefined });
     markCovered(ss, res.covered);
   });
 }
@@ -187,7 +187,7 @@ export async function generateSeat() {
   if (!res || now?.id !== s.id || now.cursor !== s.cursor || now.finished) return;
   update(st => {
     const ss = st.session!;
-    ss.entries.push({ id: uid(), kind: 'msg', who: t.role.id, name: seatName(t.role), team: t.role.team, text: res.text, stage: t.stage, action: t.action, target: t.target, source: res.source, model: res.model });
+    ss.entries.push({ id: uid(), kind: 'msg', who: t.role.id, name: seatName(t.role), team: t.role.team, text: res.text, stage: t.stage, action: t.action, target: t.target, source: res.source, model: res.model, terms: res.terms?.length ? res.terms : undefined });
     markCovered(ss, res.covered);
     ss.cursor++;
   });
@@ -290,6 +290,33 @@ export async function submitReflection(id: string) {
   });
 }
 
+/* ---------- 术语小卡片 ---------- */
+// 讨论里 AI 标出的陌生词：轻点查看释义。查过的词记在这次讨论里，复盘时存进知识卡片。
+export async function openTerm(term: string, messageId: string) {
+  const s = session(); if (!s) return;
+  update(st => { st.ui.sheet = null; });
+  const known = s.glossary?.find(g => g.term === term);
+  if (known) return update(st => { st.ui.term = { ...known, messageId }; });
+  if (getState().ui.busy) return toast('稍等，上一个请求还没有完成。');
+  const m = s.entries.find((x): x is ChatMessage => x.id === messageId && x.kind === 'msg');
+  if (!m?.terms?.includes(term)) return;
+  update(st => { st.ui.term = { term, definition: '', relation: '', messageId }; });
+  const res = s.room
+    ? await room.ask<{ data: TermCard }>({ type: 'ask', purpose: 'term', entryId: messageId, term }, `正在查「${term}」`)
+    : await runAI('term', { session: snapshot(s), term, quote: m.text.slice(0, 400) }, `正在查「${term}」`);
+  update(st => {
+    if (!res) { st.ui.term = null; return; }
+    const card = { ...res.data, term };
+    if (st.ui.term?.term === term) st.ui.term = { ...card, messageId };
+    const ss = st.session;
+    if (ss?.id !== s.id) return;
+    ss.glossary = [...(ss.glossary ?? []).filter(g => g.term !== term), card];
+    // 已经复盘过的讨论，直接补进知识卡片
+    const saved = st.library.find(c => c.sessionId === ss.id);
+    if (saved) saved.terms = ss.glossary;
+  });
+}
+
 /* ---------- 复盘与知识库 ---------- */
 export async function finish() {
   if (getState().ui.busy) return;
@@ -313,7 +340,7 @@ export async function generateReview() {
     const existing = st.library.find(c => c.sessionId === ss.id);
     const card: Card = {
       id: existing?.id ?? uid(), sessionId: ss.id, concept: ss.concept, topic: ss.topic, mode: ss.mode, created: existing?.created ?? Date.now(),
-      ...res.data, source: res.source, model: res.model,
+      ...res.data, source: res.source, model: res.model, terms: ss.glossary?.length ? ss.glossary : existing?.terms,
       level: existing?.level ?? 0, due: existing?.due ?? Date.now() + DAY, reviews: existing?.reviews ?? []
     };
     if (existing) Object.assign(existing, card); else st.library.unshift(card);

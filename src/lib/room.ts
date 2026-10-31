@@ -57,7 +57,7 @@ export function toSession(view: RoomView, prev: Session | null, link: Omit<RoomL
     learnerTurns: view.entries.filter(e => e.kind === 'msg' && e.memberId === me && !e.skipped).length,
     nextRole: 0, demoStep: 0, finished: view.status === 'finished', draft: same?.draft ?? '', previous: null,
     personas: setup.personas, seats: setup.seats, stages: setup.stages, turns: setup.turns, cursor: view.cursor,
-    review: same?.review ?? null,
+    review: same?.review ?? null, glossary: same?.glossary,
     room: { ...link, status: view.status, members: view.members, speaker: view.speaker, aiBusy: view.aiBusy, error: view.error, expiresAt: view.expiresAt }
   };
 }
