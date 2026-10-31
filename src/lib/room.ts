@@ -69,8 +69,11 @@ export function mySpeakingTurn(s: Session | null): boolean {
   if (s.mode === 'roundtable') return room.speaker?.kind === 'member' && room.speaker.id === room.memberId;
   const t = s.turns[s.cursor];
   const mine = room.members.find(m => m.id === room.memberId)?.seat;
-  return !!t && t.role.type === 'human' && t.role.id === mine;
+  return !!t && !!mine && t.role.id === mine;
 }
+// 辩论席位现在由谁坐：没人坐的席位由 AI 担任
+export const seatOwner = (s: Session, seat: string) => s.room?.members.find(m => m.seat === seat);
+export const mySeat = (s: Session) => s.room?.members.find(m => m.id === s.room!.memberId)?.seat;
 export function speakerLabel(s: Session): string {
   const room = s.room!;
   if (room.aiBusy) return room.aiBusy;
@@ -78,7 +81,7 @@ export function speakerLabel(s: Session): string {
     const t = s.turns[s.cursor];
     if (!t) return '';
     const owner = room.members.find(m => m.seat === t.role.id);
-    const who = t.role.type === 'ai' ? 'AI' : owner ? (owner.id === room.memberId ? '你' : owner.name) : '空席';
+    const who = owner ? (owner.id === room.memberId ? '你' : owner.name) : 'AI';
     return `${seatName(t.role)}（${who}）· ${t.action}`;
   }
   const sp: Speaker = room.speaker;
