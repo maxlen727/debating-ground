@@ -4,6 +4,8 @@ import type { ChatMessage, Entry, Reflection } from '../../shared/types.ts';
 import { QUICK, addReflection, aiTakeover, callOn, currentTurn, dropReflection, finish, generateSeat, hint, nextSpeaker, openTerm, passTurn, pickSeat, quick, retryAI, send, setReflectionDraft, skipSeat, startRoom, submitReflection } from '../actions.ts';
 import { Empty, ErrorBanner, Icon, Sheet } from '../components/ui.tsx';
 import { CaretField } from '../components/SmoothCaret.tsx';
+import { Reveal } from '../components/Reveal.tsx';
+import { useLive } from '../lib/stream.ts';
 import { cancelAI } from '../lib/ai.ts';
 import { seatName } from '../lib/debate.ts';
 import { exportSession } from '../lib/exporter.ts';
@@ -12,9 +14,17 @@ import { go, toast, update, useApp, type Session as S } from '../store.ts';
 
 export function Session() {
   const { session: s, ui } = useApp();
+  const live = useLive();
   const count = s ? s.entries.length : 0;
   const aiBusy = s?.room?.aiBusy;
-  useEffect(() => { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); }, [count, ui.busy, ui.hint, aiBusy]);
+  useEffect(() => { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); }, [count, ui.busy, ui.hint, aiBusy, live?.id]);
+  // 生成中跟着文字往下滚；用户自己往上翻时不打扰
+  const growing = live?.kind === 'msg' ? live.text.length : 0;
+  useEffect(() => {
+    if (!growing) return;
+    const nearBottom = window.innerHeight + window.scrollY > document.body.scrollHeight - 160;
+    if (nearBottom) window.scrollTo({ top: document.body.scrollHeight });
+  }, [growing]);
 
   if (!s) return (
     <div className="screen"><header className="topbar"><span className="topbar-pad" /><div className="topbar-title"><h1>讨论</h1></div><span className="topbar-right" /></header>
@@ -55,14 +65,15 @@ export function Session() {
 
       <main className="thread pad">
         {s.entries.map(m => <EntryView key={m.id} m={m} s={s} showTip={m.id === lastAi && s.learnerTurns === 0 && !s.finished} />)}
-        {aiBusy && <Typing label={aiBusy} />}
-        {ui.busy && <Typing label={ui.busy} onStop={cancelAI} />}
+        {live?.kind === 'msg' && !s.entries.some(e => e.id === live.id) ? <LiveMessage s={s} onStop={room ? undefined : cancelAI} />
+          : <>{aiBusy && <Typing label={aiBusy} />}{ui.busy && <Typing label={ui.busy} onStop={cancelAI} />}</>}
       </main>
 
       {ui.explain && (
         <Sheet title={`${ui.explain.label} · 讲解助手`} onClose={() => update(st => { st.ui.explain = null; })}>
           <blockquote className="quote">{ui.explain.quote}</blockquote>
-          <p className="sheet-text">{ui.explain.text || '正在看这句话…'}</p>
+          <p className="sheet-text">{live?.kind === 'explain' && live.text ? <Reveal id="explain" text={live.text} live />
+            : ui.explain.text ? <Reveal id="explain" text={ui.explain.text} live={false} /> : '正在看这句话…'}</p>
           <p className="fineprint">{room ? '讲解只有你能看到，不占用发言轮次。' : '讲解不进入比赛记录，也不占用发言轮次。'}</p>
         </Sheet>
       )}
@@ -102,6 +113,38 @@ export function Session() {
           <div className="row between composer-done"><span className="muted">这次讨论已结束。</span><div className="row"><button className="ghost small" onClick={() => exportSession(s)}><Icon name="download" size={16} />导出</button><button className="primary small" onClick={() => go('review')}>看复盘</button></div></div>
         ) : room ? <RoomComposer s={s} /> : <Composer s={s} />}
       </footer>
+    </div>
+  );
+}
+
+// 生成中的 AI 发言：和正式发言长得一样，文字逐字出现
+function LiveMessage({ s, onStop }: { s: S; onStop?: () => void }) {
+  const live = useLive()!;
+  const debate = s.mode === 'debate';
+  const persona = s.personas.find(r => r.id === live.who);
+  const seat = debate ? s.seats.find(x => x.id === live.who) : undefined;
+  const tone = debate ? (seat?.team === 'A' ? 'a' : 'b') : persona?.tone ?? 'a';
+  if (!live.text) return <Typing label={live.label} onStop={onStop} />;
+  return (
+    <div className="msg live" aria-live="polite" aria-busy="true">
+      <span className={'avatar tone-' + tone} aria-hidden="true">{debate ? live.who : persona?.name.slice(0, 1) ?? '…'}</span>
+      <div className="msg-body">
+        <div className="msg-meta"><b>{debate ? (seat ? seatName(seat) : live.label) : `${persona?.name ?? ''}${persona?.title ? ' · ' + persona.title : ''}`}</b><span>正在说</span>{onStop && <button className="link" onClick={onStop}>停止</button>}</div>
+        <div className="bubble"><Reveal id={live.id} text={live.text} live /></div>
+      </div>
+    </div>
+  );
+}
+
+function HintCard() {
+  const { ui } = useApp();
+  const live = useLive();
+  const streaming = live?.kind === 'hint' && !!live.text;
+  if (!ui.hint && !streaming) return null;
+  return (
+    <div className="hint-card"><Icon name="bulb" size={18} />
+      <p>{streaming ? <Reveal id="hint" text={live!.text} live /> : <Reveal id="hint" text={ui.hint!} live={false} />}</p>
+      <button className="icon-btn small" aria-label="关闭提示" onClick={() => update(st => { st.ui.hint = null; })}><Icon name="close" size={16} /></button>
     </div>
   );
 }
@@ -175,7 +218,7 @@ function SeatSheet({ s }: { s: S }) {
               return (
                 <button key={seat.id} className={'seat-option' + (me ? ' on' : '')} disabled={!!owner && !me} aria-pressed={me} onClick={() => !me && pickSeat(seat.id)}>
                   <span>{seatName(seat)}</span>
-                  <small>{me ? '你' : owner ? owner.name : 'AI 担任 · 可以坐'}</small>
+                  <small>{me ? '你' : owner ? owner.name : seat.type === 'ai' ? 'AI 担任 · 也可以坐' : '留给同学 · 空着'}</small>
                 </button>
               );
             })}
@@ -226,7 +269,8 @@ function RoomComposer({ s }: { s: S }) {
   }
 
   const t = s.turns[s.cursor];
-  const humanSeat = s.mode === 'debate' && !!t && !!seatOwner(s, t.role.id);
+  // 现在轮到的是“等人”的席位（有同学坐，或留给同学但还空着）：房主可以让 AI 代答
+  const humanSeat = s.mode === 'debate' && !!t && (!!seatOwner(s, t.role.id) || t.role.type !== 'ai');
   return (
     <>
       {room.error ? (
@@ -234,11 +278,11 @@ function RoomComposer({ s }: { s: S }) {
       ) : (
         <div className="turn-banner">
           {s.mode === 'debate' && t && <span className={'dot team-' + t.role.team} aria-hidden="true" />}
-          {mine ? <b>轮到你发言</b> : <>轮到 <b>{speakerLabel(s)}</b></>}
+          {mine ? <b>轮到你发言</b> : room.aiBusy ? <b>{room.aiBusy}</b> : <>轮到 <b>{speakerLabel(s)}</b></>}
           {s.mode === 'debate' && <span className="muted grow-right">{s.cursor + 1}/{s.turns.length}</span>}
         </div>
       )}
-      {ui.hint && <div className="hint-card"><Icon name="bulb" size={18} /><p>{ui.hint}</p><button className="icon-btn small" aria-label="关闭提示" onClick={() => update(st => { st.ui.hint = null; })}><Icon name="close" size={16} /></button></div>}
+      <HintCard />
       <div className="tools scroll-x">
         {mine && <button className="tool" disabled={busy} onClick={hint}><Icon name="bulb" size={16} />给点提示</button>}
         <button className="tool" disabled={busy} onClick={() => addReflection()}><Icon name="note" size={16} />写个小结</button>
@@ -291,7 +335,7 @@ function Composer({ s }: { s: S }) {
       {debate && turn && (
         <div className="turn-banner"><span className={'dot team-' + turn.role.team} aria-hidden="true" />轮到 <b>{seatName(turn.role)}</b>{turn.role.type === 'human' ? '（你）' : ''} · {turn.action}{turn.target ? ` → ${turn.target}` : ''}<span className="muted grow-right">{s.cursor + 1}/{s.turns.length}</span></div>
       )}
-      {ui.hint && <div className="hint-card"><Icon name="bulb" size={18} /><p>{ui.hint}</p><button className="icon-btn small" aria-label="关闭提示" onClick={() => update(st => { st.ui.hint = null; })}><Icon name="close" size={16} /></button></div>}
+      <HintCard />
       <div className="tools scroll-x">
         {humanTurn && <button className="tool" disabled={busy} onClick={hint}><Icon name="bulb" size={16} />给点提示</button>}
         <button className="tool" disabled={busy} onClick={() => addReflection()}><Icon name="note" size={16} />写个小结</button>
@@ -338,12 +382,12 @@ function EntryView({ m, s, showTip }: { m: Entry; s: S; showTip: boolean }) {
       <div className="msg-body">
         <div className="msg-meta"><b>{label}</b>{meta && <span>{meta}</span>}{m.skipped && <span>已跳过</span>}</div>
         {me || m.skipped || s.finished
-          ? <div className={'bubble' + (m.skipped ? ' skipped' : '')} onClick={e => termAt(e.target) && openTerm(termAt(e.target)!, m.id)}><WithTerms text={m.text} terms={m.terms} /></div>
+          ? <div className={'bubble' + (m.skipped ? ' skipped' : '')} onClick={e => termAt(e.target) && openTerm(termAt(e.target)!, m.id)}><Reveal id={m.id} text={m.text} live={false} final={<WithTerms text={m.text} terms={m.terms} />} /></div>
           : <button className="bubble tappable" aria-haspopup="dialog" onClick={e => {
               // 点在虚线词上就查词，否则打开追问面板
               const term = termAt(e.target);
               if (term) openTerm(term, m.id); else update(st => { st.ui.sheet = m.id; });
-            }}><WithTerms text={m.text} terms={m.terms} /></button>}
+            }}><Reveal id={m.id} text={m.text} live={false} final={<WithTerms text={m.text} terms={m.terms} />} /></button>}
         {showTip && <small className="tip">轻点发言可以追问：没听懂、举例、反驳、分辨事实。{!!m.terms?.length && '带虚线的词，点一下看解释。'}</small>}
       </div>
     </div>
@@ -353,13 +397,15 @@ function EntryView({ m, s, showTip }: { m: Entry; s: S; showTip: boolean }) {
 function ReflectCard({ m, concept }: { m: Reflection; concept: string }) {
   const { ui, session } = useApp();
   const draftRef = useRef<HTMLTextAreaElement>(null);
+  const live = useLive();
+  const streaming = live?.kind === 'reflect' && live.id === m.id && !!live.text;
   return (
     <section className="reflect" aria-label="小结卡">
       <h3>停一下，用自己的话说说</h3>
       {m.text ? (
         <>
           <p className="mine">{m.text}</p>
-          <p className="feedback">{m.feedback}</p>
+          <p className="feedback"><Reveal id={m.id} text={m.feedback} live={false} /></p>
         </>
       ) : (
         <>
@@ -369,6 +415,7 @@ function ReflectCard({ m, concept }: { m: Reflection; concept: string }) {
             <button className="ghost small" onClick={() => dropReflection(m.id)}>跳过</button>
             <button className="primary small" disabled={!!ui.busy || !m.draft.trim()} onClick={() => submitReflection(m.id)}>提交小结</button>
           </div>
+          {streaming && <p className="feedback"><Reveal id={m.id} text={live!.text} live /></p>}
         </>
       )}
     </section>

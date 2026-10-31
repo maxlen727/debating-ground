@@ -3,6 +3,7 @@ import type { ChatMessage, ExplainKind, Previous, Review, SessionSnapshot, TermC
 import { getState, go, toast, uid, update } from './store.ts';
 import type { Card, Session } from './store.ts';
 import { runAI } from './lib/ai.ts';
+import { clearLive } from './lib/stream.ts';
 import * as room from './lib/room.ts';
 import { debateTurns, seatName, slots } from './lib/debate.ts';
 import { DAY, schedule } from './lib/srs.ts';
@@ -150,13 +151,15 @@ export async function send(text: string) {
 export async function speak(roleId: string, task?: string) {
   const s = session(); if (!s) return;
   const role = s.personas.find(r => r.id === roleId)!;
-  const res = await runAI('discuss', { session: snapshot(s), roleId, task }, `${role.name} 正在思考`);
-  if (!res || session()?.id !== s.id) return;
+  const id = uid();
+  const res = await runAI('discuss', { session: snapshot(s), roleId, task }, `${role.name} 正在思考`, { id, kind: 'msg', who: role.id });
+  if (!res || session()?.id !== s.id) return clearLive(id);
   update(st => {
     const ss = st.session!;
-    ss.entries.push({ id: uid(), kind: 'msg', who: role.id, name: role.name, text: res.text, source: res.source, model: res.model, terms: res.terms?.length ? res.terms : undefined });
+    ss.entries.push({ id, kind: 'msg', who: role.id, name: role.name, text: res.text, source: res.source, model: res.model, terms: res.terms?.length ? res.terms : undefined });
     markCovered(ss, res.covered);
   });
+  clearLive(id);
 }
 
 export function nextSpeaker() {
@@ -184,15 +187,17 @@ export const skipSeat = () => submitSeat('主席宣布：本席放弃本次发�
 export async function generateSeat() {
   const s = session(); const t = currentTurn(s); if (!s || !t || getState().ui.busy) return;
   if (s.room) { room.send({ type: 'aiTakeover' }); return; }
-  const res = await runAI('debate', { session: snapshot(s) }, `${seatName(t.role)}正在组织发言`);
+  const id = uid();
+  const res = await runAI('debate', { session: snapshot(s) }, `${seatName(t.role)}正在组织发言`, { id, kind: 'msg', who: t.role.id });
   const now = session();
-  if (!res || now?.id !== s.id || now.cursor !== s.cursor || now.finished) return;
+  if (!res || now?.id !== s.id || now.cursor !== s.cursor || now.finished) return clearLive(id);
   update(st => {
     const ss = st.session!;
-    ss.entries.push({ id: uid(), kind: 'msg', who: t.role.id, name: seatName(t.role), team: t.role.team, text: res.text, stage: t.stage, action: t.action, target: t.target, source: res.source, model: res.model, terms: res.terms?.length ? res.terms : undefined });
+    ss.entries.push({ id, kind: 'msg', who: t.role.id, name: seatName(t.role), team: t.role.team, text: res.text, stage: t.stage, action: t.action, target: t.target, source: res.source, model: res.model, terms: res.terms?.length ? res.terms : undefined });
     markCovered(ss, res.covered);
     ss.cursor++;
   });
+  clearLive(id);
   if (session()!.cursor >= s.turns.length) return finish();
 }
 
@@ -232,8 +237,9 @@ export async function quick(kind: ExplainKind | 'disagree', messageId: string) {
   // 辩论模式不打断赛程：解释放在一旁，不进入比赛记录
   const label = QUICK.find(q => q.kind === kind)!.label;
   update(st => { st.ui.explain = { kind, label, quote, text: '' }; });
-  const res = await runAI('explain', { session: snapshot(s), quote: m.text.slice(0, 4000), kind }, '讲解助手正在看这句话');
+  const res = await runAI('explain', { session: snapshot(s), quote: m.text.slice(0, 4000), kind }, '讲解助手正在看这句话', { id: 'explain', kind: 'explain' });
   update(st => { if (res && st.ui.explain) st.ui.explain.text = res.text; else st.ui.explain = null; });
+  clearLive('explain');
 }
 
 export async function hint() {
@@ -244,8 +250,9 @@ export async function hint() {
     return;
   }
   const t = currentTurn(s);
-  const res = await runAI('hint', { session: snapshot(s), covered: s.covered, task: t ? `${seatName(t.role)}要进行${t.action}` : undefined }, '正在想一条提示');
+  const res = await runAI('hint', { session: snapshot(s), covered: s.covered, task: t ? `${seatName(t.role)}要进行${t.action}` : undefined }, '正在想一条提示', { id: 'hint', kind: 'hint' });
   if (res) update(st => { st.ui.hint = res.text; });
+  clearLive('hint');
 }
 
 function maybeReflect() {
@@ -283,13 +290,14 @@ export async function submitReflection(id: string) {
     if (res) update(st => editReflection(st, id, e => { e.text = answer; e.feedback = res.text; }));
     return;
   }
-  const res = await runAI('reflect', { session: snapshot(s), answer }, '正在看你的小结');
+  const res = await runAI('reflect', { session: snapshot(s), answer }, '正在看你的小结', { id, kind: 'reflect' });
   if (!res) return;
   update(st => {
     const e = st.session!.entries.find(x => x.id === id);
     if (e?.kind === 'reflect') { e.text = answer; e.feedback = res.text; }
     markCovered(st.session!, res.covered);
   });
+  clearLive(id);
 }
 
 /* ---------- 术语小卡片 ---------- */

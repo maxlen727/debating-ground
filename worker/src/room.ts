@@ -15,7 +15,7 @@ export interface StoredRoom {
 
 export interface SocketLike { send(data: string): void; close(code?: number, reason?: string): void; memberId(): string | null; setMember(id: string): void }
 const cleanTerms = (v: unknown) => Array.isArray(v) ? v.filter((t): t is string => typeof t === 'string').slice(0, 3) : undefined;
-export type Generate = (purpose: Purpose, payload: unknown) => Promise<{ text?: string; covered?: number[]; terms?: string[]; data?: unknown; model?: string }>;
+export type Generate = (purpose: Purpose, payload: unknown, onText?: (visible: string) => void) => Promise<{ text?: string; covered?: number[]; terms?: string[]; data?: unknown; model?: string }>;
 export interface RoomDeps {
   load(): Promise<StoredRoom | undefined>;
   save(room: StoredRoom): Promise<void>;
@@ -79,7 +79,7 @@ export function validateSetup(v: unknown): RoomSetup {
   }
   const seats = Array.isArray(v.seats) ? v.seats.slice(0, 8) : [];
   setup.seats = seats.map((r): RoomSeat => {
-    if (!isObj(r) || (r.team !== 'A' && r.team !== 'B') || !Number.isInteger(r.index) || (r.index as number) < 0 || (r.index as number) > 3 || (r.type !== 'human' && r.type !== 'ai')) throw new ApiError('辩论席位无效。');
+    if (!isObj(r) || (r.team !== 'A' && r.team !== 'B') || !Number.isInteger(r.index) || (r.index as number) < 0 || (r.index as number) > 3 || (r.type !== 'human' && r.type !== 'peer' && r.type !== 'ai')) throw new ApiError('辩论席位无效。');
     const index = r.index as number;
     return { id: r.team + (index + 1), team: r.team, index, type: r.type, bg: str(r.bg, 500, '认知背景', false), name: `${r.team === 'A' ? '正' : '反'}方 ${index + 1} 辩` };
   });
@@ -298,7 +298,7 @@ export class RoomCore {
       case 'aiTakeover': {
         hostOnly(); live(); idle();
         const t = room.setup.turns[room.cursor];
-        if (room.setup.mode !== 'debate' || !t || !this.owner(t.role.id)) throw new ApiError('现在不是同学的席位。');
+        if (room.setup.mode !== 'debate' || !t || !this.waitsForPerson(t.role)) throw new ApiError('现在不是同学的席位。');
         room.takeover = true;
         break;
       }
@@ -349,7 +349,7 @@ export class RoomCore {
         const debate = room.setup.mode === 'debate';
         const t = debate ? room.setup.turns[room.cursor] : undefined;
         const persona = !debate && room.speaker?.kind === 'ai' ? room.setup.personas.find(p => p.id === room.speaker!.id) : undefined;
-        if (debate ? !(t && (!this.owner(t.role.id) || room.takeover)) : !persona) break;
+        if (debate ? !(t && (!this.waitsForPerson(t.role) || room.takeover)) : !persona) break;
         if (room.error) break;
         if (room.aiCalls >= ROOM_LIMITS.aiCalls) {
           room.error = '这个房间的 AI 调用次数已经用完。房主可以结束讨论，大家各自复盘。';
@@ -359,31 +359,57 @@ export class RoomCore {
         const cursor = room.cursor, speaker = JSON.stringify(room.speaker);
         room.aiBusy = busy; room.aiCalls++;
         await this.save(); this.broadcast();
+        // 边生成边广播，大约每 150 毫秒合并一次，省消息数；完成后的正式发言沿用这个 id，界面能接着动画显示
+        const id = uid();
+        const relay = this.relay(id);
         try {
           const res = debate
-            ? await this.deps.generate('debate', { session: snapshotFor(room, null) })
-            : await this.deps.generate('discuss', { session: snapshotFor(room, null), roleId: persona!.id, task: room.lastMember ? undefined : '主持人请你接着前面的发言说。' });
+            ? await this.deps.generate('debate', { session: snapshotFor(room, null) }, relay.push)
+            : await this.deps.generate('discuss', { session: snapshotFor(room, null), roleId: persona!.id, task: room.lastMember ? undefined : '主持人请你接着前面的发言说。' }, relay.push);
+          relay.stop();
           // 等待期间房主可能结束了讨论
           if (room.status !== 'live' || room.cursor !== cursor || JSON.stringify(room.speaker) !== speaker) break;
           const text = typeof res.text === 'string' ? res.text : '';
           if (!text) throw new ApiError('模型没有返回可用文本，请重试。');
           for (const i of res.covered ?? []) if (i >= 0 && i < room.setup.keyPoints.length && !room.covered.includes(i)) room.covered.push(i);
           if (debate) {
-            room.entries.push({ id: uid(), kind: 'msg', who: t!.role.id, name: this.seatName(t!.role.id), team: t!.role.team, text, stage: t!.stage, action: t!.action, target: t!.target, source: 'api', model: res.model, terms: cleanTerms(res.terms) });
+            room.entries.push({ id, kind: 'msg', who: t!.role.id, name: this.seatName(t!.role.id), team: t!.role.team, text, stage: t!.stage, action: t!.action, target: t!.target, source: 'api', model: res.model, terms: cleanTerms(res.terms) });
             this.advanceDebate(room);
           } else {
-            room.entries.push({ id: uid(), kind: 'msg', who: persona!.id, name: persona!.name, text, source: 'api', model: res.model, terms: cleanTerms(res.terms) });
+            room.entries.push({ id, kind: 'msg', who: persona!.id, name: persona!.name, text, source: 'api', model: res.model, terms: cleanTerms(res.terms) });
             room.speaker = { kind: 'member', id: this.nextMember(room, room.lastMember) };
           }
         } catch (e) {
+          relay.stop();
           room.error = e instanceof ApiError ? e.message : 'AI 发言失败。';
         } finally {
+          relay.stop();
           room.aiBusy = null;
           await this.save(); this.broadcast();
         }
       }
       if (room.error) { await this.save(); this.broadcast(); }
     } finally { this.running = false; }
+  }
+
+  private relay(id: string) {
+    let latest = '', sent = '', last = 0, timer: ReturnType<typeof setTimeout> | undefined, stopped = false;
+    const flush = () => {
+      timer = undefined;
+      if (stopped || latest === sent) return;
+      sent = latest; last = this.deps.now();
+      const data = JSON.stringify({ type: 'stream', id, text: latest } satisfies ServerMessage);
+      for (const ws of this.deps.sockets()) if (ws.memberId()) { try { ws.send(data); } catch { /* 连接已断开 */ } }
+    };
+    return {
+      push: (text: string) => {
+        latest = text;
+        if (stopped || timer) return;
+        const wait = 150 - (this.deps.now() - last);
+        if (wait <= 0) flush(); else timer = setTimeout(flush, wait);
+      },
+      stop: () => { stopped = true; clearTimeout(timer); }
+    };
   }
 
   private nextPersona(room: StoredRoom) {
@@ -407,6 +433,8 @@ export class RoomCore {
     const taken = new Set(this.room!.members.map(m => m.seat));
     return this.room!.setup.seats.find(s => s.type === 'human' && !taken.has(s.id))?.id;
   }
+  // 有人坐的席位等这个人；留给同学（或标为“我”）但没人坐的席位也等，房主可以跳过或让 AI 代答；只有 AI 席位没人坐时由 AI 自动发言
+  private waitsForPerson(seat: { id: string; type: string }) { return !!this.owner(seat.id) || seat.type !== 'ai'; }
   private owner(seat: string) { return this.room!.members.find(m => m.seat === seat); }
   private seatName(id: string) { return this.room!.setup.seats.find(s => s.id === id)?.name ?? id; }
 

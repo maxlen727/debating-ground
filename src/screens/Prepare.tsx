@@ -3,7 +3,7 @@ import type { StageKind, Team } from '../../shared/types.ts';
 import { useState } from 'react';
 import { canInvite, inviteFriends, prepare, startSession } from '../actions.ts';
 import { BusyStrip, ErrorBanner, Icon, Sheet, Stepper, TopBar } from '../components/ui.tsx';
-import { debateTurns } from '../lib/debate.ts';
+import { debateTurns, slots } from '../lib/debate.ts';
 import { go, update, useApp } from '../store.ts';
 
 export function Prepare() {
@@ -84,6 +84,7 @@ function InviteSheet({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState(config.name);
   const ready = config.aiMode === 'remote' && !!config.remote.url;
   const debate = plan?.mode === 'debate';
+  const peerSeats = slots(config).filter(r => r.type === 'peer').length + Math.max(0, slots(config).filter(r => r.type === 'human').length - 1);
   return (
     <Sheet title="邀请同学一起讨论" onClose={onClose}>
       {ready ? (
@@ -93,7 +94,8 @@ function InviteSheet({ onClose }: { onClose: () => void }) {
             <span>你的名字</span>
             <input value={name} maxLength={20} placeholder="同学会看到这个名字" onChange={e => setName(e.target.value)} />
           </label>
-          {debate && <p className="note">进房间后，每个人自己选正方或反方的席位，没人坐的席位由 AI 担任。你默认坐第一个标为“我”的席位，也可以换。想让更多同学上场，先在上面把每方的席位数调多一些（最多 4 席）。</p>}
+          {debate && <p className="note">标为“同学”的席位留给加入的同学，轮到时没人坐就等着，你可以跳过或让 AI 代答；标为“AI”的席位由 AI 担任，同学也可以坐进去。你默认坐第一个标为“我”的席位。进房间后每个人都可以自己选席位。</p>}
+          {debate && peerSeats === 0 && <p className="alert soft">现在没有给同学留席位：同学进来只能坐进 AI 的席位或旁听。可以先关掉这里，把一些席位设成“同学”。</p>}
           <p className="fineprint">AI 使用你的后端和额度，同学不需要访问口令。每个房间最多 8 人、150 次 AI 调用，讨论内容临时保存在你的后端，结束 1 小时后自动删除。</p>
           <ErrorBanner />
           <button className="primary block" disabled={!!ui.busy || !name.trim()} onClick={async () => { await inviteFriends(name); }}>{ui.busy ? ui.busy : '创建房间'}</button>
@@ -108,6 +110,8 @@ function InviteSheet({ onClose }: { onClose: () => void }) {
     </Sheet>
   );
 }
+
+const SEAT_LABEL = { human: '我', peer: '同学', ai: 'AI' } as const;
 
 function Seats() {
   const { config } = useApp();
@@ -127,10 +131,11 @@ function Seats() {
                 <div className="row between">
                   <span className="seat-name">{t === 'A' ? '正' : '反'}方 {i + 1} 辩</span>
                   <div className="segmented small" role="radiogroup" aria-label={`${t}${i + 1} 由谁发言`}>
-                    {(['human', 'ai'] as const).map(v => <button key={v} role="radio" aria-checked={r.type === v} className={r.type === v ? 'on' : ''} onClick={() => update(s => { s.config.seats[t][i].type = v; })}>{v === 'human' ? '我' : 'AI'}</button>)}
+                    {(['human', 'peer', 'ai'] as const).map(v => <button key={v} role="radio" aria-checked={r.type === v} className={r.type === v ? 'on' : ''} onClick={() => update(s => { s.config.seats[t][i].type = v; })}>{SEAT_LABEL[v]}</button>)}
                   </div>
                 </div>
-                {r.type === 'ai' && <textarea value={r.bg} rows={2} maxLength={500} aria-label={`${t}${i + 1} 认知背景`} placeholder="认知背景" onChange={e => update(s => { s.config.seats[t][i].bg = e.target.value; })} />}
+                {r.type === 'peer' && <p className="seat-hint">邀请同学时留给同学；单人讨论时由 AI 担任。</p>}
+                {r.type !== 'human' && <textarea value={r.bg} rows={2} maxLength={500} aria-label={`${t}${i + 1} 认知背景`} placeholder="认知背景" onChange={e => update(s => { s.config.seats[t][i].bg = e.target.value; })} />}
               </div>
             ))}
           </div>

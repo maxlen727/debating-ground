@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeConfig, buildRequest, finalize, splitCover, splitTerms, extractJSON, complete } from '../server/ai.ts';
+import { normalizeConfig, buildRequest, finalize, splitCover, splitTerms, extractJSON, complete, visibleText, streamGenerate } from '../server/ai.ts';
 import type { SessionSnapshot } from '../shared/types.ts';
 
 const cfg = { baseURL: 'https://example.com/v1/', apiKey: 'test-secret', model: 'chosen-model' };
@@ -123,4 +123,59 @@ test('term cards explain the word without teaching the key points', () => {
   const card = finalize(r, { text: '```json\n{"definition":"资源有限。","relation":"所以选择有代价。"}\n```', model: 'm' }) as { data: { term: string; definition: string; relation: string } };
   assert.deepEqual(card.data, { term: '稀缺性', definition: '资源有限。', relation: '所以选择有代价。' });
   assert.throws(() => finalize(r, { text: '{"relation":"x"}', model: 'm' }), /没有返回这个词的解释/);
+});
+
+// 模拟服务商的流式响应：每个片段一行 data:
+const sse = (parts: string[], { finish = 'stop', extra = '' } = {}) => new Response(
+  parts.map(p => `data: ${JSON.stringify({ choices: [{ delta: { content: p }, finish_reason: null }] })}\n\n`).join('')
+  + `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: finish }] })}\n\n` + extra + 'data: [DONE]\n\n',
+  { headers: { 'Content-Type': 'text/event-stream' } });
+
+test('visible text hides markers and anything that could be the start of the key', () => {
+  assert.equal(visibleText('你好[[要点:1]]'), '你好');
+  assert.equal(visibleText('你好\n['), '你好', 'a lone [ might be a marker');
+  assert.equal(visibleText('你好 sk-ab', 'sk-abcdef'), '你好', 'a partial key is held back');
+  assert.equal(visibleText('密钥 sk-abcdef 结束', 'sk-abcdef'), '密钥 [密钥已隐藏] 结束');
+  // 越收越长时，显示的部分总是前一次的延长
+  const raw = '机会成本是放弃的最好选择。\n[[要点:1]]\n[[术语:稀缺性]]';
+  let last = '';
+  for (let i = 1; i <= raw.length; i++) { const v = visibleText(raw.slice(0, i)); assert.ok(v.startsWith(last.trimEnd()), `prefix at ${i}`); last = v; }
+  assert.equal(last, '机会成本是放弃的最好选择。');
+});
+
+test('streaming: deltas arrive in order, markers never show, the result is validated as before', async () => {
+  let body: Record<string, unknown> = {};
+  const seen: string[] = [];
+  const fetchImpl = (async (_u: unknown, init: RequestInit) => { body = JSON.parse(String(init.body)); return sse(['你说到了“少玩', '一天”。', '\n[[要', '点:1]]\n[[术语:稀缺性]]']); }) as typeof fetch;
+  const out = await complete(normalizeConfig(cfg), [], { fetchImpl, onText: t => seen.push(t) });
+  assert.equal(body.stream, true);
+  assert.deepEqual(seen, ['你说到了“少玩', '你说到了“少玩一天”。']);
+  assert.equal(out.text, '你说到了“少玩一天”。\n[[要点:1]]\n[[术语:稀缺性]]');
+  // 走 SSE 发给浏览器：delta 只有新增部分，done 里是 finalize 之后的结果
+  const r = buildRequest('discuss', { session: learning, roleId: 'r0' });
+  const chunks: string[] = [];
+  const ok = await streamGenerate(normalizeConfig(cfg), r, { fetchImpl }, c => chunks.push(c));
+  assert.equal(ok, true);
+  assert.deepEqual(chunks.slice(0, 2), ['event: delta\ndata: {"t":"你说到了“少玩"}\n\n', 'event: delta\ndata: {"t":"一天”。"}\n\n']);
+  assert.match(chunks.at(-1)!, /^event: done/);
+  assert.deepEqual(JSON.parse(chunks.at(-1)!.split('data: ')[1]).covered, [0]);
+});
+
+test('streaming failures discard the partial text instead of keeping half an answer', async () => {
+  const run = (res: () => Response, timeoutMs = 1000) => {
+    const chunks: string[] = [];
+    return streamGenerate(normalizeConfig(cfg), buildRequest('discuss', { session: learning, roleId: 'r0' }), { fetchImpl: (async () => res()) as typeof fetch, timeoutMs }, c => chunks.push(c)).then(ok => ({ ok, chunks }));
+  };
+  const cut = await run(() => sse(['说到一半'], { finish: 'length' }));
+  assert.equal(cut.ok, false);
+  assert.match(cut.chunks.at(-1)!, /^event: error[\s\S]*截断/);
+  const broken = await run(() => sse(['说到一半'], { extra: `data: ${JSON.stringify({ error: { message: 'overloaded' } })}\n\n` }));
+  assert.match(broken.chunks.at(-1)!, /服务商在生成过程中报错/);
+  // 服务商不支持流式、直接返回 JSON：照常可用，一次给出全部文字
+  const plain = await run(() => new Response(JSON.stringify({ choices: [{ message: { content: '好的。\n[[要点:]]' }, finish_reason: 'stop' }] })));
+  assert.equal(plain.ok, true);
+  assert.deepEqual(plain.chunks.map(c => c.split('\n')[0]), ['event: delta', 'event: done']);
+  // 超时按“多久没有新内容”计算
+  const stalled = await run(() => new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ choices: [{ delta: { content: '先说' } }] })}\n\n`)); } }), { headers: { 'Content-Type': 'text/event-stream' } }), 50);
+  assert.match(stalled.chunks.at(-1)!, /超时/);
 });

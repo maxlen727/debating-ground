@@ -37,3 +37,27 @@ test('static files cannot escape the build folder', async t => {
   assert.notEqual((await fetch(origin + '/%2e%2e/package.json')).status, 200);
   assert.equal((await fetch(origin + '/')).status, 503);
 });
+
+test('generate can stream as server-sent events when the page asks for it', async t => {
+  const server = createServer({ fetchImpl: (async () => new Response(
+    `data: ${JSON.stringify({ choices: [{ delta: { content: '先想想' } }] })}\n\ndata: ${JSON.stringify({ choices: [{ delta: { content: '代价。\n[[要点:1]]' }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`,
+    { headers: { 'Content-Type': 'text/event-stream' } })) as typeof fetch });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); }));
+  const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const h = { 'Content-Type': 'application/json', 'X-Sibian-Client': 'web', Origin: origin };
+  const conf = await fetch(origin + '/api/config', { method: 'POST', headers: h, body: JSON.stringify({ baseURL: 'https://example.com/v1', apiKey: 'k-secret', model: 'm' }) });
+  const cookie = conf.headers.get('set-cookie')!.split(';')[0];
+  const session = { mode: 'socratic', concept: '机会成本', topic: '代价？', keyPoints: ['放弃的最佳选择', '沉没成本'], roles: [{ id: 'r0', name: '苏珩', title: '', persona: '' }], messages: [] };
+  const res = await fetch(origin + '/api/generate', { method: 'POST', headers: { ...h, Cookie: cookie, Accept: 'text/event-stream' }, body: JSON.stringify({ purpose: 'discuss', payload: { session, roleId: 'r0' }, stream: true }) });
+  assert.match(res.headers.get('content-type')!, /text\/event-stream/);
+  const text = await res.text();
+  assert.match(text, /event: delta\ndata: \{"t":"先想想"\}/);
+  assert.ok(!text.includes('[[要点'), 'markers never reach the page');
+  assert.ok(!text.includes('k-secret'));
+  const done = JSON.parse(text.split('event: done\ndata: ')[1]);
+  assert.deepEqual([done.text, done.covered], ['先想想代价。', [0]]);
+  // 复盘这类 JSON 用途不流式
+  const review = await fetch(origin + '/api/generate', { method: 'POST', headers: { ...h, Cookie: cookie }, body: JSON.stringify({ purpose: 'prepare', payload: { concept: 'x', mode: 'socratic' }, stream: true }) });
+  assert.match(review.headers.get('content-type')!, /application\/json/);
+});
