@@ -217,7 +217,7 @@ function SeatSheet({ s }: { s: S }) {
               return (
                 <button key={seat.id} className={'seat-option' + (me ? ' on' : '')} disabled={!!owner && !me} aria-pressed={me} onClick={() => !me && pickSeat(seat.id)}>
                   <span>{seatName(seat)}</span>
-                  <small>{me ? '你' : owner ? owner.name : 'AI 担任 · 可以坐'}</small>
+                  <small>{me ? '你' : owner ? owner.name : seat.type === 'ai' ? 'AI 担任 · 也可以坐' : '留给同学 · 空着'}</small>
                 </button>
               );
             })}
@@ -268,7 +268,8 @@ function RoomComposer({ s }: { s: S }) {
   }
 
   const t = s.turns[s.cursor];
-  const humanSeat = s.mode === 'debate' && !!t && !!seatOwner(s, t.role.id);
+  // 现在轮到的是“等人”的席位（有同学坐，或留给同学但还空着）：房主可以让 AI 代答
+  const humanSeat = s.mode === 'debate' && !!t && (!!seatOwner(s, t.role.id) || t.role.type !== 'ai');
   return (
     <>
       {room.error ? (
