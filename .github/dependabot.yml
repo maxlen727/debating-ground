@@ -1,5 +1,7 @@
 version: 2
 updates:
+  # npm 依赖只自动提小版本和补丁更新。
+  # 大版本升级（vite、typescript、react 等）往往需要改代码，改为人工评估、单独开 Issue。
   - package-ecosystem: npm
     directory: /
     schedule:
@@ -7,6 +9,13 @@ updates:
     groups:
       dev-tools:
         dependency-type: development
+        update-types: [minor, patch]
+      runtime:
+        dependency-type: production
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
   - package-ecosystem: github-actions
     directory: /
     schedule:
