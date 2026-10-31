@@ -42,7 +42,11 @@
 
 **和真实 AI 讨论**，有两种方式：
 
-- **在网页上**：把思辨场的后端[部署到你自己的 Cloudflare 账号](https://maxlen727.github.io/debating-ground/guide/self-host)（免费额度就够），然后在在线版的 **设置** 里选择 **我的后端**，填写后端地址和访问口令。
+- **在网页上**：把思辨场的后端部署到你自己的 Cloudflare 账号（免费额度就够）。点下面的按钮，登录 Cloudflare 和 GitHub，按提示填写 AI 服务商的信息和一个访问口令，就部署好了：
+
+  [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/maxlen727/debating-ground/tree/main/worker)
+
+  然后在在线版的 **设置** 里选择 **我的后端**，填写后端地址和访问口令。详见[自己部署后端](https://maxlen727.github.io/debating-ground/guide/self-host)。
 - **在电脑上运行**：安装 [Node.js](https://nodejs.org/) 22.18 以上，下载本项目后：
 
   Windows 双击 `start.cmd`；macOS / Linux 运行 `npm install && npm run build && npm start`。

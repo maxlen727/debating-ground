@@ -23,10 +23,13 @@ npm run docs:build   # 构建文档站
 
 ```bash
 cd worker
+npm install
 cp .dev.vars.example .dev.vars   # 填写本地测试用的密钥和口令，这个文件不会提交
-npx wrangler dev                 # http://127.0.0.1:8787
+npm run dev                      # http://127.0.0.1:8787，允许本机界面跨域
 npx wrangler deploy --dry-run    # 只检查能否打包
 ```
+
+Worker 使用的 `server/ai.ts` 和 `shared/` 是复制进 `worker/src/vendor/` 的副本（一键部署只会复制 `worker/` 目录）。**改了 `server/ai.ts` 或 `shared/` 之后运行 `npm run sync:worker`**，否则测试会失败。不要直接改 `vendor/` 里的文件。
 
 开发界面时开两个终端，一个 `npm run server`，一个 `npm run dev`。
 

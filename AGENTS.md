@@ -15,7 +15,7 @@
 | `shared/` | 前后端共用的类型（`types.ts`）和模式定义（`modes.ts`） | 改了类型，前后端要一起改，并跑类型检查 |
 | `server/ai.ts` | 提示词组装、Chat Completions 调用、输出解析与校验 | 提示词是产品的核心，改动必须更新 `tests/ai.test.ts` |
 | `server/server.ts` | 本机服务：托管 `dist/`，代理 `/api/*`，会话与密钥管理 | 涉及安全，见下方“不能破坏的约定” |
-| `worker/` | 可自部署的后端（Cloudflare Worker），与本机服务提供同样的 `/api`，复用 `server/ai.ts` | 涉及安全；改了 `ai.ts` 也要确认 Worker 测试通过 |
+| `worker/` | 可自部署的后端（Cloudflare Worker），与本机服务提供同样的 `/api`，复用 `server/ai.ts` | 涉及安全；必须能单独部署（一键部署按钮只复制这个目录），不引用目录外的文件；`src/vendor/` 是生成的副本，不要手改 |
 | `src/store.ts` | 全局状态与 localStorage 持久化 | 改存储结构要写迁移，不能让用户丢知识库 |
 | `src/actions.ts` | 学习流程的全部操作 | 业务逻辑放这里，不要写进组件 |
 | `src/lib/` | AI 调用入口、演示模板、赛制、间隔复习、导出 | |
@@ -34,7 +34,8 @@ npm run build        # 构建界面到 dist/
 npm run server       # 本机服务 127.0.0.1:4173
 npm run dev          # 界面热更新 127.0.0.1:5173（需同时运行 server）
 npm run docs:dev     # 文档站热更新
-cd worker && npx wrangler dev   # 本地运行后端（先把 .dev.vars.example 复制为 .dev.vars）
+npm run sync:worker  # 改了 server/ai.ts 或 shared/ 后，同步到 worker/src/vendor/
+cd worker && npm install && npm run dev   # 本地运行后端（先把 .dev.vars.example 复制为 .dev.vars）
 ```
 
 **每次提交前必须通过 `npm run check && npm test && npm run build`。** 没跑过就不要说“已完成”。如果某项失败且与你的改动无关，在 PR 里写明，不要顺手大改。
