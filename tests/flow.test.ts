@@ -154,3 +154,36 @@ test('demo: unfamiliar terms are marked, explained on tap, and saved with the kn
   await actions.finish();
   assert.deepEqual(getState().library[0].terms!.map(t => t.term), ['稀缺性']);
 });
+
+test('streaming in API mode: text shows while it is written; a failure removes it and keeps progress', async () => {
+  const { getLive } = await import('../src/lib/stream.ts');
+  apiOn(); learningPlan(); actions.startSession();
+  const enc = new TextEncoder();
+  let fail = false;
+  const seenLive: string[] = [];
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+    assert.equal(JSON.parse(String(init!.body)).stream, true);
+    const body = new ReadableStream({ async start(c) {
+      c.enqueue(enc.encode('event: delta\ndata: {"t":"先想想"}\n\n'));
+      await new Promise(r => setTimeout(r, 5));
+      seenLive.push(getLive()?.text ?? '');
+      if (fail) c.enqueue(enc.encode('event: error\ndata: {"error":"模型输出被截断，本次内容未采用。","status":502}\n\n'));
+      else c.enqueue(enc.encode('event: delta\ndata: {"t":"代价。"}\n\nevent: done\ndata: {"text":"先想想代价。","covered":[0],"terms":[],"model":"chosen"}\n\n'));
+      c.close();
+    } });
+    return new Response(body, { headers: { 'Content-Type': 'text/event-stream' } });
+  }) as typeof fetch;
+  await actions.send('少玩了一天');
+  assert.deepEqual(seenLive, ['先想想']);
+  let s = getState().session!;
+  const last = s.entries.at(-1)!;
+  assert.ok(last.kind === 'msg' && last.text === '先想想代价。');
+  assert.equal(getLive(), null, 'the live bubble is handed over to the saved message');
+  const before = s.entries.length;
+  fail = true;
+  await actions.speak('r0');
+  s = getState().session!;
+  assert.equal(s.entries.length, before, 'no half answer is kept');
+  assert.equal(getLive(), null);
+  assert.match(getState().ui.error, /截断/);
+});

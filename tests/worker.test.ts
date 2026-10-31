@@ -102,6 +102,17 @@ test('rooms: creating needs the access password, joining goes straight to the ro
   assert.deepEqual(seen.at(-1), { url: 'https://room/ws', method: 'GET', body: '', upgrade: 'websocket' });
 });
 
+test('the worker streams generation as server-sent events', async () => {
+  const handler = createHandler((async () => new Response(`data: ${JSON.stringify({ choices: [{ delta: { content: '好问题。\n[[要点:]]' }, finish_reason: 'stop' }] })}\n\n`, { headers: { 'Content-Type': 'text/event-stream' } })) as typeof fetch, 1000);
+  const session = { mode: 'socratic', concept: '机会成本', topic: '代价？', keyPoints: ['放弃的最佳选择', '沉没成本'], roles: [{ id: 'r0', name: '苏珩', title: '', persona: '' }], messages: [] };
+  const res = await handler.fetch(new Request('https://api.example.workers.dev/api/generate', { method: 'POST', headers: { Authorization: 'Bearer open-sesame', Origin: PAGES, 'Content-Type': 'application/json' }, body: JSON.stringify({ purpose: 'discuss', payload: { session, roleId: 'r0' }, stream: true }) }), env);
+  assert.equal(res.headers.get('Access-Control-Allow-Origin'), PAGES);
+  assert.match(res.headers.get('Content-Type')!, /text\/event-stream/);
+  const text = await res.text();
+  assert.match(text, /event: delta\ndata: \{"t":"好问题。"\}/);
+  assert.match(text, /event: done/);
+});
+
 test('worker/ stays self-contained so the Deploy to Cloudflare button can build it alone', async () => {
   const { readFileSync, readdirSync, statSync } = await import('node:fs');
   const { join, resolve, dirname } = await import('node:path');
