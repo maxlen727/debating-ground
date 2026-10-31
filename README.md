@@ -4,6 +4,8 @@
 
 写下想弄懂的概念，选一种讨论方式。讨论中讲清楚的要点会被点亮；结束后生成理解复盘，存成知识卡片，按间隔提醒你回顾。
 
+团队协作请先读 [CONTRIBUTING.md](CONTRIBUTING.md)；使用 AI Agent 工作时，Agent 的规范在 [AGENTS.md](AGENTS.md)。
+
 ## 快速开始
 
 需要 Node.js 22.18 或更新版本（直接运行 TypeScript 的服务端）。

@@ -1,0 +1,31 @@
+name: 问题报告
+description: 出错了，或者行为和预期不一样
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: 发生了什么
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 怎么复现
+      placeholder: 1. 在学习页输入…\n2. 选择…\n3. 点击…
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望的结果
+  - type: input
+    id: env
+    attributes:
+      label: 环境
+      description: 演示模式还是 API 模式？用的什么模型？浏览器 / 手机型号？
+  - type: textarea
+    id: extra
+    attributes:
+      label: 截图或导出的讨论记录
+      description: 请先删除 API Key 等敏感信息。

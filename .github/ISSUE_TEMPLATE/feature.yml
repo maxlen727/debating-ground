@@ -1,0 +1,28 @@
+name: 功能 / 改进
+description: 新功能、交互改进或提示词调整
+labels: [enhancement]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: 想解决什么问题
+      description: 站在学习者的角度描述。这和“把概念弄懂”有什么关系？
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: 要做什么
+      description: 尽量具体，写清楚做完的标准。Agent 会照着这里干活。
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 涉及方向
+      multiple: true
+      options: [界面, 讨论流程, 提示词 / AI, 本机服务, 知识库与复习, 文档, 打包与发布]
+  - type: textarea
+    id: notes
+    attributes:
+      label: 不做什么 / 需要注意
