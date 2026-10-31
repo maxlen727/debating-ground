@@ -16,6 +16,17 @@ updates:
     ignore:
       - dependency-name: '*'
         update-types: ['version-update:semver-major']
+  # 后端只有 wrangler 一个开发依赖
+  - package-ecosystem: npm
+    directory: /worker
+    schedule:
+      interval: monthly
+    groups:
+      wrangler:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
   - package-ecosystem: github-actions
     directory: /
     schedule:

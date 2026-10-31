@@ -72,3 +72,23 @@ test('a provider redirect is refused instead of followed', async () => {
   assert.equal(res.status, 502);
   assert.match((await res.json()).error, /重定向/);
 });
+
+test('worker/ stays self-contained so the Deploy to Cloudflare button can build it alone', async () => {
+  const { readFileSync, readdirSync, statSync } = await import('node:fs');
+  const { join, resolve, dirname } = await import('node:path');
+  const { vendorFiles, expected } = await import('../scripts/sync-worker.ts');
+  for (const [source, copy] of vendorFiles()) {
+    assert.equal(readFileSync(copy, 'utf8'), expected(source), `${copy} 已过期，请运行 npm run sync:worker`);
+  }
+  // 子目录外的文件在按钮部署时不存在
+  const workerDir = resolve('worker');
+  const walk = (dir: string): string[] => readdirSync(dir).flatMap(f => statSync(join(dir, f)).isDirectory() ? walk(join(dir, f)) : [join(dir, f)]);
+  for (const file of walk(join(workerDir, 'src'))) {
+    for (const [, spec] of readFileSync(file, 'utf8').matchAll(/from '(\.[^']+)'/g)) {
+      assert.ok(resolve(dirname(file), spec).startsWith(workerDir + '/'), `${file} 引用了 worker/ 之外的 ${spec}`);
+    }
+  }
+  // 部署页按 .dev.vars.example 提示填写加密变量，这里只能出现真正的机密
+  const keys = readFileSync(join(workerDir, '.dev.vars.example'), 'utf8').split('\n').filter(Boolean).map(l => l.split('=')[0]);
+  assert.deepEqual(keys, ['API_KEY', 'API_BASE_URL', 'MODEL', 'ACCESS_PASSWORD']);
+});

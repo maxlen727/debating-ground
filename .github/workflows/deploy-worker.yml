@@ -23,9 +23,12 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-      - name: 检查能否打包
+      # 只在 worker/ 里安装和打包，和 Deploy to Cloudflare 按钮的环境一致
+      - name: 检查能否单独打包
         working-directory: worker
-        run: npx --yes wrangler@4 deploy --dry-run --outdir ../.worker-dist
+        run: |
+          npm ci --no-audit --no-fund
+          npx wrangler deploy --dry-run --outdir ../.worker-dist
       - name: 检查 Cloudflare 凭据
         id: creds
         if: github.event_name != 'pull_request'

@@ -1,8 +1,8 @@
 // 思辨场 · 可自部署的后端（Cloudflare Worker）
 // 和本机服务提供同样的 /api 接口，复用 server/ai.ts 的提示词与校验。
 // 密钥由部署者存成 Worker 的加密变量，浏览器里不需要密钥；访问口令防止别人用你的额度。
-import { ApiError, normalizeConfig, buildRequest, finalize, complete } from '../../server/ai.ts';
-import type { Purpose } from '../../shared/types.ts';
+import { ApiError, normalizeConfig, buildRequest, finalize, complete } from './vendor/server/ai.ts';
+import type { Purpose } from './vendor/shared/types.ts';
 
 export interface Env {
   API_KEY?: string;          // 加密变量：AI 服务商的 API Key

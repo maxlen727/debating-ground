@@ -20,6 +20,7 @@ Worker 与本机服务的差别：
 - 每个 `/api/*` 请求都要带 `Authorization: Bearer <ACCESS_PASSWORD>`；没设口令时一律拒绝。
 - 只对 `ALLOWED_ORIGINS` 里的网站返回跨域许可。
 - Workers 不支持 `redirect: 'error'`，`complete()` 在 Worker 里用 `manual`，并把 3xx 当作失败。
+- `worker/` 必须能单独部署：Deploy to Cloudflare 按钮只复制这个子目录。所以 Worker 引用的是 `worker/src/vendor/` 里的副本，由 `npm run sync:worker` 从 `server/ai.ts` 和 `shared/` 原样生成；`tests/worker.test.ts` 会检查副本是否最新。
 
 ## 一次 AI 调用
 
