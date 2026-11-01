@@ -5,6 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { synthesizeXfyun } from './tts.ts';
+import { SPEECH_SEGMENT } from '../shared/speech.ts';
 import { ApiError, normalizeConfig, buildRequest, finalize, complete, streamGenerate, STREAMABLE, type ApiConfig } from './ai.ts';
 import type { Purpose } from '../shared/types.ts';
 
@@ -13,7 +14,7 @@ interface SessionState { config: ApiConfig | null; verified: boolean; active: Ab
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json' };
-const PURPOSES: Purpose[] = ['prepare', 'discuss', 'debate', 'hint', 'explain', 'reflect', 'review', 'term'];
+const PURPOSES: Purpose[] = ['prepare', 'discuss', 'debate', 'hint', 'explain', 'reflect', 'review', 'term', 'point'];
 
 export function createServer({ fetchImpl = fetch, timeoutMs = 90000, root = path.join(here, '..', 'dist') }: { fetchImpl?: typeof fetch; timeoutMs?: number; root?: string } = {}) {
   const sessions = new Map<string, SessionState>();
@@ -50,10 +51,10 @@ export function createServer({ fetchImpl = fetch, timeoutMs = 90000, root = path
         if (req.method === 'GET' && url.pathname === '/api/config') return json(res, 200, publicState());
         if (req.method === 'POST' && url.pathname === '/api/tts') {
           const data = await body(req);
-          if (typeof data.text !== 'string') throw new ApiError('朗读文本无效。');
+          if (typeof data.text !== 'string' || Array.from(data.text).length > SPEECH_SEGMENT) throw new ApiError('朗读文本无效或太长。');
           const t = ttsEnv();
           if (!t) throw new ApiError('讯飞语音还没有配置。', 503);
-          return json(res, 200, await synthesizeXfyun(data.text, typeof data.voice === 'string' ? data.voice : 'x4_xiaoyan', { XFYUN_APP_ID: t.appId, XFYUN_API_KEY: t.apiKey, XFYUN_API_SECRET: t.apiSecret }));
+          return json(res, 200, await synthesizeXfyun(data.text, data.voice, { XFYUN_APP_ID: t.appId, XFYUN_API_KEY: t.apiKey, XFYUN_API_SECRET: t.apiSecret }));
         }
         if (req.method === 'POST' && url.pathname === '/api/tts/config') {
           const data = await body(req);

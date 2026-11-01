@@ -1,9 +1,10 @@
 // 学习流程的所有操作：准备 → 讨论 → 小结 → 复盘 → 知识库
-import type { ChatMessage, ExplainKind, Previous, Review, SessionSnapshot, TermCard } from '../shared/types.ts';
+import type { ChatMessage, ExplainKind, PointSuggestion, Previous, Review, SessionSnapshot, TermCard } from '../shared/types.ts';
 import { getState, go, toast, uid, update } from './store.ts';
 import type { Card, Session } from './store.ts';
 import { runAI } from './lib/ai.ts';
 import { clearLive } from './lib/stream.ts';
+import { playingId, speakText, startVoice, stopVoice } from './lib/voice.ts';
 import * as room from './lib/room.ts';
 import { debateTurns, seatName, slots } from './lib/debate.ts';
 import { DAY, schedule } from './lib/srs.ts';
@@ -56,6 +57,7 @@ function planProblem(multiplayer = false): string {
 }
 function endOld() {
   const old = session();
+  stopVoice();
   if (old?.room) room.leave();
   if (old && !old.finished && old.entries.some(m => m.kind === 'msg' && m.human)) toast('上一次讨论没有复盘，已结束。');
 }
@@ -110,12 +112,28 @@ export const joinRoom = (name: string) => name.trim() ? room.join(name.trim()) :
 export const startRoom = () => room.send({ type: 'start' });
 export const callOn = (target: NonNullable<import('../shared/room.ts').Speaker>) => { update(st => { st.ui.sheet = null; }); room.send({ type: 'callOn', target }); };
 export const passTurn = () => room.send({ type: 'pass' });
-export const setTyping = (active: boolean) => room.send({ type: 'typing', active });
 export const quickMessage = (text: string) => room.send({ type: 'quickMessage', text });
+
+// 正在输入：每次按键都发会刷爆房间。开始输入时发一次，持续输入时每 3 秒续一次，停 2 秒或发送后撤销
+let typingSent = 0, typingIdle: ReturnType<typeof setTimeout> | undefined;
+export function noteTyping() {
+  if (!session()?.room) return;
+  const now = Date.now();
+  if (now - typingSent > 3000 && room.send({ type: 'typing', active: true }, true)) typingSent = now;
+  clearTimeout(typingIdle);
+  typingIdle = setTimeout(stopTyping, 2000);
+}
+export function stopTyping() {
+  clearTimeout(typingIdle);
+  if (!typingSent) return;
+  typingSent = 0;
+  if (session()?.room) room.send({ type: 'typing', active: false }, true);
+}
 export const pickSeat = (seat: string | null) => { update(st => { st.ui.sheet = null; }); room.send({ type: 'seat', seat }); };
 export const aiTakeover = () => room.send({ type: 'aiTakeover' });
 export const retryAI = () => room.send({ type: 'retry' });
 export function leaveRoom() {
+  stopVoice(); stopTyping();
   room.leave();
   update(st => { st.session = null; st.ui.screen = 'learn'; });
 }
@@ -244,22 +262,59 @@ export async function quick(kind: ExplainKind | 'disagree', messageId: string) {
   clearLive('explain');
 }
 
-export function proposePoint(text: string, source: 'human' | 'ai' = 'human') {
-  const s = session(); text = text.trim();
-  if (!s || !text) return;
-  if (s.keyPoints.length + (s.proposedPoints?.length ?? 0) >= 6) return toast('讨论要点最多六个。');
-  if ([...s.keyPoints, ...(s.proposedPoints ?? []).map(p => p.text)].some(p => p.toLocaleLowerCase() === text.toLocaleLowerCase())) return toast('这条要点已经存在。');
-  update(st => { st.session!.proposedPoints = [...(st.session!.proposedPoints ?? []), { id: uid(), text, source, proposer: source === 'ai' ? 'AI' : (st.session!.room?.members.find(m => m.id === st.session!.room?.memberId)?.name ?? '你') }]; });
+/* ---------- 朗读 ---------- */
+// 讯飞朗读要后端配好密钥；多人房间看房主的后端，单人看自己连的后端
+export function voiceAvailable(): boolean {
+  const { session: s, config, ai } = getState();
+  if (s?.room) return !!s.room.voiceAvailable;
+  return config.aiMode === 'remote' ? !!ai.remoteTtsConfigured : config.aiMode === 'api' ? !!ai.ttsConfigured : false;
 }
-export function acceptPoint(id: string) {
-  update(st => { const s = st.session; if (!s) return; const p = s.proposedPoints?.find(x => x.id === id); if (!p || s.keyPoints.length >= 6) return; s.keyPoints.push(p.text); s.proposedPoints = s.proposedPoints!.filter(x => x.id !== id); });
+export function toggleVoice(messageId: string) {
+  const s = session();
+  const m = s?.entries.find((x): x is ChatMessage => x.id === messageId && x.kind === 'msg');
+  if (!s || !m || m.skipped) return;
+  if (playingId() === m.id) return stopVoice();
+  const { config } = getState();
+  if (s.room) { startVoice(m.id); if (!room.send({ type: 'speak', entryId: m.id, voice: config.voiceName })) stopVoice(); return; }
+  void speakText(m.id, m.text, config.voiceName, config.aiMode === 'remote' ? 'remote' : 'local');
 }
-export function rejectPoint(id: string) { update(st => { if (st.session) st.session.proposedPoints = (st.session.proposedPoints ?? []).filter(p => p.id !== id); }); }
+
+/* ---------- 补充讨论要点 ---------- */
+// 新要点先进“待确认”，由学习者（多人房间里是房主）采纳后才进入要点清单和复盘
+const MAX_POINTS = 6;
+export function proposePoint(raw: string, source: 'human' | 'ai' = 'human') {
+  const s = session(); const text = raw.trim().slice(0, 40);
+  if (!s || !text) return false;
+  if (s.room) return room.send({ type: 'propose', text, source });
+  const pending = s.proposedPoints ?? [];
+  if (s.keyPoints.length + pending.length >= MAX_POINTS) { toast('讨论要点最多 6 个。'); return false; }
+  if ([...s.keyPoints, ...pending.map(p => p.text)].some(p => p.toLocaleLowerCase() === text.toLocaleLowerCase())) { toast('这条要点已经有了。'); return false; }
+  // 自己写的直接加入；AI 提议的先放进待确认
+  update(st => {
+    const ss = st.session!;
+    if (source === 'human') ss.keyPoints.push(text);
+    else ss.proposedPoints = [...pending, { id: uid(), text, source, proposer: 'AI', by: '' }];
+  });
+  return true;
+}
+export function decidePoint(id: string, accept: boolean) {
+  const s = session(); if (!s) return;
+  if (s.room) { if (s.room.host) room.send({ type: 'decidePoint', id, accept }); return; }
+  update(st => {
+    const ss = st.session!; const p = ss.proposedPoints?.find(x => x.id === id);
+    if (!p) return;
+    ss.proposedPoints = ss.proposedPoints!.filter(x => x.id !== id);
+    if (accept && ss.keyPoints.length < MAX_POINTS) ss.keyPoints.push(p.text);
+  });
+}
 export async function suggestPoint() {
   const s = session(); if (!s || getState().ui.busy) return;
-  const res = s.room ? await room.ask<{ text: string }>({ type: 'ask', purpose: 'hint' }, 'AI 正在提议一个讨论要点') : await runAI('hint', { session: snapshot(s), covered: s.covered, task: '请提出一个尚未列出的、适合继续探究的简短讨论要点。只给一条要点，不要给建议或解释。' }, 'AI 正在提议一个讨论要点');
-  if (res?.text) proposePoint(res.text.split(/[。\n]/)[0].trim(), 'ai');
-  clearLive('hint');
+  if (s.keyPoints.length >= MAX_POINTS) return toast('讨论要点最多 6 个。');
+  const label = s.mode === 'debate' ? 'AI 正在找一个值得交锋的争点' : 'AI 正在找一个还没讲到的要点';
+  const res = s.room
+    ? await room.ask<{ data: PointSuggestion }>({ type: 'ask', purpose: 'point' }, label)
+    : await runAI('point', { session: snapshot(s) }, label);
+  if (res?.data.point) proposePoint(res.data.point, 'ai');
 }
 
 export async function hint() {

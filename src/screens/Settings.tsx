@@ -27,7 +27,7 @@ export function Settings() {
         </section>
         {config.aiMode === 'remote' && <RemotePanel />}
         {config.aiMode === 'api' && <LocalPanel />}
-        <VoicePanel />
+        {config.aiMode !== 'demo' && <VoicePanel />}
         <section className="panel">
           <h3 className="section-label">关于格式</h3>
           <p className="note">讨论准备和理解复盘要求模型返回 JSON。较小的模型偶尔不按格式回答；遇到“没有按要求返回结构化结果”时，重试一次或换一个更强的模型。目前支持 Bearer 认证的文本 Chat Completions 接口。失败的请求不会改变讨论进度，也不会自动换成模板。</p>
@@ -49,8 +49,8 @@ function VoicePanel() {
       {localApi && <TtsKeyForm ready={ready} />}
       <label className="field"><span>发音人 ID</span><input value={config.voiceName} maxLength={64} onChange={e => update(s => { s.config.voiceName = e.target.value; })} placeholder="x4_xiaoyan" /></label>
       <p className="fineprint">{localApi
-        ? '密钥只存在本机服务的内存里，停止服务或清除后就没了；也可以改用启动时的 XFYUN_* 环境变量。每次点击朗读都会调用一次讯飞合成。'
-        : '配置好服务端密钥后，点发言旁的朗读按钮播放；每次点击都会调用一次讯飞合成。密钥只放在本机服务或房主 Worker；发音人 ID 请使用讯飞控制台已开通的音色。'}</p>
+        ? '密钥只存在本机服务的内存里，停止服务或点“清除”后就没了；也可以在启动服务时用 XFYUN_* 环境变量提供。点发言旁的“朗读”才会调用讯飞，按讯飞的价格计费。'
+        : '讯飞密钥设置在你的后端（Worker 的加密变量），这里不需要填写。配好后发言旁会出现“朗读”。发音人 ID 要用讯飞控制台里已开通的音色。'}</p>
     </section>
   );
 }
@@ -73,8 +73,8 @@ function TtsKeyForm({ ready }: { ready: boolean }) {
   return (
     <div className="stack">
       <label className="field"><span>讯飞 App ID</span><input value={appId} onChange={e => setAppId(e.target.value)} placeholder="控制台「我的应用」里的 APPID" /></label>
-      <label className="field"><span>讯飞 API Key</span><input type="password" autoComplete="off" spellCheck={false} value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder={ready ? '已配置，不改就留空' : '每次更换配置都要重新填写'} /></label>
-      <label className="field"><span>讯飞 API Secret</span><input type="password" autoComplete="off" spellCheck={false} value={secret} onChange={e => setSecret(e.target.value)} placeholder={ready ? '已配置，不改就留空' : '每次更换配置都要重新填写'} /></label>
+      <label className="field"><span>讯飞 API Key</span><input type="password" autoComplete="off" spellCheck={false} value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder={ready ? '已配置；要更换就三项都重新填' : '讯飞控制台里的 APIKey'} /></label>
+      <label className="field"><span>讯飞 API Secret</span><input type="password" autoComplete="off" spellCheck={false} value={secret} onChange={e => setSecret(e.target.value)} placeholder={ready ? '已配置；要更换就三项都重新填' : '讯飞控制台里的 APISecret'} /></label>
       <div className="row">
         <button className="primary grow" disabled={busy} onClick={onSave}>保存语音配置</button>
         {ready && <button className="ghost grow" disabled={busy} onClick={onClear}>清除</button>}

@@ -201,3 +201,57 @@ test('streaming in API mode: text shows while it is written; a failure removes i
   assert.equal(getLive(), null);
   assert.match(getState().ui.error, /截断/);
 });
+
+test('single-player debate: after the last closing statement the learner reads it before the review starts', async () => {
+  update(s => {
+    s.config.mode = 'debate';
+    s.plan = { mode: 'debate', concept: '机会成本', topic: '上大学的最大成本是学费', keyPoints: ['放弃的最佳选择', '区别于沉没成本'], opening: '', personas: [], source: 'demo', previous: null };
+  });
+  actions.startSession();
+  for (let i = 0; i < 40 && !getState().session!.awaitingReview; i++) {
+    const t = actions.currentTurn(getState().session)!;
+    if (t.role.type === 'human') await actions.send('我方认为学费不是最大成本，因为放弃的收入更高。'); else await actions.generateSeat();
+  }
+  const s = getState().session!;
+  assert.equal(s.awaitingReview, true);
+  assert.equal(s.finished, false, 'not finished yet: the last speech stays on screen');
+  assert.equal(s.cursor, s.turns.length);
+  assert.equal(getState().ui.screen, 'session');
+  await actions.finish();
+  assert.equal(getState().session!.finished, true);
+  assert.equal(getState().session!.awaitingReview, false);
+  assert.ok(getState().session!.review, 'review generated after the learner moves on');
+});
+
+test('adding key points: my own go straight in, AI suggestions wait for me to accept', async () => {
+  update(s => { s.plan = { mode: 'socratic', concept: '机会成本', topic: '代价是什么？', keyPoints: ['放弃的最佳选择', '区别于沉没成本'], opening: '你觉得呢？', personas: [{ id: 'r0', tone: 'c', name: '苏珩', title: '追问者', persona: '' }], source: 'demo', previous: null }; });
+  actions.startSession();
+  assert.equal(actions.proposePoint('  隐性成本  '), true);
+  assert.deepEqual(getState().session!.keyPoints, ['放弃的最佳选择', '区别于沉没成本', '隐性成本']);
+  assert.equal(actions.proposePoint('隐性成本'), false, 'no duplicates');
+
+  await actions.suggestPoint();
+  const pending = getState().session!.proposedPoints!;
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].source, 'ai');
+  assert.ok(!getState().session!.keyPoints.includes(pending[0].text), 'not tracked until accepted');
+  actions.decidePoint(pending[0].id, true);
+  assert.equal(getState().session!.keyPoints.at(-1), pending[0].text);
+  assert.equal(getState().session!.proposedPoints!.length, 0);
+
+  await actions.suggestPoint();
+  actions.decidePoint(getState().session!.proposedPoints![0].id, false);
+  assert.equal(getState().session!.keyPoints.length, 4, 'ignored suggestions are dropped');
+  actions.proposePoint('五'); actions.proposePoint('六');
+  assert.equal(actions.proposePoint('七'), false, 'at most six key points');
+  assert.equal(getState().session!.keyPoints.length, 6);
+});
+
+test('read aloud only shows when the backend has iFlytek configured', () => {
+  update(s => { s.config.aiMode = 'demo'; });
+  assert.equal(actions.voiceAvailable(), false);
+  update(s => { s.config.aiMode = 'api'; s.ai.ttsConfigured = true; });
+  assert.equal(actions.voiceAvailable(), true);
+  update(s => { s.config.aiMode = 'remote'; s.ai.remoteTtsConfigured = false; });
+  assert.equal(actions.voiceAvailable(), false);
+});

@@ -1,12 +1,13 @@
 // 多人房间：在 Node 里驱动 RoomCore，模拟房主和同学的连接
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RoomCore, snapshotFor, validateSetup, type Generate, type SocketLike, type StoredRoom } from '../worker/src/room.ts';
+import { RoomCore, snapshotFor, validateSetup, type Generate, type RoomDeps, type SocketLike, type StoredRoom } from '../worker/src/room.ts';
 import type { RoomSetup, RoomView, ServerMessage } from '../shared/room.ts';
 import { ROOM_LIMITS } from '../shared/room.ts';
 import type { Purpose, SessionSnapshot } from '../shared/types.ts';
 import { debateTurns, slots } from '../src/lib/debate.ts';
 import { defaultConfig } from '../src/store.ts';
+import { deadlineOf } from '../src/lib/room.ts';
 
 const ROUNDTABLE = {
   mode: 'roundtable', concept: '机会成本', topic: '选择的代价是什么？', keyPoints: ['放弃的最高价值', '沉没成本无关', '隐性成本'],
@@ -19,8 +20,10 @@ function debateSetup() {
 }
 
 interface Client extends SocketLike { inbox: ServerMessage[]; member: string | null; open: boolean; last(): RoomView }
-function setup(generate?: Generate) {
+type Synthesize = NonNullable<RoomDeps['synthesize']>;
+function setup(generate?: Generate, synthesize?: Synthesize) {
   let stored: StoredRoom | undefined;
+  let saves = 0;
   let now = 1_000_000;
   const sockets: Client[] = [];
   type Payload = { session: SessionSnapshot };
@@ -32,7 +35,7 @@ function setup(generate?: Generate) {
     return { text: `AI 回复 ${calls.length}`, covered: [0], model: 'm' };
   });
   const core = new RoomCore({
-    load: async () => stored && structuredClone(stored), save: async r => { stored = structuredClone(r); }, destroy: async () => { stored = undefined; },
+    load: async () => stored && structuredClone(stored), save: async r => { saves++; stored = structuredClone(r); }, synthesize, destroy: async () => { stored = undefined; },
     sockets: () => sockets.filter(s => s.open), setAlarm: async at => { alarm = at; }, generate: async (p, x, onText) => { if (!generate) return gen(p, x); calls.push({ purpose: p, payload: x as Payload }); return generate(p, x, onText); }, now: () => now
   });
   const connect = (): Client => {
@@ -44,11 +47,11 @@ function setup(generate?: Generate) {
     sockets.push(c); return c;
   };
   const send = (c: Client, m: object) => core.onMessage(c, JSON.stringify(m));
-  return { core, connect, send, calls, get stored() { return stored; }, get alarm() { return alarm; }, tick(ms: number) { now += ms; } };
+  return { core, connect, send, calls, get stored() { return stored; }, get alarm() { return alarm; }, get saves() { return saves; }, tick(ms: number) { now += ms; } };
 }
 
-async function room(kind: 'roundtable' | 'debate' = 'roundtable', generate?: Generate) {
-  const t = setup(generate);
+async function room(kind: 'roundtable' | 'debate' = 'roundtable', generate?: Generate, synthesize?: Synthesize) {
+  const t = setup(generate, synthesize);
   const created = await t.core.init({ roomId: 'r'.repeat(22), setup: kind === 'debate' ? debateSetup() : ROUNDTABLE, hostName: '束束' });
   const host = t.connect();
   await t.send(host, { type: 'resume', token: created.hostToken });
@@ -347,4 +350,155 @@ test('room AI speech is relayed to everyone while it is being written, then save
   assert.equal(streams.at(-1)!.text, '机会成本就是放弃的最好选择。');
   const saved = guest.last().entries.at(-1)!;
   assert.equal(saved.id, streams[0].id, 'the final message keeps the stream id');
+});
+
+/* ---------- 朗读、正在输入、快捷短语、要点提案、倒计时 ---------- */
+const audioOf = (c: { inbox: ServerMessage[] }) => c.inbox.filter((m): m is Extract<ServerMessage, { type: 'audio' }> => m.type === 'audio');
+async function guestIn(t: Awaited<ReturnType<typeof room>>, name = '小明') {
+  const g = t.connect();
+  await t.send(g, { type: 'hello', invite: t.created.invite, name });
+  return g;
+}
+
+test('reading aloud uses its own quota, never the AI quota, and plays only for the person who asked', async () => {
+  const spoken: string[] = [];
+  const t = await room('roundtable', undefined, async (text, voice) => { spoken.push(`${voice}:${text}`); return { audio: btoa('mp3-' + spoken.length), mime: 'audio/mpeg' }; });
+  const guest = await guestIn(t);
+  const opening = t.host.last().entries.find(e => e.kind === 'msg')!;
+  assert.equal(t.host.last().voiceAvailable, true);
+
+  await t.send(guest, { type: 'speak', entryId: opening.id, voice: 'x4_yezi' });
+  assert.deepEqual(audioOf(guest).map(a => [a.entryId, a.seq, a.last]), [[opening.id, 0, true]]);
+  assert.equal(audioOf(t.host).length, 0, 'audio goes only to the one who asked');
+  assert.equal(t.stored!.aiCalls, 0, 'reading aloud does not touch the AI quota');
+  assert.equal(t.stored!.voiceCalls, 1);
+  assert.deepEqual(spoken, ['x4_yezi:大家先说说，什么叫机会成本？']);
+
+  // 同一条、同一个音色再听：用缓存，不再调用讯飞，也不计数
+  await t.send(t.host, { type: 'speak', entryId: opening.id, voice: 'x4_yezi' });
+  assert.equal(audioOf(t.host).length, 1);
+  assert.equal(spoken.length, 1);
+  assert.equal(t.stored!.voiceCalls, 1);
+
+  // 换音色、乱写的音色
+  await t.send(guest, { type: 'speak', entryId: opening.id, voice: 'bad voice;' });
+  assert.equal(spoken.at(-1), 'x4_xiaoyan:大家先说说，什么叫机会成本？', 'an invalid voice falls back to the default');
+
+  // 每人的朗读次数用完后被拒，房间的 AI 照常发言
+  // 直接把小明的次数调到上限（RoomCore 内部状态），换个没缓存的音色再点
+  (t.core as unknown as { room: StoredRoom }).room.members.find(m => m.name === '小明')!.voiceCalls = ROOM_LIMITS.personalVoice;
+  await t.send(guest, { type: 'speak', entryId: opening.id, voice: 'x4_xiaofeng' });
+  assert.match(errors(guest).at(-1)!, /朗读次数已经用完/);
+  await t.send(t.host, { type: 'start' });
+  await t.send(t.host, { type: 'say', text: '是放弃的东西' });
+  assert.equal(t.stored!.aiCalls, 1, 'the AI guest still answers');
+});
+
+test('long messages are read aloud segment by segment; a backend without iFlytek says so', async () => {
+  const parts: string[] = [];
+  const t = await room('roundtable', async (_p, _x) => ({ text: '这是一句很长的话。'.repeat(80), covered: [], model: 'm' }), async text => { parts.push(text); return { audio: btoa(String(parts.length)), mime: 'audio/mpeg' }; });
+  await t.send(t.host, { type: 'start' });
+  await t.send(t.host, { type: 'say', text: '我先说' });
+  const long = t.host.last().entries.filter(e => e.kind === 'msg').at(-1)!;
+  await t.send(t.host, { type: 'speak', entryId: long.id, voice: '' });
+  const got = audioOf(t.host);
+  assert.ok(got.length > 1, 'split into several segments');
+  assert.deepEqual(got.map(a => a.seq), got.map((_, i) => i));
+  assert.equal(got.filter(a => a.last).length, 1);
+  assert.equal(got.at(-1)!.last, true);
+  assert.ok(parts.every(p => Array.from(p).length <= 300));
+  assert.equal(t.stored!.voiceCalls, 1, 'one tap counts once, however many segments');
+
+  const plain = await room();
+  assert.equal(plain.host.last().voiceAvailable, false);
+  const first = plain.host.last().entries.find(e => e.kind === 'msg')!;
+  await plain.send(plain.host, { type: 'speak', entryId: first.id, voice: '' });
+  assert.match(errors(plain.host).at(-1)!, /还没有配置讯飞语音/);
+});
+
+test('typing status is not written to storage and is only broadcast when it changes', async () => {
+  const t = await room();
+  const guest = await guestIn(t);
+  const saves = t.saves, before = guest.inbox.length;
+  for (let i = 0; i < 20; i++) await t.send(t.host, { type: 'typing', active: true });
+  assert.equal(t.saves, saves, 'no storage writes');
+  const states = guest.inbox.slice(before).filter(m => m.type === 'state');
+  assert.equal(states.length, 1, 'one broadcast when typing starts');
+  assert.equal(guest.last().members.find(m => m.host)!.typing, true);
+  await t.send(t.host, { type: 'typing', active: false });
+  assert.equal(guest.last().members.find(m => m.host)!.typing, false);
+  // 没续上就自己消失
+  await t.send(t.host, { type: 'typing', active: true });
+  t.tick(7000);
+  assert.equal(t.core.view().members.find(m => m.host)!.typing, false);
+});
+
+test('quick messages are a passing nudge: rate limited, never stored, never sent to the AI', async () => {
+  const t = await room();
+  const guest = await guestIn(t);
+  await t.send(guest, { type: 'quickMessage', text: '等一等' });
+  assert.match(errors(guest).at(-1)!, /讨论进行中/);
+  await t.send(t.host, { type: 'start' });
+  const entries = t.stored!.entries.length, saves = t.saves;
+  await t.send(guest, { type: 'quickMessage', text: '等一等' });
+  assert.deepEqual(t.host.inbox.at(-1), { type: 'quick', memberId: guest.member, name: '小明', text: '等一等' });
+  for (let i = 0; i < 320; i++) await t.send(guest, { type: 'quickMessage', text: '请继续' });
+  assert.match(errors(guest).at(-1)!, /发得太快/);
+  assert.equal(t.host.inbox.filter(m => m.type === 'quick').length, 1);
+  t.tick(ROOM_LIMITS.quickGapMs);
+  await t.send(guest, { type: 'quickMessage', text: '请继续' });
+  assert.equal(t.host.inbox.filter(m => m.type === 'quick').length, 2);
+  await t.send(guest, { type: 'quickMessage', text: '随便写点什么' });
+  assert.match(errors(guest).at(-1)!, /列表里的快捷短语/);
+  assert.equal(t.stored!.entries.length, entries, 'nothing goes into the discussion record');
+  assert.equal(t.saves, saves);
+  assert.equal(t.calls.length, 0, 'no AI call');
+});
+
+test('new key points: classmates propose, the host decides, everyone sees the same list', async () => {
+  const t = await room();
+  const guest = await guestIn(t);
+  await t.send(guest, { type: 'propose', text: '时间也是成本', source: 'human' });
+  assert.deepEqual(guest.last().proposals!.map(p => [p.text, p.proposer, p.source]), [['时间也是成本', '小明', 'human']]);
+  assert.equal(guest.last().setup.keyPoints.length, 3, 'not a key point until the host accepts');
+  const id = guest.last().proposals![0].id;
+  await t.send(guest, { type: 'decidePoint', id, accept: true });
+  assert.match(errors(guest).at(-1)!, /只有房主/);
+  await t.send(t.host, { type: 'decidePoint', id, accept: true });
+  assert.deepEqual(guest.last().setup.keyPoints.at(-1), '时间也是成本');
+  assert.equal(guest.last().proposals!.length, 0);
+  assert.ok(guest.last().entries.some(e => e.kind === 'sys' && e.text === '新增讨论要点：时间也是成本'));
+  // 重复的、太多的
+  await t.send(guest, { type: 'propose', text: '时间也是成本', source: 'human' });
+  assert.match(errors(guest).at(-1)!, /已经有了/);
+  await t.send(guest, { type: 'propose', text: '甲', source: 'human' });
+  await t.send(guest, { type: 'propose', text: '乙', source: 'ai' });
+  await t.send(guest, { type: 'propose', text: '丙', source: 'human' });
+  assert.match(errors(guest).at(-1)!, /太多/);
+  // 房主自己写的直接加入，忽略的提案就消失
+  await t.send(t.host, { type: 'propose', text: '房主加的', source: 'human' });
+  assert.equal(t.host.last().setup.keyPoints.at(-1), '房主加的');
+  await t.send(t.host, { type: 'decidePoint', id: t.host.last().proposals![0].id, accept: false });
+  assert.deepEqual(t.host.last().proposals!.map(p => p.text), ['乙']);
+  // AI 提议走个人请求，用的是专门的 point 用途
+  await t.send(t.host, { type: 'start' });
+  await t.send(guest, { type: 'ask', reqId: 'p', purpose: 'point' });
+  assert.equal(t.calls.at(-1)!.purpose, 'point');
+});
+
+test('the turn timer is sent with the backend clock so phones with a wrong clock still count down correctly', async () => {
+  const t = setup();
+  const s = { ...ROUNDTABLE, turnSeconds: 60 };
+  const created = await t.core.init({ roomId: 'r'.repeat(22), setup: s, hostName: '束束' });
+  const host = t.connect();
+  await t.send(host, { type: 'resume', token: created.hostToken });
+  await t.send(host, { type: 'start' });
+  const v = host.last();
+  assert.equal(v.setup.turnSeconds, 60);
+  assert.equal(v.turnStartedAt, v.now);
+  // 手机时钟快了 5 分钟：截止时间仍是“收到时 + 60 秒”
+  const phone = Date.now() + 300_000;
+  assert.equal(deadlineOf(v, phone), phone + 60_000);
+  assert.equal(deadlineOf({ ...v, turnStartedAt: 0 }, phone), 0, 'no timer while the AI speaks');
+  assert.equal(validateSetup({ ...ROUNDTABLE, turnSeconds: 45 }).turnSeconds, 0, 'only the offered limits are accepted');
 });

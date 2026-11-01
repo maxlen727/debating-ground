@@ -6,4 +6,3 @@ dist/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
 .worker-dist/
-.alma-snapshots

@@ -26,7 +26,7 @@ export function Prepare() {
         </section>
 
         <section className="panel">
-          <div className="row between"><h3 className="section-label">{debate ? '核心争点' : '讨论要点'}</h3><small className="muted">{plan.keyPoints.length} / 6（上限）</small></div>
+          <div className="row between"><h3 className="section-label">{debate ? '核心争点' : '要弄懂的要点'}</h3><small className="muted">{plan.keyPoints.length} / 6</small></div>
           <ol className="point-edit">
             {plan.keyPoints.map((k, i) => (
               <li key={i}>
@@ -37,7 +37,7 @@ export function Prepare() {
             ))}
           </ol>
           {plan.keyPoints.length < 6 && <button className="ghost small" onClick={() => setPlan(p => { p.keyPoints.push(''); })}><Icon name="plus" size={16} />添加要点</button>}
-          <p className="fineprint">{debate ? '建议聚焦 3 到 4 个核心争点，作为交锋方向而非必须逐项完成的清单；比赛赛程和立场不受它影响。' : '通常 4 到 5 个要点足以搭出概念的理解路径。可按本次目标调整，讲清楚的要点会在讨论中点亮，并进入复盘。'}</p>
+          <p className="fineprint">{debate ? '3 到 4 个核心争点就够了：它们是交锋的方向，不是要逐条完成的清单，也不影响赛程。复盘看的是你对每个争点背后概念的理解，不看输赢。' : '讨论中讲清楚一个要点，它会在顶部点亮；复盘也按这份清单逐条评估。'}</p>
         </section>
 
         {!debate && (
@@ -95,14 +95,14 @@ function InviteSheet({ onClose }: { onClose: () => void }) {
             <input value={name} maxLength={20} placeholder="同学会看到这个名字" onChange={e => setName(e.target.value)} />
           </label>
           <label className="field">
-            <span>每次发言限时（可选）</span>
+            <span>每次发言的时限（到点只提醒，不打断）</span>
             <select value={config.turnSeconds} onChange={e => update(s => { s.config.turnSeconds = Number(e.target.value) as 0 | 30 | 60 | 90 | 120; })}>
-              <option value={0}>关闭倒计时</option><option value={30}>30 秒</option><option value={60}>1 分钟</option><option value={90}>1 分 30 秒</option><option value={120}>2 分钟</option>
+              <option value={0}>不计时</option><option value={30}>30 秒</option><option value={60}>1 分钟</option><option value={90}>1 分 30 秒</option><option value={120}>2 分钟</option>
             </select>
           </label>
-          {debate && <p className="note">标为“同学”的席位留给加入的同学，轮到时没人坐就等着，你可以跳过或让 AI 代答；标为“AI”的席位由 AI 担任，同学也可以坐进去。进房间后每个人都可以自己选席位。</p>}
+          {debate && <p className="note">标为“同学”的席位留给加入的同学，轮到时没人坐就等着，你可以跳过或让 AI 代答；标为“AI”的席位由 AI 担任，同学也可以坐进去。你默认坐第一个标为“我”的席位。进房间后每个人都可以自己选席位。</p>}
           {debate && peerSeats === 0 && <p className="alert soft">现在没有给同学留席位：同学进来只能坐进 AI 的席位或旁听。可以先关掉这里，把一些席位设成“同学”。</p>}
-          <p className="fineprint">AI 使用你的后端和额度，同学不需要访问口令。每个房间最多 8 人、150 次 AI 调用，讨论内容临时保存在你的后端，结束 1 小时后自动删除。</p>
+          <p className="fineprint">AI 使用你的后端和额度，同学不需要访问口令。每个房间最多 8 人、150 次 AI 调用；如果配了讯飞朗读，朗读另算，最多 120 次。讨论内容临时保存在你的后端，结束 1 小时后自动删除。</p>
           <ErrorBanner />
           <button className="primary block" disabled={!!ui.busy || !name.trim()} onClick={async () => { await inviteFriends(name); }}>{ui.busy ? ui.busy : '创建房间'}</button>
         </>

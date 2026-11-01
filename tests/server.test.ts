@@ -61,3 +61,26 @@ test('generate can stream as server-sent events when the page asks for it', asyn
   const review = await fetch(origin + '/api/generate', { method: 'POST', headers: { ...h, Cookie: cookie }, body: JSON.stringify({ purpose: 'prepare', payload: { concept: 'x', mode: 'socratic' }, stream: true }) });
   assert.match(review.headers.get('content-type')!, /application\/json/);
 });
+
+test('iFlytek keys typed in settings stay in server memory and are never echoed back', async t => {
+  const server = createServer({});
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); }));
+  const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  let cookie = '';
+  async function call(url: string, method = 'GET', body?: unknown) {
+    const r = await fetch(origin + url, { method, headers: { 'Content-Type': 'application/json', 'X-Sibian-Client': 'web', Origin: origin, Cookie: cookie }, body: body ? JSON.stringify(body) : undefined });
+    const set = r.headers.get('set-cookie'); if (set) cookie = set.split(';')[0];
+    return { status: r.status, text: await r.text() };
+  }
+  assert.match((await call('/api/config')).text, /"ttsConfigured":false/);
+  assert.equal((await call('/api/tts', 'POST', { text: '你好' })).status, 503);
+  assert.equal((await call('/api/tts/config', 'POST', { appId: 'a', apiKey: 'only-key' })).status, 400, 'all three are needed');
+  const saved = await call('/api/tts/config', 'POST', { appId: 'a', apiKey: 'xf-key-1', apiSecret: 'xf-secret-1' });
+  assert.equal(saved.status, 200);
+  const state = await call('/api/config');
+  assert.match(state.text, /"ttsConfigured":true/);
+  assert.ok(![saved.text, state.text].some(t => t.includes('xf-key-1') || t.includes('xf-secret-1')));
+  assert.equal((await call('/api/tts', 'POST', { text: '长'.repeat(301) })).status, 400, 'one segment at a time');
+  assert.match((await call('/api/tts/config', 'POST', {})).text, /"ttsConfigured":false/);
+});

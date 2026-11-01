@@ -1,6 +1,6 @@
 // 思辨场 · AI 适配层
 // 校验用户填写的接口、为每种用途组装提示词、调用 Chat Completions、整理输出。
-import type { ModeId, PointStatus, Purpose, Review, SessionSnapshot, PrepareResult, TermCard } from '../shared/types.ts';
+import type { ModeId, PointStatus, PointSuggestion, Purpose, Review, SessionSnapshot, PrepareResult, TermCard } from '../shared/types.ts';
 
 export class ApiError extends Error {
   status: number;
@@ -9,7 +9,7 @@ export class ApiError extends Error {
 
 export interface ApiConfig { endpoint: string; apiKey: string; model: string }
 export interface ChatMessage { role: 'system' | 'user'; content: string }
-type Output = 'text' | 'cover' | 'prepare' | 'review' | 'term';
+type Output = 'text' | 'cover' | 'prepare' | 'review' | 'term' | 'point';
 // exclude：讨论的概念和要点，不当作“陌生术语”标出或解释，留给讨论去弄懂
 export interface BuiltRequest { messages: ChatMessage[]; output: Output; n?: number; mode?: ModeId; exclude?: string[]; term?: string }
 
@@ -167,10 +167,22 @@ export function buildRequest(purpose: Purpose | 'test', payload: unknown = {}): 
         + '只解释这个词本身；不要讲解资料中 keyPoints 列出的要点，也不要替学习者回答讨论题。';
       return { messages: pair(system, encode({ concept: s.concept, topic: s.topic, keyPoints: s.keyPoints, term, sentence: quote })), output: 'term', term };
     }
+    case 'point': {
+      const debate = s.mode === 'debate';
+      const system = COMMON + '你是学习者身边的备课助手，不参与讨论、不站队。根据讨论题和目前的讨论，提出一条还没有列出、接下来值得讨论的'
+        + (debate ? '核心争点或判断标准：双方可以围绕它交锋，弄清它能帮助理解资料里的概念。' : '理解要点：弄懂它是真正理解这个概念必需的一步。')
+        + '只输出一个 JSON 对象，不要任何说明或代码块标记。格式：{"point":"不超过 12 个字","why":"为什么值得讨论，不超过 40 字"}。'
+        + '不要重复或改写资料中已有的 keyPoints；不要替学习者回答讨论题。';
+      return { messages: pair(system, encode({ concept: s.concept, topic: s.topic, mode: RULES[s.mode].name, keyPoints: s.keyPoints, recent: transcriptOf(s, 10) })), output: 'point', exclude: s.keyPoints.map(k => String(k).trim()) };
+    }
     case 'review': {
+      // 辩论的要点是核心争点：评的是学习者对争点背后概念的理解，不是比赛输赢，也不是有没有逐条讲到
+      const scope = s.mode === 'debate'
+        ? 'points 按资料中的核心争点逐条给出，label 写争点原文：status 评价学习者对这个争点涉及的概念和判断标准理解得怎样（mastered 能讲清并正确运用，partial 涉及了但不完整或有偏差，missing 没有涉及）；不评判辩论输赢，也不因为立场不同而扣分。'
+        : 'points 必须按要点清单逐条给出；';
       const system = COMMON + '你是一个学习应用的复盘老师。根据讨论记录判断学习者对概念的理解。只依据学习者本人的发言和小结判断（资料中 speaker 带“学习者”字样的是学习者）；其他角色说出的内容不代表学习者懂了。只输出一个 JSON 对象，不要任何说明或代码块标记。格式：'
         + '{"oneLine":"一句话总体评价，不超过 50 字","points":[{"label":"要点原文","status":"mastered|partial|missing","note":"不超过 30 字的依据"}],"misconceptions":[{"said":"学习者的误解，转述","fix":"正确的理解，不超过 40 字"}],"quiz":[{"q":"题干","options":["A","B","C","D"],"answer":0,"why":"不超过 40 字的解析"}]}。'
-        + 'points 必须按要点清单逐条给出；misconceptions 没有就给空数组；quiz 出 3 道针对薄弱点的四选一单选题，answer 是正确选项的下标（0 到 3）。';
+        + scope + 'misconceptions 没有就给空数组；quiz 出 3 道针对薄弱点的四选一单选题，answer 是正确选项的下标（0 到 3）。';
       return { messages: pair(system, encode({ ...base, mode: RULES[s.mode].name, transcript: transcriptOf(s) })), output: 'review', n };
     }
   }
@@ -222,6 +234,12 @@ export function finalize(request: BuiltRequest, result: { text: string; model: s
     const card: TermCard = { term: request.term ?? '', definition: short(data.definition, 160), relation: short(data.relation, 100) };
     if (!card.definition) throw new ApiError('模型没有返回这个词的解释，请重试。', 502);
     return { data: card, model: result.model };
+  }
+  if (output === 'point') {
+    const out: PointSuggestion = { point: short(data.point, 40), why: short(data.why, 100) };
+    if (!out.point) throw new ApiError('模型没有给出要点，请重试。', 502);
+    if ((request.exclude ?? []).some(k => k.toLocaleLowerCase() === out.point.toLocaleLowerCase())) throw new ApiError('AI 提议的要点和已有的重复了，请再试一次。', 502);
+    return { data: out, model: result.model };
   }
   if (output === 'prepare') {
     const debate = request.mode === 'debate';
