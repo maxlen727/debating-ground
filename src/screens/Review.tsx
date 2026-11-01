@@ -32,6 +32,14 @@ export function ReviewBody({ r, terms }: { r: R; terms?: TermCard[] }) {
           {r.misconceptions.map((m, i) => <div key={i} className="fix"><p className="said">{m.said}</p><p className="right"><Icon name="chevron" size={14} />{m.fix}</p></div>)}
         </section>
       )}
+      {/* 立场不是误解：不划掉、不纠正，只点评理由 */}
+      {!!r.stances?.length && (
+        <section className="panel">
+          <h3 className="section-label">你的立场</h3>
+          {r.stances.map((m, i) => <div key={i} className="stance"><p className="said">{m.said}</p>{m.note && <p className="note">{m.note}</p>}</div>)}
+          <p className="fineprint">立场没有对错，这里只看理由是否说清楚、有没有考虑反方。</p>
+        </section>
+      )}
       {!!terms?.length && (
         <section className="panel">
           <h3 className="section-label">这次遇到的新词</h3>

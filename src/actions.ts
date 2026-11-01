@@ -20,29 +20,36 @@ export function snapshot(s: Session): SessionSnapshot {
     messages: s.entries.flatMap((m): SessionSnapshot['messages'] => m.kind === 'msg' && !m.skipped ? [{ kind: 'msg', name: m.name, text: m.text, action: m.action }]
       : m.kind === 'reflect' && m.text ? [{ kind: 'reflect', name: '学习者', text: m.text }] : []),
     turns: s.mode === 'debate' ? s.turns : undefined, cursor: s.mode === 'debate' ? s.cursor : undefined,
-    stages: s.mode === 'debate' ? s.stages : undefined, finished: s.finished
+    stages: s.mode === 'debate' ? s.stages : undefined, finished: s.finished, context: s.context || undefined
   };
 }
 const markCovered = (s: Session, list: number[] = []) => { for (const i of list) if (i >= 0 && i < s.keyPoints.length && !s.covered.includes(i)) s.covered.push(i); };
 export const currentTurn = (s: Session | null) => s && s.mode === 'debate' && !s.finished ? s.turns[s.cursor] ?? null : null;
 
 /* ---------- 准备 ---------- */
-export async function prepare(previous: Previous | null = null) {
-  const { config } = getState();
+export async function prepare(previous: Previous | null = null, knownContext?: string) {
+  const { config, ui, plan } = getState();
   const concept = config.concept.trim();
   if (!concept) return toast('先写下你想弄懂的概念。');
-  const res = await runAI('prepare', { concept, mode: config.mode, previous }, '正在拆解要点、准备讨论');
+  // AI 问过背景就带上学习者写的；在准备页点“重新生成”时沿用已经交代的背景
+  const context = (ui.context ? ui.context.text : knownContext ?? (plan?.concept === concept ? plan.context : ''))?.trim().slice(0, 600) || undefined;
+  if (ui.context && !context) return toast('写一两句经过，AI 才知道你们在讨论什么。');
+  const res = await runAI('prepare', { concept, mode: config.mode, previous, context }, context ? '正在按你说的经过准备讨论' : '正在拆解要点、准备讨论');
   if (!res) return;
   const d = res.data;
+  // 一件具体的事，AI 不了解经过：先请学习者交代，不凭空出题
+  if (d.needsContext) { update(s => { s.ui.context = { ask: d.needsContext!, text: s.ui.context?.text ?? '' }; }); return; }
   update(s => {
     s.plan = {
       mode: config.mode, concept: d.concept || concept, topic: d.topic, keyPoints: d.keyPoints, opening: d.opening,
       personas: d.roles.map((r, i) => ({ id: 'r' + i, tone: TONES[i % 3], name: r.name, title: r.title, persona: r.persona })),
-      source: res.source, model: res.model, previous
+      source: res.source, model: res.model, previous, context
     };
+    s.ui.context = null;
     s.ui.screen = 'prepare';
   });
 }
+export const setContextDraft = (text: string) => update(s => { if (s.ui.context) s.ui.context.text = text; });
 
 function planProblem(multiplayer = false): string {
   const { plan, config } = getState();
@@ -75,7 +82,7 @@ export function startSession() {
     const base: Session = {
       id: uid(), created: Date.now(), mode: plan.mode, concept: plan.concept, topic, keyPoints,
       covered: [], entries: [], learnerTurns: 0, nextRole: 0, demoStep: 0, finished: false, draft: '', previous: plan.previous,
-      personas: [], seats: [], stages: [], turns: [], cursor: 0, review: null
+      personas: [], seats: [], stages: [], turns: [], cursor: 0, review: null, context: plan.context
     };
     if (plan.mode === 'debate') {
       base.seats = slots(config).map(r => ({ ...r, name: seatName(r) }));
@@ -187,7 +194,8 @@ export function nextSpeaker() {
   const s = session(); if (!s || getState().ui.busy) return;
   const role = s.personas[s.nextRole % s.personas.length];
   update(st => { st.session!.nextRole = (s.nextRole + 1) % s.personas.length; });
-  return speak(role.id, '主持人请你接着前面的发言说。');
+  // 请下一位嘉宾：接上一位的话说，不再向学习者提问（否则问题会一个接一个叠起来）
+  return speak(role.id, '主持人请你接着上一位嘉宾的话说：回应、补充或反驳他。');
 }
 
 export function submitSeat(text: string, skipped = false) {
@@ -446,7 +454,7 @@ export async function generateReview() {
     const existing = st.library.find(c => c.sessionId === ss.id);
     const card: Card = {
       id: existing?.id ?? uid(), sessionId: ss.id, concept: ss.concept, topic: ss.topic, mode: ss.mode, created: existing?.created ?? Date.now(),
-      ...res.data, source: res.source, model: res.model, terms: ss.glossary?.length ? ss.glossary : existing?.terms,
+      ...res.data, source: res.source, model: res.model, terms: ss.glossary?.length ? ss.glossary : existing?.terms, context: ss.context || existing?.context,
       level: existing?.level ?? 0, due: existing?.due ?? Date.now() + DAY, reviews: existing?.reviews ?? []
     };
     if (existing) Object.assign(existing, card); else st.library.unshift(card);
@@ -467,7 +475,7 @@ export function rateCard(id: string, remembered: boolean) {
 export const weakOf = (c: Card) => c.points.filter(p => p.status !== 'mastered').map(p => p.label).concat(c.misconceptions.map(m => m.said));
 export function discussAgain(card: Card) {
   update(st => { st.config.concept = card.concept; st.config.mode = card.mode; });
-  return prepare({ oneLine: card.oneLine, weak: weakOf(card) });
+  return prepare({ oneLine: card.oneLine, weak: weakOf(card) }, card.context);
 }
 export function pickAnswer(key: string, q: number, o: number) { update(st => { st.ui.quiz[key] = { ...(st.ui.quiz[key] ?? {}), [q]: o }; }); }
 export function openCard(id: string) { update(st => { st.ui.openCard = id; }); go('card'); }

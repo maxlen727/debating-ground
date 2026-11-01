@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeConfig, buildRequest, finalize, splitCover, splitTerms, extractJSON, complete, visibleText, streamGenerate } from '../server/ai.ts';
+import { normalizeConfig, buildRequest, finalize, splitCover, splitTerms, extractJSON, complete, visibleText, streamGenerate, paceOf, sameClaim } from '../server/ai.ts';
 import type { SessionSnapshot } from '../shared/types.ts';
 
 const cfg = { baseURL: 'https://example.com/v1/', apiKey: 'test-secret', model: 'chosen-model' };
@@ -27,8 +27,10 @@ test('prepare asks for structured output and passes weak points from the last re
   const r = buildRequest('prepare', { concept: '机会成本', mode: 'roundtable', previous: { oneLine: '还差一点', weak: ['区别于沉没成本'] } });
   assert.equal(r.output, 'prepare');
   assert.match(r.messages[0].content, /JSON/);
-  // 探索式讨论：4 到 5 个理解要点
-  assert.match(r.messages[0].content, /keyPoints 是真正理解这个概念必须掌握的 4 到 5 个要点/);
+  // 探索式讨论：4 到 5 个理解要点，写“要弄懂的东西”，不写立场或结论
+  assert.match(r.messages[0].content, /4 到 5 个要点/);
+  assert.match(r.messages[0].content, /不要写成立场或结论/);
+  assert.doesNotMatch(r.messages[0].content, /以一个问题结尾/, 'the opening no longer has to end with a question');
   assert.match(r.messages[0].content, /薄弱点/);
   assert.deepEqual(user(r).previous.weakPoints, ['区别于沉没成本']);
   assert.throws(() => buildRequest('prepare', { concept: '', mode: 'socratic' }));
@@ -53,7 +55,7 @@ test('prepare differentiates debate core disputes from exploration key points', 
 
 test('discussion turn carries role, mode rule, numbered key points and transcript', () => {
   const r = buildRequest('discuss', { session: learning, roleId: 'r0' });
-  assert.match(r.messages[0].content, /苏珩/); assert.match(r.messages[0].content, /只问一个问题/); assert.match(r.messages[0].content, /\[\[要点/);
+  assert.match(r.messages[0].content, /苏珩/); assert.match(r.messages[0].content, /\[\[要点/);
   assert.deepEqual(user(r).keyPoints[1], { number: 2, point: '区别于沉没成本' });
   assert.equal(user(r).transcript[1].speaker, '学习者');
   assert.throws(() => buildRequest('discuss', { session: learning, roleId: 'missing' }));
@@ -221,4 +223,96 @@ test('point suggestions: one short new point as JSON, never a repeat of an exist
   assert.deepEqual(ok.data, { point: '时间也有机会成本', why: '学习者只算了钱' });
   assert.throws(() => finalize(r, { text: JSON.stringify({ point: learning.keyPoints[0], why: '' }), model: 'm' }), /重复/);
   assert.throws(() => finalize(r, { text: '{"why":"x"}', model: 'm' }), /没有给出要点/);
+});
+
+/* ---------- 讨论伙伴：提问是工具，不是每一轮的任务 ---------- */
+const roundtable: SessionSnapshot = {
+  mode: 'roundtable', concept: '机会成本', topic: '选择的代价是什么？', keyPoints: ['放弃的最佳选择', '区别于沉没成本'],
+  roles: [{ id: 'r0', name: '陈默', title: '社会学', persona: '' }, { id: 'r1', name: '林知远', title: '法学', persona: '' }],
+  messages: [{ kind: 'msg', name: '陈默', text: '我们先说说：打工的代价只是那天的时间吗？' }, { kind: 'msg', name: '学习者', text: '我觉得是钱。' }]
+};
+const sys = (s: SessionSnapshot, roleId = 'r1', task?: string) => buildRequest('discuss', { session: s, roleId, task }).messages[0].content;
+
+test('discussion partners: no mandatory question, no sentence-by-sentence correction, no stock phrases', () => {
+  for (const s of [learning, roundtable, { ...learning, mode: 'teach' as const }]) {
+    const p = sys(s, s.roles[0].id);
+    assert.doesNotMatch(p, /最后把一个问题抛给学习者|只问一个问题|一次只推进一个要点/, 'questions are not required every turn');
+    assert.doesNotMatch(p, /说错事实时要明确而温和地指出/, 'no blanket instruction to correct');
+    assert.match(p, /伙伴，不是考官/);
+    assert.match(p, /先给再问/);
+    assert.match(p, /不必每轮都问/);
+    assert.match(p, /不要把立场当成错误来纠正/);
+    assert.match(p, /温和纠正一下/, 'stock phrases are named as things not to say');
+    assert.match(p, /还没有定论的问题.*当作开放问题/, 'contested questions stay open');
+    // 通用约束还在
+    assert.match(p, /不要编造来源/); assert.match(p, /区分事实与观点/); assert.match(p, /\[\[要点/);
+  }
+});
+
+test('pace: after another guest, after several questions, and after a very short reply', () => {
+  assert.deepEqual(paceOf(roundtable), { questionsInARow: 1, afterGuest: false, shortReply: true });
+  assert.match(sys(roundtable), /回答得很短/);
+  assert.doesNotMatch(sys(roundtable), /不要提问/);
+
+  // “请下一位”：上一句是另一位嘉宾
+  const afterGuest = { ...roundtable, messages: [...roundtable.messages, { kind: 'msg' as const, name: '陈默', text: '钱只是看得见的那部分。那时间呢？' }] };
+  assert.equal(paceOf(afterGuest).afterGuest, true);
+  assert.match(sys(afterGuest), /接他的话说.*不要向学习者提问/);
+
+  // 连着两段都以提问结尾
+  const asked = { ...roundtable, messages: [
+    { kind: 'msg' as const, name: '陈默', text: '你觉得代价是什么？' }, { kind: 'msg' as const, name: '学习者', text: '应该是那天本来可以复习的时间吧，我也不太确定。' },
+    { kind: 'msg' as const, name: '林知远', text: '那复习的价值怎么算，你怎么看' }, { kind: 'msg' as const, name: '学习者', text: '可能要看考试对我有多重要，比如期末考试就很重要。' }
+  ] };
+  assert.equal(paceOf(asked).questionsInARow, 2);
+  assert.match(sys(asked), /这一轮不要提问/);
+  assert.doesNotMatch(sys(asked), /回答得很短/);
+});
+
+test('background the learner gave goes to every prompt; asking for it is a separate prepare result', () => {
+  const withContext = { ...roundtable, context: '群里有个接了大模型的 bot，叫亚托莉；有人提议把它踢出群。' };
+  assert.match(buildRequest('discuss', { session: withContext, roleId: 'r0' }).messages[1].content, /亚托莉/);
+  assert.match(buildRequest('review', { session: withContext }).messages[1].content, /亚托莉/);
+  assert.match(buildRequest('hint', { session: withContext, covered: [] }).messages[1].content, /亚托莉/);
+  assert.throws(() => buildRequest('discuss', { session: { ...roundtable, context: 'x'.repeat(601) }, roleId: 'r0' }), /600/);
+
+  const first = buildRequest('prepare', { concept: '亚托莉退群之争', mode: 'roundtable' });
+  assert.match(first.messages[0].content, /needsContext/);
+  const ask = finalize(first, { text: '{"needsContext":"能说说亚托莉是谁、为什么要退群吗？"}', model: 'm' }) as { data: { needsContext?: string; keyPoints: string[] } };
+  assert.equal(ask.data.needsContext, '能说说亚托莉是谁、为什么要退群吗？');
+  assert.deepEqual(ask.data.keyPoints, []);
+
+  // 交代过背景就不再问；背景作为资料交给模型
+  const second = buildRequest('prepare', { concept: '亚托莉退群之争', mode: 'roundtable', context: '亚托莉是群里的 bot。' });
+  assert.doesNotMatch(second.messages[0].content, /只输出 \{"needsContext"/);
+  assert.equal(user(second).background, '亚托莉是群里的 bot。');
+  assert.throws(() => finalize(second, { text: '{"needsContext":"再说说？"}', model: 'm' }), /不完整/);
+});
+
+test('review: value positions are stances judged on their reasons, never misconceptions', () => {
+  const p = buildRequest('review', { session: learning }).messages[0].content;
+  assert.match(p, /价值判断、立场，以及对还没有定论的问题的判断/);
+  assert.match(p, /推理有没有跳步/);
+  assert.match(p, /不评判立场本身对不对/);
+  assert.match(p, /只考事实和概念，不考立场/);
+  const r = finalize({ messages: [], output: 'review', n: 2 }, { text: JSON.stringify({
+    oneLine: 'ok', points: [{ label: 'a', status: 'partial', note: '' }], misconceptions: [],
+    stances: [{ said: '现在的 LLM 应该有权利', note: '理由还停在“像人”，没回应“谁来承担责任”' }, { note: '没有 said 的丢掉' }], quiz: []
+  }), model: 'm' }) as { data: { stances: { said: string; note: string }[] } };
+  assert.deepEqual(r.data.stances, [{ said: '现在的 LLM 应该有权利', note: '理由还停在“像人”，没回应“谁来承担责任”' }]);
+  assert.match(buildRequest('reflect', { session: learning, answer: '我觉得机会成本就是放弃的东西' }).messages[0].content, /立场不算偏差/);
+  assert.match(p, /拿不准一句话算误解还是立场时，算立场/);
+  // 真实评测里出现过：同一句话两边都放。以立场为准，从误解里去掉；真正的误解保留
+  const both = finalize({ messages: [], output: 'review', n: 2 }, { text: JSON.stringify({
+    oneLine: 'ok', points: [{ label: 'a', status: 'partial', note: '' }],
+    misconceptions: [{ said: '现在的LLM应该有权利，应该能算权利主体', fix: '…' }, { said: '机会成本就是花掉的钱', fix: '是放弃的最佳选择' }],
+    stances: [{ said: '现在的 LLM 应该有权利，应算权利主体。', note: '只给了结论' }], quiz: []
+  }), model: 'm' }) as { data: { misconceptions: { said: string }[] } };
+  assert.deepEqual(both.data.misconceptions.map(m => m.said), ['机会成本就是花掉的钱']);
+});
+
+test('sameClaim tells paraphrases of one claim from different claims', () => {
+  assert.equal(sameClaim('接入LLM基本可认为亚托莉有个人意志', '接入大模型基本可认为亚托莉有个人意志。'), true);
+  assert.equal(sameClaim('现在的LLM应该有权利', '机会成本就是花掉的钱'), false);
+  assert.equal(sameClaim('', '什么'), false);
 });

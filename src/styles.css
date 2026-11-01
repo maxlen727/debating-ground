@@ -174,6 +174,10 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--b
 
 /* ---------- 准备页 ---------- */
 .topic-input { font: 600 var(--t-lg)/1.6 var(--f-display); background: var(--bg); }
+/* 交代背景：是学习者自己的叙述，用正文字体 */
+.context-ask { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 16px; background: var(--accent-soft); }
+.context-q { margin: 0; font-size: var(--t-sm); line-height: 1.7; color: var(--ink); }
+.context-ask textarea, .context-input { font-size: 16px; line-height: 1.7; background: var(--surface); }
 .point-edit input { font: 500 var(--t-md)/1.5 var(--f-display); }
 .point-edit, .stage-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .point-edit li { display: flex; align-items: center; gap: 8px; }
@@ -328,6 +332,10 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--b
 .fix .said { font-size: 14px; text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--bad) 50%, transparent); color: var(--muted); }
 .fix .right { display: flex; gap: 4px; font-size: 15px; }
 .fix .right .icon { margin-top: 5px; color: var(--good); }
+.stance { display: flex; flex-direction: column; gap: 4px; padding-left: 12px; border-left: 3px solid var(--line); }
+.stance + .stance { margin-top: 10px; }
+.stance .said { margin: 0; font: var(--t-md)/var(--lh-serif) var(--f-display); }
+.stance .note { margin: 0; font-size: var(--t-sm); line-height: 1.7; color: var(--muted); }
 .quiz { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 20px; counter-reset: q; }
 .quiz li { display: flex; flex-direction: column; gap: 8px; counter-increment: q; }
 .quiz .q { font: 600 var(--t-md)/1.7 var(--f-display); }

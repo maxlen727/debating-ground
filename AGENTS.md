@@ -36,6 +36,7 @@ npm run server       # 本机服务 127.0.0.1:4173
 npm run dev          # 界面热更新 127.0.0.1:5173（需同时运行 server）
 npm run docs:dev     # 文档站热更新
 npm run sync:worker  # 改了 server/ai.ts 或 shared/ 后，同步到 worker/src/vendor/
+npm run eval:prompts # 提示词回归评测：用真实模型和模拟学习者聊几场（见脚本开头的说明）
 cd worker && npm install && npm run dev   # 本地运行后端（先把 .dev.vars.example 复制为 .dev.vars）
 ```
 
@@ -79,6 +80,7 @@ cd worker && npm install && npm run dev   # 本地运行后端（先把 .dev.var
 - 更新或新增 `tests/ai.test.ts` 里对应的断言（结构、关键约束、输出格式）。
 - 在 PR 里写出改动前后的差别，以及你用什么概念、什么模式试过（附一两段真实输出）。
 - 不要删除“不编造来源”“区分事实与观点”“要点标记”这些通用约束。
+- 讨论类提示词的方向是“一起想，不是拷问”（见 `docs/product/principles.md`）：不要恢复“每轮最后提一个问题”“逐句指出事实和观点”这类规则。改动前后各跑一次 `npm run eval:prompts`（需要真实模型），把汇总表贴在 PR 里。
 
 ## Git 与协作流程
 

@@ -1,6 +1,6 @@
 import { MODES, MODE_ORDER } from '../../shared/modes.ts';
 import type { ModeId } from '../../shared/types.ts';
-import { prepare, openCard } from '../actions.ts';
+import { prepare, openCard, setContextDraft } from '../actions.ts';
 import { useRef } from 'react';
 import { BusyStrip, ErrorBanner, Icon } from '../components/ui.tsx';
 import { CaretField } from '../components/SmoothCaret.tsx';
@@ -11,6 +11,7 @@ const GLYPH: Record<ModeId, string> = { socratic: '问', roundtable: '圆', teac
 
 export function Learn() {
   const conceptRef = useRef<HTMLInputElement>(null);
+  const contextRef = useRef<HTMLTextAreaElement>(null);
   const { config, library, session, ui, ai } = useApp();
   const due = library.filter(c => c.due <= Date.now());
   const unfinished = session && !session.finished;
@@ -40,13 +41,24 @@ export function Learn() {
             <span className="sr-only">想弄懂的概念</span>
             <CaretField fieldRef={conceptRef}>
               <input id="concept" ref={conceptRef} value={config.concept} maxLength={80} placeholder="写下一个概念，比如：机会成本" disabled={busy}
-                onChange={e => update(s => { s.config.concept = e.target.value; })}
+                onChange={e => update(s => { s.config.concept = e.target.value; s.ui.context = null; })}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) prepare(); }} />
             </CaretField>
           </label>
           <div className="chips scroll-x" role="list">
-            {EXAMPLES.map(c => <button role="listitem" key={c} className={'chip' + (config.concept === c ? ' on' : '')} disabled={busy} onClick={() => update(s => { s.config.concept = c; })}>{c}</button>)}
+            {EXAMPLES.map(c => <button role="listitem" key={c} className={'chip' + (config.concept === c ? ' on' : '')} disabled={busy} onClick={() => update(s => { s.config.concept = c; s.ui.context = null; })}>{c}</button>)}
           </div>
+          {/* 写的是一件具体的事：AI 先请你交代经过，再出题 */}
+          {ui.context && (
+            <div className="context-ask">
+              <p className="context-q">{ui.context.ask}</p>
+              <CaretField fieldRef={contextRef}>
+                <textarea ref={contextRef} rows={3} maxLength={600} value={ui.context.text} aria-label="事情的经过" placeholder="用一两句话说说经过：发生了什么、谁怎么想" disabled={busy}
+                  onChange={e => setContextDraft(e.target.value)} />
+              </CaretField>
+              <small className="muted">AI 只按你写的经过来讨论，不会自己编细节。</small>
+            </div>
+          )}
         </section>
 
         <section>
@@ -70,7 +82,7 @@ export function Learn() {
       <div className="dock">
         <ErrorBanner />
         <BusyStrip />
-        <button className="primary block" disabled={busy || !config.concept.trim()} onClick={() => prepare()}>准备讨论</button>
+        <button className="primary block" disabled={busy || !config.concept.trim() || (!!ui.context && !ui.context.text.trim())} onClick={() => prepare()}>{ui.context ? '按这个经过准备讨论' : '准备讨论'}</button>
       </div>
     </div>
   );
