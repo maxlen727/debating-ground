@@ -10,6 +10,7 @@ import { task } from './ai.ts';
 import { clearLive, getLive, setLive, updateLive } from './stream.ts';
 import { debateTurns, seatName, slots } from './debate.ts';
 import { pushAudio, voiceFailed } from './voice.ts';
+import { heard, setRoomListenSender } from './listen.ts';
 
 /* ---------- 邀请链接 ---------- */
 // 邀请码放在 # 后面：浏览器不会把它发给托管界面的网站，打开后立即从地址栏移除
@@ -42,7 +43,7 @@ export function readInviteFromLocation() {
 }
 
 /* ---------- 把房间状态映射成本地讨论 ---------- */
-export function toSession(view: RoomView, prev: Session | null, link: Omit<RoomLink, 'status' | 'members' | 'speaker' | 'aiBusy' | 'error' | 'expiresAt' | 'turnSeconds' | 'turnDeadline' | 'voiceAvailable'>): Session {
+export function toSession(view: RoomView, prev: Session | null, link: Omit<RoomLink, 'status' | 'members' | 'speaker' | 'aiBusy' | 'error' | 'expiresAt' | 'turnSeconds' | 'turnDeadline' | 'voiceAvailable' | 'listenAvailable'>): Session {
   const me = link.memberId;
   const same = prev?.room?.roomId === view.id ? prev : null;
   // 只有自己的发言算“我”的；同学的发言保留 memberId，界面上显示为同学
@@ -61,7 +62,7 @@ export function toSession(view: RoomView, prev: Session | null, link: Omit<RoomL
     personas: setup.personas, seats: setup.seats, stages: setup.stages, turns: setup.turns, cursor: view.cursor,
     review: same?.review ?? null, glossary: same?.glossary, proposedPoints: view.proposals ?? [],
     room: { ...link, status: view.status, members: view.members, speaker: view.speaker, aiBusy: view.aiBusy, error: view.error, expiresAt: view.expiresAt,
-      turnSeconds: setup.turnSeconds ?? 0, turnDeadline: deadlineOf(view), voiceAvailable: !!view.voiceAvailable }
+      turnSeconds: setup.turnSeconds ?? 0, turnDeadline: deadlineOf(view), voiceAvailable: !!view.voiceAvailable, listenAvailable: !!view.listenAvailable }
   };
 }
 
@@ -160,6 +161,7 @@ function handle(msg: ServerMessage, target?: { backend: string; roomId: string; 
     return;
   }
   if (msg.type === 'state') return applyView(msg.room);
+  if (msg.type === 'heard') return heard(msg.event);
   if (msg.type === 'audio') return pushAudio(msg.entryId, msg.seq, msg.last, msg.audio, msg.mime);
   if (msg.type === 'quick') {
     const me = getState().session?.room?.memberId;
@@ -218,6 +220,9 @@ function applyView(view: RoomView) {
 // 讨论结束时由 actions 生成个人复盘（避免两个模块互相引用）
 let onFinished: (() => Promise<void>) | null = null;
 export const setOnFinished = (fn: () => Promise<void>) => { onFinished = fn; };
+
+// 语音输入的录音帧经房间连接转发
+setRoomListenSender(m => send({ type: 'listen', op: m.type, audio: m.type === 'audio' ? m.audio : undefined }, m.type === 'audio'));
 
 // quiet：顺带发的状态（正在输入），连接断了就算了，不提示
 export function send(msg: ClientMessage, quiet = false) {

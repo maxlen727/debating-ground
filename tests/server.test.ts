@@ -84,3 +84,30 @@ test('iFlytek keys typed in settings stay in server memory and are never echoed 
   assert.equal((await call('/api/tts', 'POST', { text: '长'.repeat(301) })).status, 400, 'one segment at a time');
   assert.match((await call('/api/tts/config', 'POST', {})).text, /"ttsConfigured":false/);
 });
+
+test('voice input socket on the local server: same-origin page with a session cookie only', async t => {
+  const server = createServer({});
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); }));
+  const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const first = await fetch(origin + '/api/config', { headers: { 'X-Sibian-Client': 'web', Origin: origin } });
+  const cookie = first.headers.get('set-cookie')!.split(';')[0];
+  assert.match(await first.text(), /"sttConfigured":false/);
+  // Node 自带的 WebSocket（undici）可以带请求头，用来模拟浏览器
+  type Init = { headers: Record<string, string> };
+  const WS = WebSocket as unknown as new (url: string, init: Init) => WebSocket;
+  const open = (headers: Record<string, string>) => new Promise<{ ok: boolean; messages: string[] }>(resolve => {
+    const ws = new WS(origin.replace('http', 'ws') + '/api/stt', { headers });
+    const messages: string[] = [];
+    ws.onopen = () => ws.send(JSON.stringify({ type: 'start' }));
+    ws.onmessage = e => messages.push(String(e.data));
+    // 握手被拒时 undici 只触发 error，不触发 close
+    const done = () => resolve({ ok: messages.length > 0, messages });
+    ws.onclose = done;
+    ws.onerror = done;
+  });
+  assert.equal((await open({ Origin: origin })).ok, false, 'no session cookie');
+  assert.equal((await open({ Origin: 'https://evil.example', Cookie: cookie })).ok, false, 'foreign page');
+  const r = await open({ Origin: origin, Cookie: cookie });
+  assert.deepEqual(r.messages.map(m => JSON.parse(m)), [{ type: 'error', message: '这个后端还没有配置讯飞语音。' }]);
+});

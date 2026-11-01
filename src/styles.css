@@ -276,6 +276,14 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--b
 @keyframes caret-blink { 0%, 45% { opacity: 1; } 60%, 85% { opacity: 0; } 100% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .smooth-caret { transition: none; animation: none; } }
 .send { flex: none; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: var(--brand); color: var(--brand-ink); }
+/* 语音输入：平时是安静的圆钮；录音时换成品牌色，外圈随呼吸扩散，中间显示已录秒数 */
+.mic { position: relative; flex: none; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: var(--raised); color: var(--ink); border: 1px solid var(--line); }
+.mic.on { background: var(--brand); color: var(--brand-ink); border-color: transparent; }
+.mic.on.listening::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--brand); animation: mic-breathe 1.6s ease-out infinite; }
+.mic.on.starting, .mic.on.finishing { opacity: .7; }
+.mic-time { font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
+@keyframes mic-breathe { 0% { opacity: .9; transform: scale(1); } 100% { opacity: 0; transform: scale(1.35); } }
+@media (prefers-reduced-motion: reduce) { .mic.on.listening::after { animation: none; opacity: .5; } }
 
 /* 底部操作面板 */
 .sheet-backdrop { position: fixed; inset: 0; z-index: 50; background: rgb(0 0 0 / 35%); display: flex; align-items: flex-end; justify-content: center; animation: fade .2s; }
