@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeConfig, buildRequest, finalize, splitCover, splitTerms, extractJSON, complete, visibleText, streamGenerate, paceOf } from '../server/ai.ts';
+import { normalizeConfig, buildRequest, finalize, splitCover, splitTerms, extractJSON, complete, visibleText, streamGenerate, paceOf, sameClaim } from '../server/ai.ts';
 import type { SessionSnapshot } from '../shared/types.ts';
 
 const cfg = { baseURL: 'https://example.com/v1/', apiKey: 'test-secret', model: 'chosen-model' };
@@ -301,4 +301,18 @@ test('review: value positions are stances judged on their reasons, never misconc
   }), model: 'm' }) as { data: { stances: { said: string; note: string }[] } };
   assert.deepEqual(r.data.stances, [{ said: '现在的 LLM 应该有权利', note: '理由还停在“像人”，没回应“谁来承担责任”' }]);
   assert.match(buildRequest('reflect', { session: learning, answer: '我觉得机会成本就是放弃的东西' }).messages[0].content, /立场不算偏差/);
+  assert.match(p, /拿不准一句话算误解还是立场时，算立场/);
+  // 真实评测里出现过：同一句话两边都放。以立场为准，从误解里去掉；真正的误解保留
+  const both = finalize({ messages: [], output: 'review', n: 2 }, { text: JSON.stringify({
+    oneLine: 'ok', points: [{ label: 'a', status: 'partial', note: '' }],
+    misconceptions: [{ said: '现在的LLM应该有权利，应该能算权利主体', fix: '…' }, { said: '机会成本就是花掉的钱', fix: '是放弃的最佳选择' }],
+    stances: [{ said: '现在的 LLM 应该有权利，应算权利主体。', note: '只给了结论' }], quiz: []
+  }), model: 'm' }) as { data: { misconceptions: { said: string }[] } };
+  assert.deepEqual(both.data.misconceptions.map(m => m.said), ['机会成本就是花掉的钱']);
+});
+
+test('sameClaim tells paraphrases of one claim from different claims', () => {
+  assert.equal(sameClaim('接入LLM基本可认为亚托莉有个人意志', '接入大模型基本可认为亚托莉有个人意志。'), true);
+  assert.equal(sameClaim('现在的LLM应该有权利', '机会成本就是花掉的钱'), false);
+  assert.equal(sameClaim('', '什么'), false);
 });
