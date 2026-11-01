@@ -60,7 +60,7 @@ export function toSession(view: RoomView, prev: Session | null, link: Omit<RoomL
     learnerTurns: view.entries.filter(e => e.kind === 'msg' && e.memberId === me && !e.skipped).length,
     nextRole: 0, demoStep: 0, finished: view.status === 'finished', draft: same?.draft ?? '', previous: null,
     personas: setup.personas, seats: setup.seats, stages: setup.stages, turns: setup.turns, cursor: view.cursor,
-    review: same?.review ?? null, glossary: same?.glossary, proposedPoints: view.proposals ?? [],
+    review: same?.review ?? null, glossary: same?.glossary, proposedPoints: view.proposals ?? [], context: setup.context,
     room: { ...link, status: view.status, members: view.members, speaker: view.speaker, aiBusy: view.aiBusy, error: view.error, expiresAt: view.expiresAt,
       turnSeconds: setup.turnSeconds ?? 0, turnDeadline: deadlineOf(view), voiceAvailable: !!view.voiceAvailable, listenAvailable: !!view.listenAvailable }
   };
@@ -255,9 +255,9 @@ export function setupFrom(plan: Plan, config: DebateConfig & { remote: { url: st
   const turnSeconds = [0, 30, 60, 90, 120].includes(config.turnSeconds) ? config.turnSeconds : 0;
   if (plan.mode === 'debate') {
     const seats = slots(config).map(r => ({ ...r, name: seatName(r) }));
-    return { mode: 'debate', concept: plan.concept, topic: plan.topic.trim(), keyPoints, personas: [], opening: '', seats, stages: structuredClone(config.stages), turns: debateTurns(config), model: plan.model, turnSeconds };
+    return { mode: 'debate', concept: plan.concept, topic: plan.topic.trim(), keyPoints, personas: [], opening: '', seats, stages: structuredClone(config.stages), turns: debateTurns(config), model: plan.model, turnSeconds, context: plan.context?.trim() || undefined };
   }
-  return { mode: 'roundtable', concept: plan.concept, topic: plan.topic.trim(), keyPoints, personas: plan.personas, opening: plan.opening, seats: [], stages: [], turns: [], model: plan.model, turnSeconds };
+  return { mode: 'roundtable', concept: plan.concept, topic: plan.topic.trim(), keyPoints, personas: plan.personas, opening: plan.opening, seats: [], stages: [], turns: [], model: plan.model, turnSeconds, context: plan.context?.trim() || undefined };
 }
 
 export async function createRoom(setup: RoomSetup, hostName: string) {

@@ -255,3 +255,30 @@ test('read aloud only shows when the backend has iFlytek configured', () => {
   update(s => { s.config.aiMode = 'remote'; s.ai.remoteTtsConfigured = false; });
   assert.equal(actions.voiceAvailable(), false);
 });
+
+test('a specific event: the AI asks for background first, then everything uses it', async () => {
+  const seen: Record<string, unknown>[] = [];
+  mockFetch(({ purpose, payload }) => {
+    seen.push({ purpose, ...payload });
+    if (purpose === 'prepare' && !payload.context) return new Response(JSON.stringify({ data: { concept: '', topic: '', keyPoints: [], roles: [], opening: '', needsContext: '亚托莉是谁？为什么会有退群之争？' }, model: 'm' }));
+    if (purpose === 'prepare') return new Response(JSON.stringify({ data: { concept: '亚托莉退群之争', topic: '一个 bot 该不该算群成员？', keyPoints: ['成员资格从哪来', '拟人化'], roles: [{ name: '陈默', title: '社会学', persona: '' }], opening: '我先说个看法。' }, model: 'm' }));
+    return new Response(JSON.stringify({ text: '我同意一半。', covered: [], model: 'm' }));
+  });
+  apiOn();
+  update(s => { s.config.concept = '亚托莉退群之争'; s.config.mode = 'socratic'; });
+  await actions.prepare();
+  assert.equal(getState().ui.screen, 'learn', 'stays on the first page');
+  assert.equal(getState().ui.context!.ask, '亚托莉是谁？为什么会有退群之争？');
+  await actions.prepare();
+  assert.match(getState().ui.toast, /经过/, 'an empty answer is not sent');
+  actions.setContextDraft('群里有个接了大模型的 bot 叫亚托莉，有人提议把它踢出去。');
+  await actions.prepare();
+  assert.equal(getState().ui.screen, 'prepare');
+  assert.equal(getState().ui.context, null);
+  assert.equal(getState().plan!.context, '群里有个接了大模型的 bot 叫亚托莉，有人提议把它踢出去。');
+  actions.startSession();
+  await actions.send('我觉得不该踢。');
+  const turn = seen.at(-1) as { purpose: string; session: { context: string } };
+  assert.equal(turn.purpose, 'discuss');
+  assert.match(turn.session.context, /亚托莉/);
+});

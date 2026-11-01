@@ -1,6 +1,7 @@
 import { MODES, STAGE_KINDS } from '../../shared/modes.ts';
 import type { StageKind, Team } from '../../shared/types.ts';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { CaretField } from '../components/SmoothCaret.tsx';
 import { canInvite, inviteFriends, prepare, startSession } from '../actions.ts';
 import { BusyStrip, ErrorBanner, Icon, Sheet, Stepper, TopBar } from '../components/ui.tsx';
 import { debateTurns, slots } from '../lib/debate.ts';
@@ -9,6 +10,7 @@ import { go, update, useApp } from '../store.ts';
 export function Prepare() {
   const { plan, config, ui } = useApp();
   const [inviting, setInviting] = useState(false);
+  const contextRef = useRef<HTMLTextAreaElement>(null);
   if (!plan) return <div className="screen"><TopBar title="准备讨论" back="learn" /></div>;
   const debate = plan.mode === 'debate';
   const busy = !!ui.busy;
@@ -19,6 +21,16 @@ export function Prepare() {
       <TopBar title={plan.concept} sub={MODES[plan.mode].name} back="learn" />
       <div className="stack pad">
         <p className="lede">{plan.source === 'api' ? `由 ${plan.model} 准备` : '演示模板'}，开始前都可以改。{plan.previous && '这次会从上次还模糊的地方切入。'}</p>
+
+        {plan.context !== undefined && (
+          <section className="panel">
+            <h3 className="section-label">你交代的经过</h3>
+            <CaretField fieldRef={contextRef}>
+              <textarea ref={contextRef} className="context-input" value={plan.context} maxLength={600} rows={3} aria-label="事情的经过" onChange={e => setPlan(p => { p.context = e.target.value; })} />
+            </CaretField>
+            <p className="fineprint">讨论时 AI 会以这段经过为准。</p>
+          </section>
+        )}
 
         <section className="panel">
           <h3 className="section-label">{debate ? '辩题' : '讨论题'}</h3>

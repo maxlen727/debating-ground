@@ -14,6 +14,7 @@ export function reviewMarkdown(r: Review & { concept: string; topic: string; mod
   return `## ${r.concept}\n\n讨论题：${r.topic}\n讨论方式：${MODES[r.mode].name} · ${new Date(r.created).toLocaleDateString('zh-CN')}\n\n${r.oneLine}\n\n`
     + r.points.map(p => `- [${STATUS_LABEL[p.status]}] ${p.label}：${p.note}`).join('\n')
     + (r.misconceptions.length ? '\n\n需要纠正的理解：\n' + r.misconceptions.map(m => `- ${m.said} → ${m.fix}`).join('\n') : '')
+    + (r.stances?.length ? '\n\n你的立场：\n' + r.stances.map(m => `- ${m.said}${m.note ? `（${m.note}）` : ''}`).join('\n') : '')
     + (r.quiz.length ? '\n\n练习题：\n' + r.quiz.map((q, i) => `${i + 1}. ${q.q}\n` + q.options.map((o, j) => `   ${'ABCD'[j]}. ${o}`).join('\n') + `\n   答案：${'ABCD'[q.answer]}。${q.why}`).join('\n') : '')
     + (r.terms?.length ? '\n\n这次遇到的新词：\n' + r.terms.map(t => `- ${t.term}：${t.definition}${t.relation ? `（${t.relation}）` : ''}`).join('\n') : '') + '\n';
 }

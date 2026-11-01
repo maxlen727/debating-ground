@@ -553,3 +553,12 @@ test('voice input in a room: audio goes to iFlytek through the room, text comes 
   await plain.send(plain.host, { type: 'listen', op: 'start' });
   assert.match(JSON.stringify(plain.host.inbox.at(-1)), /还没有配置讯飞语音/);
 });
+
+test('the background the host gave travels with the room to every AI prompt', () => {
+  const setup = validateSetup({ ...ROUNDTABLE, context: '  群里有个接了大模型的 bot 叫亚托莉。  ' });
+  assert.equal(setup.context, '群里有个接了大模型的 bot 叫亚托莉。');
+  assert.equal(validateSetup({ ...ROUNDTABLE, context: 'x'.repeat(900) }).context!.length, 600);
+  assert.equal(validateSetup({ ...ROUNDTABLE, context: '   ' }).context, undefined);
+  const room = { setup, members: [], entries: [], status: 'live', cursor: 0 } as unknown as StoredRoom;
+  assert.equal(snapshotFor(room, null).context, '群里有个接了大模型的 bot 叫亚托莉。');
+});

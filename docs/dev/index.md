@@ -31,6 +31,19 @@ npx wrangler deploy --dry-run    # 只检查能否打包
 
 Worker 使用的 `server/ai.ts` 和 `shared/` 是复制进 `worker/src/vendor/` 的副本（一键部署只会复制 `worker/` 目录）。**改了 `server/ai.ts` 或 `shared/` 之后运行 `npm run sync:worker`**，否则测试会失败。不要直接改 `vendor/` 里的文件。
 
+## 提示词评测
+
+提示词是思辨场的核心。改了 `server/ai.ts` 里的讨论类提示词，前后各跑一次评测，把汇总表贴进 PR：
+
+```bash
+# 直接连服务商（密钥只在这条命令的环境变量里，脚本不保存、不打印）
+SIBIAN_API_BASE=https://api.deepseek.com/v1 SIBIAN_API_KEY=… SIBIAN_MODEL=deepseek-chat npm run eval:prompts
+# 或者经自己部署的后端
+SIBIAN_BACKEND=https://….workers.dev SIBIAN_PASSWORD=访问口令 npm run eval:prompts
+```
+
+脚本用几种“模拟学习者”（回答很短、表达立场、说错概念、没听懂、认真回答）各聊一场，统计以提问结尾的比例、最长连续提问、接其他嘉宾时有没有向学习者提问、套话和长度，再看复盘有没有把立场当成误解。完整对话写到 `eval-out/`（不提交），要人读一遍：数字只能发现“又在拷问了”，聊得好不好还得看原文。
+
 开发界面时开两个终端，一个 `npm run server`，一个 `npm run dev`。
 
 **提交前必须通过 `npm run check && npm test && npm run build`。**
