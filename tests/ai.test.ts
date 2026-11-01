@@ -243,6 +243,7 @@ test('discussion partners: no mandatory question, no sentence-by-sentence correc
     assert.match(p, /不必每轮都问/);
     assert.match(p, /不要把立场当成错误来纠正/);
     assert.match(p, /温和纠正一下/, 'stock phrases are named as things not to say');
+    assert.match(p, /还没有定论的问题.*当作开放问题/, 'contested questions stay open');
     // 通用约束还在
     assert.match(p, /不要编造来源/); assert.match(p, /区分事实与观点/); assert.match(p, /\[\[要点/);
   }
@@ -290,7 +291,8 @@ test('background the learner gave goes to every prompt; asking for it is a separ
 
 test('review: value positions are stances judged on their reasons, never misconceptions', () => {
   const p = buildRequest('review', { session: learning }).messages[0].content;
-  assert.match(p, /价值判断、立场和对争议问题的看法不是误解/);
+  assert.match(p, /价值判断、立场，以及对还没有定论的问题的判断/);
+  assert.match(p, /推理有没有跳步/);
   assert.match(p, /不评判立场本身对不对/);
   assert.match(p, /只考事实和概念，不考立场/);
   const r = finalize({ messages: [], output: 'review', n: 2 }, { text: JSON.stringify({

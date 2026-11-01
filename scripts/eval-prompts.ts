@@ -107,9 +107,11 @@ export function measure(messages: Msg[], guests: Set<string>, afterGuestTurns: S
 }
 // 合格线：大于这些就算“又在拷问了”
 export const LIMITS = { questionRatio: 0.6, longestQuestionRun: 2, askedAfterGuest: 0, stock: 0, tooLong: 0 };
-export function problems(m: Metrics): string[] {
+// 反向讲解里，学生的疑问就是推动学习者讲解的方式，比例可以高一些（但仍不能连着问）
+export const RATIO_BY_MODE: Partial<Record<ModeId, number>> = { teach: 0.75 };
+export function problems(m: Metrics, mode?: ModeId): string[] {
   const out: string[] = [];
-  if (m.questionRatio > LIMITS.questionRatio) out.push(`${Math.round(m.questionRatio * 100)}% 的发言以提问结尾`);
+  if (m.questionRatio > (mode && RATIO_BY_MODE[mode] || LIMITS.questionRatio)) out.push(`${Math.round(m.questionRatio * 100)}% 的发言以提问结尾`);
   if (m.longestQuestionRun > LIMITS.longestQuestionRun) out.push(`连续 ${m.longestQuestionRun} 段都以提问结尾`);
   if (m.askedAfterGuest > LIMITS.askedAfterGuest) out.push(`接其他嘉宾的话时仍向学习者提问 ${m.askedAfterGuest} 次`);
   if (m.stock.length) out.push(`套话：${m.stock.join('、')}`);
@@ -159,7 +161,7 @@ async function run(s: Scenario, call: Call) {
   }
   const review = await call('review', { session: snap() }) as { data: { oneLine: string; misconceptions: { said: string; fix: string }[]; stances?: { said: string; note: string }[] } };
   const metrics = measure(messages, guests, afterGuest);
-  const issues = problems(metrics);
+  const issues = problems(metrics, s.mode);
   const wrong = review.data.misconceptions.map(m => m.said);
   if (s.values?.some(v => wrong.some(w => v.test(w)))) issues.push('复盘把学习者的立场列进了“需要纠正”');
   if (s.errors && !s.errors.some(e => wrong.some(w => e.test(w)))) issues.push('复盘没有纠正学习者说错的概念');
@@ -203,7 +205,7 @@ async function main() {
   }
   let prep = '';
   if (!only.length) { process.stdout.write('跑准备阶段…'); try { prep = await prepareChecks(call); console.log(' 完成'); } catch (e) { prep = '失败：' + (e as Error).message; console.log(' 失败'); } }
-  lines.push(...table, '', `合格线：以提问结尾不超过 ${LIMITS.questionRatio * 100}%，连续提问不超过 ${LIMITS.longestQuestionRun} 段，接嘉宾时不问学习者，没有套话，单段不超过 180 字；复盘不把立场当误解，说错的概念要纠正。`, '');
+  lines.push(...table, '', `合格线：以提问结尾不超过 ${LIMITS.questionRatio * 100}%（反向讲解 ${RATIO_BY_MODE.teach! * 100}%），连续提问不超过 ${LIMITS.longestQuestionRun} 段，接嘉宾时不问学习者，没有套话，单段不超过 180 字；复盘不把立场当误解，说错的概念要纠正。`, '');
   if (prep) lines.push('## 准备阶段', '', prep, '');
   lines.push(...details);
   const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'eval-out');
