@@ -75,6 +75,7 @@ Worker 与本机服务的差别：
 - **个人请求**（`ask`：提示、讲解、小结、复盘）只回复给提问的人。快照里只有这个人标为“学习者”，其他真人标为“同学”，所以复盘只依据他自己的发言和小结。小结只存在各自的设备上，复盘时一起提交。
 - **频繁的小消息不写存储**：正在输入（`typing`）和快捷短语（`quickMessage`）只在 Durable Object 的内存里处理。正在输入只在状态变化时广播；快捷短语作为 `{ type: 'quick' }` 发给在线的人，不进讨论记录、不发给 AI，每人限频。
 - **朗读**：`speak` 用 `server/tts.ts` 调讯飞（Worker 里用 `new WebSocket()` 连出去），音频按句子分段（`shared/speech.ts`），一段段只发给请求的人（`{ type: 'audio', seq, last }`）。朗读次数（`voiceCalls`）和 AI 调用次数分开计；合成过的音频在内存里缓存，同一条再听不再调用讯飞。
+- **语音输入**：浏览器用 AudioWorklet 录音，降采样成 16k 单声道 16 位 PCM，每 40ms 一帧（`src/lib/listen.ts`）。单人模式经 WebSocket `/api/stt` 交给后端：Worker 用 `WebSocketPair` 接住，访问口令放在第一条消息里核对；本机服务用 `server/wsserver.ts`（最小的 WebSocket 服务端，不加依赖），凭 Cookie 和 Origin 认人。房间里经房间连接转发（`{ type: 'listen' }` → `{ type: 'heard' }`），同学不需要口令。后端用 `server/stt.ts` 连讯飞语音听写，开启动态修正，把到目前为止的完整文字发回去。录音只在内存里转发，不保存。
 - **倒计时**：房间状态带上后端的当前时间（`now`）和本次发言开始的时间，前端换算成本机时钟的截止时间，不依赖手机时间准不准。
 - **上限与清理**：人数、AI 调用次数、每人个人请求次数、朗读次数、发言长度、记录条数都有上限（`ROOM_LIMITS`）。房间用 Durable Object 的 alarm 在结束 1 小时后或创建 4 小时后删除全部存储。
 - **测试**：`RoomCore` 不依赖 Workers 运行时，`tests/room.test.ts` 直接驱动它；`tests/room-flow.test.ts` 让真实的 actions 通过假 WebSocket 连到 `RoomCore`。

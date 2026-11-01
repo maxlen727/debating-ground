@@ -45,12 +45,13 @@ function VoicePanel() {
   const ready = !!(remote ? ai.remoteTtsConfigured : ai.ttsConfigured);
   return (
     <section className="panel">
-      <div className="row between"><h3 className="section-label">讯飞语音朗读</h3><span className={'status ' + (ready ? 'ok' : 'warn')}>{ready ? '已配置' : '未配置'}</span></div>
+      <div className="row between"><h3 className="section-label">讯飞语音（可选）</h3><span className={'status ' + (ready ? 'ok' : 'warn')}>{ready ? '已配置' : '未配置'}</span></div>
       {localApi && <TtsKeyForm ready={ready} />}
       <label className="field"><span>发音人 ID</span><input value={config.voiceName} maxLength={64} onChange={e => update(s => { s.config.voiceName = e.target.value; })} placeholder="x4_xiaoyan" /></label>
       <p className="fineprint">{localApi
-        ? '密钥只存在本机服务的内存里，停止服务或点“清除”后就没了；也可以在启动服务时用 XFYUN_* 环境变量提供。点发言旁的“朗读”才会调用讯飞，按讯飞的价格计费。'
-        : '讯飞密钥设置在你的后端（Worker 的加密变量），这里不需要填写。配好后发言旁会出现“朗读”。发音人 ID 要用讯飞控制台里已开通的音色。'}</p>
+        ? '密钥只存在本机服务的内存里，停止服务或点“清除”后就没了；也可以在启动服务时用 XFYUN_* 环境变量提供。'
+        : '讯飞密钥设置在你的后端（Worker 的加密变量），这里不需要填写。'}
+        配好后，发言旁会出现“朗读”，输入框旁会出现麦克风。讯飞应用里要分别开通“在线语音合成”和“语音听写（流式版）”；发音人 ID 要用已开通的音色。只在点朗读或说话时调用讯飞，录音不保存。</p>
     </section>
   );
 }

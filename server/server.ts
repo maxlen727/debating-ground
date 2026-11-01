@@ -5,6 +5,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { synthesizeXfyun } from './tts.ts';
+import { listenRelay } from './stt.ts';
+import { acceptWebSocket, rejectUpgrade } from './wsserver.ts';
 import { SPEECH_SEGMENT } from '../shared/speech.ts';
 import { ApiError, normalizeConfig, buildRequest, finalize, complete, streamGenerate, STREAMABLE, type ApiConfig } from './ai.ts';
 import type { Purpose } from '../shared/types.ts';
@@ -25,7 +27,10 @@ export function createServer({ fetchImpl = fetch, timeoutMs = 90000, root = path
     try { return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); } catch { throw new ApiError('请求格式错误。'); }
   }
 
-  return http.createServer(async (req, res) => {
+  const envTts = () => (process.env.XFYUN_APP_ID && process.env.XFYUN_API_KEY && process.env.XFYUN_API_SECRET ? { appId: process.env.XFYUN_APP_ID, apiKey: process.env.XFYUN_API_KEY, apiSecret: process.env.XFYUN_API_SECRET } : null);
+  const xfyunOf = (s: SessionState) => { const t = s.tts ?? envTts(); return t ? { XFYUN_APP_ID: t.appId, XFYUN_API_KEY: t.apiKey, XFYUN_API_SECRET: t.apiSecret } : {}; };
+
+  const server = http.createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('Referrer-Policy', 'no-referrer');
     let url: URL;
     try { url = new URL(req.url ?? '/', 'http://' + req.headers.host); } catch { return json(res, 400, { error: '无效地址' }); }
@@ -44,8 +49,7 @@ export function createServer({ fetchImpl = fetch, timeoutMs = 90000, root = path
       state.touched = Date.now();
       for (const [k, v] of sessions) if (!v.active && Date.now() - v.touched > 8 * 3600000) sessions.delete(k);
       const s = state;
-      const publicState = () => ({ configured: !!s.config, verified: s.verified, baseURL: s.config?.endpoint ?? '', model: s.config?.model ?? '', ttsConfigured: !!(s.tts ?? envTts()) });
-      const envTts = () => (process.env.XFYUN_APP_ID && process.env.XFYUN_API_KEY && process.env.XFYUN_API_SECRET ? { appId: process.env.XFYUN_APP_ID, apiKey: process.env.XFYUN_API_KEY, apiSecret: process.env.XFYUN_API_SECRET } : null);
+      const publicState = () => ({ configured: !!s.config, verified: s.verified, baseURL: s.config?.endpoint ?? '', model: s.config?.model ?? '', ttsConfigured: !!(s.tts ?? envTts()), sttConfigured: !!(s.tts ?? envTts()) });
       const ttsEnv = () => s.tts ?? envTts();
       try {
         if (req.method === 'GET' && url.pathname === '/api/config') return json(res, 200, publicState());
@@ -60,10 +64,10 @@ export function createServer({ fetchImpl = fetch, timeoutMs = 90000, root = path
           const data = await body(req);
           const read = (key: string) => typeof data[key] === 'string' ? (data[key] as string).trim() : '';
           const appId = read('appId'), apiKey = read('apiKey'), apiSecret = read('apiSecret');
-          if (!appId && !apiKey && !apiSecret) { s.tts = null; return json(res, 200, { ttsConfigured: !!envTts() }); }
+          if (!appId && !apiKey && !apiSecret) { s.tts = null; return json(res, 200, { ttsConfigured: !!envTts(), sttConfigured: !!envTts() }); }
           if (!appId || !apiKey || !apiSecret) throw new ApiError('讯飞语音需要同时填写 App ID、API Key 和 API Secret。');
           s.tts = { appId, apiKey, apiSecret };
-          return json(res, 200, { ttsConfigured: true });
+          return json(res, 200, { ttsConfigured: true, sttConfigured: true });
         }
         if (req.method === 'POST' && url.pathname === '/api/config') {
           if (s.active) throw new ApiError('请先取消当前请求。', 409);
@@ -121,6 +125,24 @@ export function createServer({ fetchImpl = fetch, timeoutMs = 90000, root = path
       res.end(req.method === 'HEAD' ? undefined : data);
     });
   });
+
+  // 语音输入：浏览器开 WebSocket 时会带上 Cookie 和 Origin，凭这两样认人（和普通请求一样只认本机页面）
+  server.on('upgrade', (req: http.IncomingMessage, socket: import('node:stream').Duplex) => {
+    let url: URL;
+    try { url = new URL(req.url ?? '/', 'http://' + req.headers.host); } catch { return rejectUpgrade(socket, 400, 'Bad Request'); }
+    if (url.pathname !== '/api/stt' || !['localhost', '127.0.0.1'].includes(url.hostname)) return rejectUpgrade(socket, 404, 'Not Found');
+    if (req.headers.origin !== url.origin) return rejectUpgrade(socket, 403, 'Forbidden');
+    const id = req.headers.cookie?.match(/(?:^|;\s*)sibian_session=([a-f0-9]{48})(?:;|$)/)?.[1];
+    const state = id ? sessions.get(id) : undefined;
+    if (!state) return rejectUpgrade(socket, 401, 'Unauthorized');
+    const ws = acceptWebSocket(req, socket);
+    if (!ws) return;
+    state.touched = Date.now();
+    const relay = listenRelay(xfyunOf(state), e => ws.send(JSON.stringify(e)), () => ws.close());
+    ws.onMessage(text => { void relay.handle(text); });
+    ws.onClose(() => relay.close());
+  });
+  return server;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

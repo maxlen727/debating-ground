@@ -21,7 +21,7 @@ function debateSetup() {
 
 interface Client extends SocketLike { inbox: ServerMessage[]; member: string | null; open: boolean; last(): RoomView }
 type Synthesize = NonNullable<RoomDeps['synthesize']>;
-function setup(generate?: Generate, synthesize?: Synthesize) {
+function setup(generate?: Generate, synthesize?: Synthesize, listen?: RoomDeps['listen']) {
   let stored: StoredRoom | undefined;
   let saves = 0;
   let now = 1_000_000;
@@ -35,7 +35,7 @@ function setup(generate?: Generate, synthesize?: Synthesize) {
     return { text: `AI 回复 ${calls.length}`, covered: [0], model: 'm' };
   });
   const core = new RoomCore({
-    load: async () => stored && structuredClone(stored), save: async r => { saves++; stored = structuredClone(r); }, synthesize, destroy: async () => { stored = undefined; },
+    load: async () => stored && structuredClone(stored), save: async r => { saves++; stored = structuredClone(r); }, synthesize, listen, destroy: async () => { stored = undefined; },
     sockets: () => sockets.filter(s => s.open), setAlarm: async at => { alarm = at; }, generate: async (p, x, onText) => { if (!generate) return gen(p, x); calls.push({ purpose: p, payload: x as Payload }); return generate(p, x, onText); }, now: () => now
   });
   const connect = (): Client => {
@@ -50,8 +50,8 @@ function setup(generate?: Generate, synthesize?: Synthesize) {
   return { core, connect, send, calls, get stored() { return stored; }, get alarm() { return alarm; }, get saves() { return saves; }, tick(ms: number) { now += ms; } };
 }
 
-async function room(kind: 'roundtable' | 'debate' = 'roundtable', generate?: Generate, synthesize?: Synthesize) {
-  const t = setup(generate, synthesize);
+async function room(kind: 'roundtable' | 'debate' = 'roundtable', generate?: Generate, synthesize?: Synthesize, listen?: RoomDeps['listen']) {
+  const t = setup(generate, synthesize, listen);
   const created = await t.core.init({ roomId: 'r'.repeat(22), setup: kind === 'debate' ? debateSetup() : ROUNDTABLE, hostName: '束束' });
   const host = t.connect();
   await t.send(host, { type: 'resume', token: created.hostToken });
@@ -501,4 +501,55 @@ test('the turn timer is sent with the backend clock so phones with a wrong clock
   assert.equal(deadlineOf(v, phone), phone + 60_000);
   assert.equal(deadlineOf({ ...v, turnStartedAt: 0 }, phone), 0, 'no timer while the AI speaks');
   assert.equal(validateSetup({ ...ROUNDTABLE, turnSeconds: 45 }).turnSeconds, 0, 'only the offered limits are accepted');
+});
+
+test('voice input in a room: audio goes to iFlytek through the room, text comes back only to the speaker', async () => {
+  // 假的听写会话：收到几帧就回几个字，end 时给最终结果
+  const sessions: { frames: number; cancelled: boolean }[] = [];
+  const listen: RoomDeps['listen'] = emit => {
+    const me = { frames: 0, cancelled: false }; sessions.push(me);
+    let finished = false;
+    return {
+      get finished() { return finished; },
+      async start() {},
+      audio() { me.frames++; emit({ type: 'text', text: '听到'.repeat(me.frames), final: false }); },
+      end() { finished = true; emit({ type: 'text', text: '听到了', final: true }); },
+      cancel() { me.cancelled = true; finished = true; }
+    };
+  };
+  const t = await room('roundtable', undefined, undefined, listen);
+  const guest = await guestIn(t);
+  assert.equal(guest.last().listenAvailable, true);
+  const heardBy = (c: { inbox: ServerMessage[] }) => c.inbox.filter((m): m is Extract<ServerMessage, { type: 'heard' }> => m.type === 'heard').map(m => m.event);
+
+  await t.send(guest, { type: 'listen', op: 'start' });
+  await t.send(guest, { type: 'listen', op: 'start' });
+  await t.send(guest, { type: 'listen', op: 'audio', audio: 'AAAA' });
+  await t.send(guest, { type: 'listen', op: 'audio', audio: 'AAAA' });
+  await t.send(guest, { type: 'listen', op: 'end' });
+  const got = heardBy(guest);
+  assert.deepEqual(got[0], { type: 'ready' });
+  assert.match((got[1] as { message: string }).message, /还没有识别完/, 'one recording at a time');
+  assert.deepEqual(got.slice(2), [{ type: 'text', text: '听到', final: false }, { type: 'text', text: '听到听到', final: false }, { type: 'text', text: '听到了', final: true }]);
+  assert.equal(heardBy(t.host).length, 0, 'nobody else hears it');
+  assert.equal(t.stored!.aiCalls, 0, 'not counted as AI calls');
+  assert.equal(t.stored!.listenCalls, 1);
+  assert.ok(!JSON.stringify(t.stored).includes('听到'), 'nothing is stored until the person sends it');
+
+  // 断线时取消正在进行的录音
+  await t.send(t.host, { type: 'listen', op: 'start' });
+  t.host.open = false;
+  await t.core.onClose(t.host);
+  assert.equal(sessions.at(-1)!.cancelled, true);
+
+  // 次数用完
+  (t.core as unknown as { room: StoredRoom }).room.members.find(m => m.name === '小明')!.listenCalls = ROOM_LIMITS.personalListen;
+  await t.send(guest, { type: 'listen', op: 'start' });
+  assert.match((heardBy(guest).at(-1) as { message: string }).message, /语音输入次数已经用完/);
+
+  // 没配讯飞的房间
+  const plain = await room();
+  assert.equal(plain.host.last().listenAvailable, false);
+  await plain.send(plain.host, { type: 'listen', op: 'start' });
+  assert.match(JSON.stringify(plain.host.inbox.at(-1)), /还没有配置讯飞语音/);
 });

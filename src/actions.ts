@@ -5,6 +5,7 @@ import type { Card, Session } from './store.ts';
 import { runAI } from './lib/ai.ts';
 import { clearLive } from './lib/stream.ts';
 import { playingId, speakText, startVoice, stopVoice } from './lib/voice.ts';
+import { cancelListening, listeningPhase, startListening, stopListening } from './lib/listen.ts';
 import * as room from './lib/room.ts';
 import { debateTurns, seatName, slots } from './lib/debate.ts';
 import { DAY, schedule } from './lib/srs.ts';
@@ -57,7 +58,7 @@ function planProblem(multiplayer = false): string {
 }
 function endOld() {
   const old = session();
-  stopVoice();
+  stopVoice(); cancelListening();
   if (old?.room) room.leave();
   if (old && !old.finished && old.entries.some(m => m.kind === 'msg' && m.human)) toast('上一次讨论没有复盘，已结束。');
 }
@@ -133,7 +134,7 @@ export const pickSeat = (seat: string | null) => { update(st => { st.ui.sheet = 
 export const aiTakeover = () => room.send({ type: 'aiTakeover' });
 export const retryAI = () => room.send({ type: 'retry' });
 export function leaveRoom() {
-  stopVoice(); stopTyping();
+  stopVoice(); stopTyping(); cancelListening();
   room.leave();
   update(st => { st.session = null; st.ui.screen = 'learn'; });
 }
@@ -277,6 +278,26 @@ export function toggleVoice(messageId: string) {
   const { config } = getState();
   if (s.room) { startVoice(m.id); if (!room.send({ type: 'speak', entryId: m.id, voice: config.voiceName })) stopVoice(); return; }
   void speakText(m.id, m.text, config.voiceName, config.aiMode === 'remote' ? 'remote' : 'local');
+}
+
+/* ---------- 语音输入 ---------- */
+// 和朗读一样要后端配好讯飞；说的话填进输入框，不自动发送
+export function listenAvailable(): boolean {
+  const { session: s, config, ai } = getState();
+  if (s?.room) return !!s.room.listenAvailable;
+  return config.aiMode === 'remote' ? !!ai.remoteSttConfigured : config.aiMode === 'api' ? !!ai.sttConfigured : false;
+}
+export function toggleListen() {
+  if (listeningPhase()) return stopListening();
+  const s = session(); if (!s || !listenAvailable()) return;
+  stopVoice();   // 别把朗读的声音录进去
+  // 接在已经写好的内容后面；英文和数字后面隔一个空格
+  const before = s.draft, sep = /[A-Za-z0-9]$/.test(before) ? ' ' : '';
+  const route = s.room ? 'room' : getState().config.aiMode === 'remote' ? 'remote' : 'local';
+  void startListening(route, {
+    text: t => { update(st => { if (st.session?.id === s.id) st.session.draft = before + (t ? sep + t : ''); }); noteTyping(); },
+    end: error => { if (error) toast(error); }
+  });
 }
 
 /* ---------- 补充讨论要点 ---------- */

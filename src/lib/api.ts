@@ -67,18 +67,18 @@ export async function apiStream<T>(path: string, body: Record<string, unknown>, 
   throw new Error('连接在生成过程中断开了，本次内容未采用，请重试。');
 }
 
-type Public = Pick<AiStatus, 'configured' | 'verified' | 'baseURL' | 'model'> & { ttsConfigured?: boolean };
+type Public = Pick<AiStatus, 'configured' | 'verified' | 'baseURL' | 'model'> & { ttsConfigured?: boolean; sttConfigured?: boolean };
 
 export async function refreshStatus() {
   if (typeof location === 'undefined' || !/^https?:$/.test(location.protocol)) return;
   try {
     const data = await apiRequest<Public>('/api/config');
-    update(s => { s.ai = { ...s.ai, ...data, ttsConfigured: !!data.ttsConfigured, available: true }; });
+    update(s => { s.ai = { ...s.ai, ...data, ttsConfigured: !!data.ttsConfigured, sttConfigured: !!data.sttConfigured, available: true }; });
   } catch { update(s => { s.ai.available = false; }); }
   // 读取后端状态不调用模型，不产生费用
   const { aiMode, remote } = getState().config;
   if (aiMode === 'remote' && remote.url) {
-    try { const data = await apiRequest<Public>('/api/config', {}, 'remote'); update(s => { s.ai.remoteModel = data.model; s.ai.remoteTtsConfigured = !!data.ttsConfigured; }); } catch { /* 进入讨论时再提示 */ }
+    try { const data = await apiRequest<Public>('/api/config', {}, 'remote'); update(s => { s.ai.remoteModel = data.model; s.ai.remoteTtsConfigured = !!data.ttsConfigured; s.ai.remoteSttConfigured = !!data.sttConfigured; }); } catch { /* 进入讨论时再提示 */ }
   }
 }
 
@@ -99,8 +99,8 @@ export async function disconnect(signal: AbortSignal) {
   update(s => { s.ai = { ...s.ai, ...data }; s.config.aiMode = 'demo'; });
 }
 export async function saveTtsConfig(input: { appId: string; apiKey: string; apiSecret: string }, signal: AbortSignal) {
-  const data = await apiRequest<{ ttsConfigured: boolean }>('/api/tts/config', { method: 'POST', signal, body: JSON.stringify(input) });
-  update(s => { s.ai.ttsConfigured = !!data.ttsConfigured; });
+  const data = await apiRequest<{ ttsConfigured: boolean; sttConfigured?: boolean }>('/api/tts/config', { method: 'POST', signal, body: JSON.stringify(input) });
+  update(s => { s.ai.ttsConfigured = !!data.ttsConfigured; s.ai.sttConfigured = !!data.sttConfigured; });
 }
 
 /* ---------- 自己部署的后端 ---------- */
@@ -117,10 +117,10 @@ export async function connectRemote(url: string, password: string, signal: Abort
   const clean = checkRemoteURL(url);
   update(s => { s.config.remote = { url: clean, password }; s.ai.remoteVerified = false; });
   const data = await apiRequest<Public>('/api/config', { signal }, 'remote');
-  update(s => { s.ai.remoteModel = data.model; s.ai.remoteTtsConfigured = !!data.ttsConfigured; });
+  update(s => { s.ai.remoteModel = data.model; s.ai.remoteTtsConfigured = !!data.ttsConfigured; s.ai.remoteSttConfigured = !!data.sttConfigured; });
   await apiRequest('/api/test', { method: 'POST', signal, body: '{}' }, 'remote');
   update(s => { s.ai.remoteVerified = true; s.config.aiMode = 'remote'; });
 }
 export function forgetRemote() {
-  update(s => { s.config.remote = { url: '', password: '' }; s.ai.remoteVerified = false; s.ai.remoteModel = ''; s.ai.remoteTtsConfigured = false; if (s.config.aiMode === 'remote') s.config.aiMode = 'demo'; });
+  update(s => { s.config.remote = { url: '', password: '' }; s.ai.remoteVerified = false; s.ai.remoteModel = ''; s.ai.remoteTtsConfigured = false; s.ai.remoteSttConfigured = false; if (s.config.aiMode === 'remote') s.config.aiMode = 'demo'; });
 }
