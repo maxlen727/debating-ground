@@ -26,10 +26,29 @@ test('endpoint normalization and credential validation', () => {
 test('prepare asks for structured output and passes weak points from the last review', () => {
   const r = buildRequest('prepare', { concept: '机会成本', mode: 'roundtable', previous: { oneLine: '还差一点', weak: ['区别于沉没成本'] } });
   assert.equal(r.output, 'prepare');
-  assert.match(r.messages[0].content, /JSON/); assert.match(r.messages[0].content, /3 个/); assert.match(r.messages[0].content, /薄弱点/);
+  assert.match(r.messages[0].content, /JSON/);
+  // 探索式讨论：4 到 5 个理解要点
+  assert.match(r.messages[0].content, /keyPoints 是真正理解这个概念必须掌握的 4 到 5 个要点/);
+  assert.match(r.messages[0].content, /薄弱点/);
   assert.deepEqual(user(r).previous.weakPoints, ['区别于沉没成本']);
   assert.throws(() => buildRequest('prepare', { concept: '', mode: 'socratic' }));
   assert.throws(() => buildRequest('prepare', { concept: 'x', mode: 'nope' }));
+});
+
+test('prepare differentiates debate core disputes from exploration key points', () => {
+  // 辩论模式：3 到 4 个核心争点，指引讨论方向而不是清单
+  const r = buildRequest('prepare', { concept: '机会成本', mode: 'debate' });
+  assert.match(r.messages[0].content, /keyPoints 是本场辩论最值得交锋的 3 到 4 个核心争点或判断标准/);
+  assert.match(r.messages[0].content, /不要把它们写成必须逐项完成的清单/);
+  // 真实输出示例：模型按新指引返回的 prepare 结果应被 finalize 接受
+  const sample = finalize({ messages: [], output: 'prepare', mode: 'debate' }, {
+    text: JSON.stringify({
+      concept: '机会成本', topic: '打工赚 300 元的代价不等于花的钱',
+      keyPoints: ['代价是放弃的最佳选择', '显性成本与隐性成本', '沉没成本不该影响决策'],
+      roles: [{ name: '正方', title: '立论者', persona: '稳' }], opening: ''
+    }), model: 'm'
+  }) as { data: { keyPoints: string[] } };
+  assert.equal(sample.data.keyPoints.length, 3, '3 个核心争点也应被接受（数量允许变化）');
 });
 
 test('discussion turn carries role, mode rule, numbered key points and transcript', () => {
