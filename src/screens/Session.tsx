@@ -1,7 +1,9 @@
-import { useEffect, useRef } from 'react';
+
+import { useEffect, useRef, useState } from 'react';
 import { MODES } from '../../shared/modes.ts';
 import type { ChatMessage, Entry, Reflection } from '../../shared/types.ts';
-import { QUICK, addReflection, aiTakeover, callOn, currentTurn, dropReflection, finish, generateSeat, hint, nextSpeaker, openTerm, passTurn, pickSeat, quick, retryAI, send, setReflectionDraft, skipSeat, startRoom, submitReflection } from '../actions.ts';
+import { QUICK, acceptPoint, addReflection, aiTakeover, callOn, currentTurn, dropReflection, finish, generateSeat, hint, nextSpeaker, openTerm, passTurn, pickSeat, proposePoint, quick, quickMessage, rejectPoint, retryAI, send, setReflectionDraft, setTyping, skipSeat, startRoom, submitReflection, suggestPoint } from '../actions.ts';
+
 import { Empty, ErrorBanner, Icon, Sheet } from '../components/ui.tsx';
 import { CaretField } from '../components/SmoothCaret.tsx';
 import { Reveal } from '../components/Reveal.tsx';
@@ -11,9 +13,11 @@ import { seatName } from '../lib/debate.ts';
 import { exportSession } from '../lib/exporter.ts';
 import { inviteLink, isPeer, mySeat, mySpeakingTurn, seatOwner, speakerLabel } from '../lib/room.ts';
 import { go, toast, update, useApp, type Session as S } from '../store.ts';
+import { requestRoomSpeech } from '../lib/room.ts';
+import { speakText } from '../lib/voice.ts';
 
 export function Session() {
-  const { session: s, ui } = useApp();
+  const { session: s, ui, config, ai } = useApp();
   const live = useLive();
   const count = s ? s.entries.length : 0;
   const aiBusy = s?.room?.aiBusy;
@@ -37,6 +41,11 @@ export function Session() {
   const sheetMsg = s.entries.find((m): m is ChatMessage => m.id === ui.sheet && m.kind === 'msg');
   const lastAi = [...s.entries].reverse().find(m => m.kind === 'msg' && !m.human && !m.memberId)?.id;
   const canFinish = !room || room.host;
+  const voiceAvailable = room ? room.voiceAvailable : (config.aiMode === 'remote' ? ai.remoteTtsConfigured : ai.ttsConfigured);
+  const playVoice = (m: ChatMessage) => {
+    if (room) requestRoomSpeech(m.id, config.voiceName);
+    else void speakText(m.text, config.voiceName, config.aiMode === 'remote' ? 'remote' : 'local').catch(e => toast((e as Error).message || '语音播放失败。'));
+  };
 
   return (
     <div className="screen session">
@@ -46,7 +55,7 @@ export function Session() {
           <div className="topbar-title"><h1>{s.concept}</h1><p>{MODES[s.mode].name} · {s.topic}</p></div>
           <div className="topbar-right">
             {s.finished ? <button className="secondary small" onClick={() => go('review')}>看复盘</button>
-              : canFinish && room?.status !== 'lobby' && <button className="secondary small" disabled={!!ui.busy || !!aiBusy} onClick={finish}>{room ? '结束讨论' : '结束复盘'}</button>}
+              : !s.awaitingReview && canFinish && room?.status !== 'lobby' && <button className="secondary small" disabled={!!ui.busy || !!aiBusy} onClick={() => { if (debate && s.cursor < s.turns.length && !window.confirm('现在结束会跳过剩余赛程，包括双方总结陈词。仍要结束吗？')) return; finish(); }}>{room ? '结束讨论' : '结束复盘'}</button>}
           </div>
         </header>
         <div className="progress" aria-label={`要点进度 ${s.covered.length}/${s.keyPoints.length}`}>
@@ -63,8 +72,14 @@ export function Session() {
         )}
       </div>
 
+      <details className="point-tools">
+        <summary>补充讨论要点{(s.proposedPoints?.length ?? 0) > 0 ? ` · 待审核 ${s.proposedPoints!.length}` : ''}</summary>
+        <p className="fineprint">要点是可选的讨论方向。探究讨论可随时补充；辩论中的新观点需审核后才进入追踪清单，不改变赛程。</p>
+        {(s.proposedPoints ?? []).map(p => <div className="row between point-proposal" key={p.id}><span>{p.text}<small className="muted"> · {p.proposer}提议</small></span><span className="row"><button className="ghost small" onClick={() => rejectPoint(p.id)}>忽略</button><button className="secondary small" onClick={() => acceptPoint(p.id)}>采纳</button></span></div>)}
+        <div className="row"><button className="ghost small" onClick={() => { const text = window.prompt('写下一条新的讨论要点'); if (text) proposePoint(text); }}>手动提议</button><button className="ghost small" disabled={!!ui.busy} onClick={suggestPoint}>让 AI 提议</button></div>
+      </details>
       <main className="thread pad">
-        {s.entries.map(m => <EntryView key={m.id} m={m} s={s} showTip={m.id === lastAi && s.learnerTurns === 0 && !s.finished} />)}
+        {s.entries.map(m => <EntryView key={m.id} m={m} s={s} showTip={m.id === lastAi && s.learnerTurns === 0 && !s.finished} voiceAvailable={!!voiceAvailable} onPlayVoice={playVoice} />)}
         {live?.kind === 'msg' && !s.entries.some(e => e.id === live.id) ? <LiveMessage s={s} onStop={room ? undefined : cancelAI} />
           : <>{aiBusy && <Typing label={aiBusy} />}{ui.busy && <Typing label={ui.busy} onStop={cancelAI} />}</>}
       </main>
@@ -107,9 +122,10 @@ export function Session() {
       {room && ui.sheet === 'seats' && <SeatSheet s={s} />}
       {room?.host && ui.invite && <InviteSheet s={s} />}
 
+      {s.awaitingReview && <div className="review-gate"><b>双方总结陈词已完成</b><p>最后一位辩友的发言已完整保留。看完后再进入复盘。</p><button className="primary" onClick={finish}>继续到复盘</button></div>}
       <footer className="composer">
         <ErrorBanner />
-        {s.finished ? (
+        {s.awaitingReview ? <p className="muted">总结陈词已结束，请阅读上方完整发言。</p> : s.finished ? (
           <div className="row between composer-done"><span className="muted">这次讨论已结束。</span><div className="row"><button className="ghost small" onClick={() => exportSession(s)}><Icon name="download" size={16} />导出</button><button className="primary small" onClick={() => go('review')}>看复盘</button></div></div>
         ) : room ? <RoomComposer s={s} /> : <Composer s={s} />}
       </footer>
@@ -165,7 +181,7 @@ function RoomBar({ s }: { s: S }) {
           return (
             <span role="listitem" key={m.id} className={'member' + (m.online ? '' : ' away') + (m.id === room.memberId ? ' me' : '')}>
               <i className={'presence' + (m.online ? ' on' : '')} aria-label={m.online ? '在线' : '离开'} />
-              {m.id === room.memberId ? '你' : m.name}{m.host && <small>房主</small>}{s.mode === 'debate' && <small>{seat ? seatName(seat) : '旁听'}</small>}
+              {m.id === room.memberId ? '你' : m.name}{m.host && <small>房主</small>}{s.mode === 'debate' && <small>{seat ? seatName(seat) : '旁听'}</small>}{(m.typingUntil ?? 0) > Date.now() && <small className="typing-label">正在输入…</small>}
             </span>
           );
         })}
@@ -282,6 +298,7 @@ function RoomComposer({ s }: { s: S }) {
           {s.mode === 'debate' && <span className="muted grow-right">{s.cursor + 1}/{s.turns.length}</span>}
         </div>
       )}
+      {room.turnSeconds > 0 && room.status === 'live' && <Countdown room={room} />}
       <HintCard />
       <div className="tools scroll-x">
         {mine && <button className="tool" disabled={busy} onClick={hint}><Icon name="bulb" size={16} />给点提示</button>}
@@ -290,6 +307,9 @@ function RoomComposer({ s }: { s: S }) {
         {room.host && humanSeat && !mine && !room.aiBusy && <button className="tool" onClick={aiTakeover}>让 AI 代答</button>}
         {(mine || room.host) && !room.aiBusy && <button className="tool" onClick={passTurn}>{mine ? '这次先跳过' : '跳过当前发言'}</button>}
         {s.mode === 'debate' && <button className="tool" onClick={() => update(st => { st.ui.sheet = 'seats'; })}><Icon name="people" size={16} />{mySeat(s) ? '换席位' : '上场辩论'}</button>}
+      </div>
+      <div className="quick-messages" aria-label="快捷消息">
+        {['等一等', '快点啊', '我在想', '请继续'].map(text => <button key={text} className="chip-btn" onClick={() => quickMessage(text)}>{text}</button>)}
       </div>
       {mine ? <DraftInput s={s} placeholder={s.mode === 'debate' ? `${t?.action ?? '发言'}：我方认为……因为……` : '说说你的想法……'} /> : <p className="lobby-note">{room.aiBusy ? '稍等，AI 正在发言。' : '轮到你时，这里会出现输入框。'}</p>}
     </>
@@ -304,17 +324,26 @@ function SeatPrompt({ s, primary = false }: { s: S; primary?: boolean }) {
     ? <button className="ghost block" onClick={open}>你是{seatName(seat)} · 换席位</button>
     : <button className={(primary ? 'primary' : 'secondary') + ' block'} onClick={open}>选择阵营和席位</button>;
 }
+function Countdown({ room }: { room: NonNullable<S['room']> }) {
+  const [, tick] = useState(0);
+  useEffect(() => { const id = setInterval(() => tick(n => n + 1), 1000); return () => clearInterval(id); }, []);
+  if (!room.turnStartedAt) return null;
+  const remaining = Math.max(0, room.turnSeconds - Math.floor((Date.now() - room.turnStartedAt) / 1000));
+  return <p className={'turn-countdown' + (remaining === 0 ? ' expired' : '')}>{remaining ? `本轮剩余 ${remaining} 秒` : '本轮时间到，可继续完成发言或发送快捷消息'}</p>;
+}
 
 function DraftInput({ s, placeholder }: { s: S; placeholder: string }) {
   const { ui } = useApp();
   const ref = useRef<HTMLTextAreaElement>(null);
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => { const t = ref.current; if (t) { t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 160) + 'px'; } }, [s.draft]);
-  const submit = () => send(s.draft);
+  useEffect(() => () => { if (typingTimer.current) clearTimeout(typingTimer.current); if (s.room) setTyping(false); }, [s.room]);
+  const submit = () => { if (typingTimer.current) clearTimeout(typingTimer.current); if (s.room) setTyping(false); send(s.draft); };
   return (
     <div className="input-row">
       <CaretField fieldRef={ref} className="grow">
         <textarea id="draft" ref={ref} rows={1} value={s.draft} maxLength={s.room ? 2000 : 4000} aria-label="你的发言" placeholder={placeholder}
-          onChange={e => update(st => { st.session!.draft = e.target.value; })}
+          onChange={e => { update(st => { st.session!.draft = e.target.value; }); if (s.room) { setTyping(true); if (typingTimer.current) clearTimeout(typingTimer.current); typingTimer.current = setTimeout(() => setTyping(false), 1500); } }}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && window.matchMedia('(pointer: fine)').matches) { e.preventDefault(); submit(); } }} />
       </CaretField>
       <button className="send" aria-label="发送" disabled={!!ui.busy || !s.draft.trim()} onClick={submit}><Icon name="send" /></button>
@@ -360,7 +389,7 @@ function WithTerms({ text, terms }: { text: string; terms?: string[] }) {
   return <>{parts.map((part, i) => list.includes(part) ? <span key={i} className="term" data-term={part}>{part}</span> : part)}</>;
 }
 
-function EntryView({ m, s, showTip }: { m: Entry; s: S; showTip: boolean }) {
+function EntryView({ m, s, showTip, voiceAvailable, onPlayVoice }: { m: Entry; s: S; showTip: boolean; voiceAvailable: boolean; onPlayVoice: (m: ChatMessage) => void }) {
   if (m.kind === 'sys') {
     const topic = m.text.match(/^(讨论题|辩题)：([\s\S]+)$/);
     return topic ? <div className="topic-line"><small>{topic[1]}</small><p>{topic[2]}</p></div> : <div className="sysline">{m.text}</div>;
@@ -380,7 +409,7 @@ function EntryView({ m, s, showTip }: { m: Entry; s: S; showTip: boolean }) {
     <div className={'msg' + (me ? ' me' : '') + (peer ? ' peer' : '')}>
       <span className={'avatar tone-' + tone} aria-hidden="true">{avatarText}</span>
       <div className="msg-body">
-        <div className="msg-meta"><b>{label}</b>{meta && <span>{meta}</span>}{m.skipped && <span>已跳过</span>}</div>
+        <div className="msg-meta"><b>{label}</b>{meta && <span>{meta}</span>}{m.skipped && <span>已跳过</span>}<button className="link voice-play" disabled={!voiceAvailable || !!m.skipped} onClick={() => onPlayVoice(m)} aria-label={`讯飞朗读：${label}`} title={voiceAvailable ? '讯飞朗读' : '请先在设置里配置讯飞语音'}>朗读</button></div>
         {me || m.skipped || s.finished
           ? <div className={'bubble' + (m.skipped ? ' skipped' : '')} onClick={e => termAt(e.target) && openTerm(termAt(e.target)!, m.id)}><Reveal id={m.id} text={m.text} live={false} final={<WithTerms text={m.text} terms={m.terms} />} /></div>
           : <button className="bubble tappable" aria-haspopup="dialog" onClick={e => {

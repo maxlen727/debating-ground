@@ -110,6 +110,8 @@ export const joinRoom = (name: string) => name.trim() ? room.join(name.trim()) :
 export const startRoom = () => room.send({ type: 'start' });
 export const callOn = (target: NonNullable<import('../shared/room.ts').Speaker>) => { update(st => { st.ui.sheet = null; }); room.send({ type: 'callOn', target }); };
 export const passTurn = () => room.send({ type: 'pass' });
+export const setTyping = (active: boolean) => room.send({ type: 'typing', active });
+export const quickMessage = (text: string) => room.send({ type: 'quickMessage', text });
 export const pickSeat = (seat: string | null) => { update(st => { st.ui.sheet = null; }); room.send({ type: 'seat', seat }); };
 export const aiTakeover = () => room.send({ type: 'aiTakeover' });
 export const retryAI = () => room.send({ type: 'retry' });
@@ -179,7 +181,7 @@ export function submitSeat(text: string, skipped = false) {
     ss.cursor++; ss.draft = ''; st.ui.hint = null;
     if (human && !skipped) ss.learnerTurns++;
   });
-  if (session()!.cursor >= s.turns.length) return finish();
+  if (session()!.cursor >= s.turns.length) return update(st => { st.session!.awaitingReview = true; });
   maybeReflect();
 }
 export const skipSeat = () => submitSeat('主席宣布：本席放弃本次发言。', true);
@@ -198,7 +200,7 @@ export async function generateSeat() {
     ss.cursor++;
   });
   clearLive(id);
-  if (session()!.cursor >= s.turns.length) return finish();
+  if (session()!.cursor >= s.turns.length) return update(st => { st.session!.awaitingReview = true; });
 }
 
 /* ---------- 快捷追问、提示、小结 ---------- */
@@ -240,6 +242,24 @@ export async function quick(kind: ExplainKind | 'disagree', messageId: string) {
   const res = await runAI('explain', { session: snapshot(s), quote: m.text.slice(0, 4000), kind }, '讲解助手正在看这句话', { id: 'explain', kind: 'explain' });
   update(st => { if (res && st.ui.explain) st.ui.explain.text = res.text; else st.ui.explain = null; });
   clearLive('explain');
+}
+
+export function proposePoint(text: string, source: 'human' | 'ai' = 'human') {
+  const s = session(); text = text.trim();
+  if (!s || !text) return;
+  if (s.keyPoints.length + (s.proposedPoints?.length ?? 0) >= 6) return toast('讨论要点最多六个。');
+  if ([...s.keyPoints, ...(s.proposedPoints ?? []).map(p => p.text)].some(p => p.toLocaleLowerCase() === text.toLocaleLowerCase())) return toast('这条要点已经存在。');
+  update(st => { st.session!.proposedPoints = [...(st.session!.proposedPoints ?? []), { id: uid(), text, source, proposer: source === 'ai' ? 'AI' : (st.session!.room?.members.find(m => m.id === st.session!.room?.memberId)?.name ?? '你') }]; });
+}
+export function acceptPoint(id: string) {
+  update(st => { const s = st.session; if (!s) return; const p = s.proposedPoints?.find(x => x.id === id); if (!p || s.keyPoints.length >= 6) return; s.keyPoints.push(p.text); s.proposedPoints = s.proposedPoints!.filter(x => x.id !== id); });
+}
+export function rejectPoint(id: string) { update(st => { if (st.session) st.session.proposedPoints = (st.session.proposedPoints ?? []).filter(p => p.id !== id); }); }
+export async function suggestPoint() {
+  const s = session(); if (!s || getState().ui.busy) return;
+  const res = s.room ? await room.ask<{ text: string }>({ type: 'ask', purpose: 'hint' }, 'AI 正在提议一个讨论要点') : await runAI('hint', { session: snapshot(s), covered: s.covered, task: '请提出一个尚未列出的、适合继续探究的简短讨论要点。只给一条要点，不要给建议或解释。' }, 'AI 正在提议一个讨论要点');
+  if (res?.text) proposePoint(res.text.split(/[。\n]/)[0].trim(), 'ai');
+  clearLive('hint');
 }
 
 export async function hint() {
@@ -332,7 +352,7 @@ export async function finish() {
   if (getState().ui.busy) return;
   const r = session()?.room;
   if (r) { if (r.host) room.send({ type: 'finish' }); return; }
-  update(st => { const s = st.session!; s.finished = true; s.draft = ''; st.ui.hint = null; st.ui.explain = null; st.ui.screen = 'review'; });
+  update(st => { const s = st.session!; s.finished = true; s.awaitingReview = false; s.draft = ''; st.ui.hint = null; st.ui.explain = null; st.ui.screen = 'review'; });
   const s = session()!;
   if (s.entries.some(m => (m.kind === 'msg' && m.human) || (m.kind === 'reflect' && m.text))) await generateReview();
 }

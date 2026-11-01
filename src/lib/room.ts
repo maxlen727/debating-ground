@@ -9,6 +9,7 @@ import { apiRequest } from './api.ts';
 import { task } from './ai.ts';
 import { clearLive, getLive, setLive, updateLive } from './stream.ts';
 import { debateTurns, seatName, slots } from './debate.ts';
+import { playAudio } from './voice.ts';
 
 /* ---------- 邀请链接 ---------- */
 // 邀请码放在 # 后面：浏览器不会把它发给托管界面的网站，打开后立即从地址栏移除
@@ -41,7 +42,7 @@ export function readInviteFromLocation() {
 }
 
 /* ---------- 把房间状态映射成本地讨论 ---------- */
-export function toSession(view: RoomView, prev: Session | null, link: Omit<RoomLink, 'status' | 'members' | 'speaker' | 'aiBusy' | 'error' | 'expiresAt'>): Session {
+export function toSession(view: RoomView, prev: Session | null, link: Omit<RoomLink, 'status' | 'members' | 'speaker' | 'aiBusy' | 'error' | 'expiresAt' | 'turnSeconds' | 'turnStartedAt' | 'voiceAvailable'>): Session {
   const me = link.memberId;
   const same = prev?.room?.roomId === view.id ? prev : null;
   // 只有自己的发言算“我”的；同学的发言保留 memberId，界面上显示为同学
@@ -59,7 +60,8 @@ export function toSession(view: RoomView, prev: Session | null, link: Omit<RoomL
     nextRole: 0, demoStep: 0, finished: view.status === 'finished', draft: same?.draft ?? '', previous: null,
     personas: setup.personas, seats: setup.seats, stages: setup.stages, turns: setup.turns, cursor: view.cursor,
     review: same?.review ?? null, glossary: same?.glossary,
-    room: { ...link, status: view.status, members: view.members, speaker: view.speaker, aiBusy: view.aiBusy, error: view.error, expiresAt: view.expiresAt }
+    room: { ...link, status: view.status, members: view.members, speaker: view.speaker, aiBusy: view.aiBusy, error: view.error, expiresAt: view.expiresAt, turnSeconds: setup.turnSeconds ?? 0, turnStartedAt: view.turnStartedAt ?? 0, voiceAvailable: !!view.voiceAvailable }
+
   };
 }
 
@@ -141,9 +143,9 @@ function handle(msg: ServerMessage, target?: { backend: string; roomId: string; 
     const base = prev?.room?.roomId === msg.room.id ? prev.room : null;
     const l = {
       backend: target?.backend ?? base!.backend, roomId: msg.room.id, token: msg.token, invite: base?.invite ?? '',
-      memberId: msg.memberId, host: msg.room.members.find(m => m.id === msg.memberId)?.host ?? false,
-      connected: true, closed: '', reflections: base?.reflections ?? []
-    };
+        memberId: msg.memberId, host: msg.room.members.find(m => m.id === msg.memberId)?.host ?? false,
+        connected: true, closed: '', reflections: base?.reflections ?? []
+      };
     update(st => {
       st.session = toSession(msg.room, st.session, l);
       if (st.ui.screen === 'join') { st.ui.screen = 'session'; st.ui.join = null; st.ui.error = ''; }
@@ -151,6 +153,7 @@ function handle(msg: ServerMessage, target?: { backend: string; roomId: string; 
     return;
   }
   if (msg.type === 'state') return applyView(msg.room);
+  if (msg.type === 'audio') { void playAudio(msg.audio, msg.mime).catch(() => toast('音频播放失败，请再点一次。')); return; }
   if (msg.type === 'stream') {
     const s = getState().session;
     if (!s?.room) return;
@@ -204,6 +207,8 @@ function applyView(view: RoomView) {
 let onFinished: (() => Promise<void>) | null = null;
 export const setOnFinished = (fn: () => Promise<void>) => { onFinished = fn; };
 
+export function requestRoomSpeech(entryId: string, voice: string) { return send({ type: 'speak', entryId, voice }); }
+
 export function send(msg: ClientMessage) {
   if (!socket || socket.readyState !== WebSocket.OPEN) { toast('正在重新连接房间，请稍后再试。'); return false; }
   socket.send(JSON.stringify(msg));
@@ -229,19 +234,25 @@ export function leave() {
 }
 
 /* ---------- 房主创建房间 ---------- */
-export function setupFrom(plan: Plan, config: DebateConfig & { remote: { url: string } }): RoomSetup {
+
+
+export function setupFrom(plan: Plan, config: DebateConfig & { remote: { url: string }; turnSeconds: 0 | 30 | 60 | 90 | 120 }): RoomSetup {
   const keyPoints = plan.keyPoints.map(k => k.trim()).filter(Boolean).slice(0, 6);
+  const turnSeconds = config.turnSeconds;
   if (plan.mode === 'debate') {
     const seats = slots(config).map(r => ({ ...r, name: seatName(r) }));
-    return { mode: 'debate', concept: plan.concept, topic: plan.topic.trim(), keyPoints, personas: [], opening: '', seats, stages: structuredClone(config.stages), turns: debateTurns(config), model: plan.model };
+    return { mode: 'debate', concept: plan.concept, topic: plan.topic.trim(), keyPoints, personas: [], opening: '', seats, stages: structuredClone(config.stages), turns: debateTurns(config), model: plan.model, turnSeconds };
   }
-  return { mode: 'roundtable', concept: plan.concept, topic: plan.topic.trim(), keyPoints, personas: plan.personas, opening: plan.opening, seats: [], stages: [], turns: [], model: plan.model };
+    return { mode: 'roundtable', concept: plan.concept, topic: plan.topic.trim(), keyPoints, personas: plan.personas, opening: plan.opening, seats: [], stages: [], turns: [], model: plan.model, turnSeconds };
 }
 
 export async function createRoom(setup: RoomSetup, hostName: string) {
   const backend = getState().config.remote.url;
   const created = await task('正在创建房间', signal => apiRequest<CreatedRoom>('/api/rooms', { method: 'POST', signal, body: JSON.stringify({ setup, hostName }) }, 'remote'));
-  if (!created) return false;
+  if (!created) {
+    if (getState().ui.error.includes('辩论席位无效')) update(st => { st.ui.error = '房间后端拒绝了辩论席位设置。当前代码支持“同学”席位，请更新房主配置的 Worker 后端后重试。'; });
+    return false;
+  }
   leave();
   update(st => {
     // 先放一个占位的讨论，连上房间后用后端的状态替换

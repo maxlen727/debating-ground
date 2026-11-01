@@ -29,7 +29,7 @@ test('the access password is required and compared exactly', async () => {
   assert.equal(calls.length, 0, 'no model call without the password');
   const ok = await call('/api/config');
   assert.equal(ok.status, 200);
-  assert.deepEqual(await ok.json(), { configured: true, verified: false, baseURL: '', model: 'team-model', rooms: false });
+  assert.deepEqual(await ok.json(), { configured: true, verified: false, baseURL: '', model: 'team-model', rooms: false, ttsConfigured: false });
 });
 
 test('fails closed when the deployer forgot the password or the AI settings', async () => {

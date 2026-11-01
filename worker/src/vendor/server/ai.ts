@@ -106,9 +106,11 @@ export function buildRequest(purpose: Purpose | 'test', payload: unknown = {}): 
       weakPoints: Array.isArray(p.previous.weak) ? p.previous.weak.slice(0, 6).map(x => String(x).slice(0, 60)) : []
     } : null;
     const opening = modeId === 'debate' ? 'opening 给空字符串。' : 'opening 是第一个角色的开场白，中文口语，不超过 80 字，以一个问题结尾，不要直接把要点讲完。';
+    const pointGuidance = modeId === 'debate'
+      ? 'keyPoints 是本场辩论最值得交锋的 3 到 4 个核心争点或判断标准；简洁、彼此有区别，不要把它们写成必须逐项完成的清单。'
+      : 'keyPoints 是真正理解这个概念必须掌握的 4 到 5 个要点，每个不超过 12 个字，由浅入深；如果有常见误解或争议，要点里要包含它。';
     const system = COMMON + '你是一个用讨论来学习概念的应用里的备课老师，为一次讨论做准备。只输出一个 JSON 对象，不要任何说明或代码块标记。格式：{"concept":"规范化后的概念名","topic":"…","keyPoints":["…"],"roles":[{"name":"中文名","title":"身份","persona":"一句话描述"}],"opening":"…"}。'
-      + 'keyPoints 是真正理解这个概念必须掌握的 4 到 5 个要点，每个不超过 12 个字，由浅入深；如果有常见误解或争议，要点里要包含它。'
-      + mode.topic + mode.roles + opening
+      + pointGuidance + mode.topic + mode.roles + opening
       + (prev ? '学习者以前讨论过这个概念，资料中的 weakPoints 是上次还模糊或没讲到的地方。这次的讨论题和开场白要从这些薄弱点切入。' : '');
     return { messages: pair(system, JSON.stringify({ concept, mode: mode.name, previous: prev })), output: 'prepare', mode: modeId };
   }

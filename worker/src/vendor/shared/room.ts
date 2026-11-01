@@ -33,9 +33,10 @@ export interface RoomSetup {
   stages: Stage[];
   turns: Turn[];
   model?: string;
+  turnSeconds?: number;
 }
 
-export interface RoomMember { id: string; name: string; host: boolean; online: boolean; seat?: string }
+export interface RoomMember { id: string; name: string; host: boolean; online: boolean; seat?: string; typingUntil?: number }
 
 // 当前该谁说：成员、AI 嘉宾（圆桌）或辩论席位
 export type Speaker = { kind: 'member'; id: string } | { kind: 'ai'; id: string } | null;
@@ -53,6 +54,8 @@ export interface RoomView {
   error: string;         // AI 发言失败的原因，房主可以重试
   aiCalls: number;
   expiresAt: number;
+  turnStartedAt?: number;
+  voiceAvailable?: boolean;
 }
 
 export type PersonalPurpose = 'hint' | 'explain' | 'reflect' | 'review' | 'term';
@@ -60,14 +63,17 @@ export type PersonalPurpose = 'hint' | 'explain' | 'reflect' | 'review' | 'term'
 export type ClientMessage =
   | { type: 'hello'; invite: string; name: string }
   | { type: 'resume'; token: string }
-  | { type: 'start' }                                   // 房主
+  | { type: 'start' }
   | { type: 'say'; text: string }
-  | { type: 'pass' }                                    // 当前发言者自己跳过，或房主跳过当前发言
-  | { type: 'callOn'; target: Speaker }                 // 房主点名（圆桌）
-  | { type: 'aiTakeover' }                              // 房主让 AI 代答当前同学的席位（辩论）
-  | { type: 'seat'; seat: string | null }               // 辩论：选择席位，null 表示旁听
-  | { type: 'retry' }                                   // 房主重试失败的 AI 发言
-  | { type: 'finish' }                                  // 房主结束讨论
+  | { type: 'typing'; active: boolean }
+  | { type: 'quickMessage'; text: string }
+  | { type: 'speak'; entryId: string; voice: string }
+  | { type: 'pass' }
+  | { type: 'callOn'; target: Speaker }
+  | { type: 'aiTakeover' }
+  | { type: 'seat'; seat: string | null }
+  | { type: 'retry' }
+  | { type: 'finish' }
   | { type: 'ask'; reqId: string; purpose: 'hint'; task?: string }
   | { type: 'ask'; reqId: string; purpose: 'explain'; entryId: string; kind: ExplainKind }
   | { type: 'ask'; reqId: string; purpose: 'reflect'; answer: string }
@@ -80,8 +86,9 @@ export type ServerMessage =
   | { type: 'answer'; reqId: string; ok: true; result: unknown }
   | { type: 'answer'; reqId: string; ok: false; error: string }
   | { type: 'error'; message: string }
-  | { type: 'stream'; id: string; text: string }       // AI 正在生成的发言（目前能显示的完整文字），完成后以同一个 id 出现在讨论记录里
-  | { type: 'closed'; reason: string };                // 房间不存在、已过期或邀请无效，不要再重连
+  | { type: 'audio'; entryId: string; audio: string; mime: string }
+  | { type: 'stream'; id: string; text: string }
+  | { type: 'closed'; reason: string };
 
 export interface CreatedRoom { roomId: string; invite: string; hostToken: string; expiresAt: number }
 

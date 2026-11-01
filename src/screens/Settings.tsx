@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { connect, connectRemote, disconnect, forgetRemote, testConnection } from '../lib/api.ts';
+import { connect, connectRemote, disconnect, forgetRemote, saveTtsConfig, testConnection } from '../lib/api.ts';
 import { task } from '../lib/ai.ts';
 import { BusyStrip, ErrorBanner, TopBar } from '../components/ui.tsx';
 import { toast, update, useApp, type Config } from '../store.ts';
@@ -27,12 +27,58 @@ export function Settings() {
         </section>
         {config.aiMode === 'remote' && <RemotePanel />}
         {config.aiMode === 'api' && <LocalPanel />}
+        <VoicePanel />
         <section className="panel">
           <h3 className="section-label">关于格式</h3>
           <p className="note">讨论准备和理解复盘要求模型返回 JSON。较小的模型偶尔不按格式回答；遇到“没有按要求返回结构化结果”时，重试一次或换一个更强的模型。目前支持 Bearer 认证的文本 Chat Completions 接口。失败的请求不会改变讨论进度，也不会自动换成模板。</p>
         </section>
       </div>
       <div className="dock slim"><ErrorBanner /><BusyStrip /></div>
+    </div>
+  );
+}
+
+function VoicePanel() {
+  const { ai, config } = useApp();
+  const remote = config.aiMode === 'remote';
+  const localApi = config.aiMode === 'api';
+  const ready = !!(remote ? ai.remoteTtsConfigured : ai.ttsConfigured);
+  return (
+    <section className="panel">
+      <div className="row between"><h3 className="section-label">讯飞语音朗读</h3><span className={'status ' + (ready ? 'ok' : 'warn')}>{ready ? '已配置' : '未配置'}</span></div>
+      {localApi && <TtsKeyForm ready={ready} />}
+      <label className="field"><span>发音人 ID</span><input value={config.voiceName} maxLength={64} onChange={e => update(s => { s.config.voiceName = e.target.value; })} placeholder="x4_xiaoyan" /></label>
+      <p className="fineprint">{localApi
+        ? '密钥只存在本机服务的内存里，停止服务或清除后就没了；也可以改用启动时的 XFYUN_* 环境变量。每次点击朗读都会调用一次讯飞合成。'
+        : '配置好服务端密钥后，点发言旁的朗读按钮播放；每次点击都会调用一次讯飞合成。密钥只放在本机服务或房主 Worker；发音人 ID 请使用讯飞控制台已开通的音色。'}</p>
+    </section>
+  );
+}
+
+function TtsKeyForm({ ready }: { ready: boolean }) {
+  const { ui } = useApp();
+  const [appId, setAppId] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [secret, setSecret] = useState('');
+  const busy = !!ui.busy;
+  const onSave = async () => {
+    if (!appId.trim() || !apiKey.trim() || !secret.trim()) return toast('请把讯飞的 App ID、API Key 和 API Secret 都填上。');
+    const input = { appId: appId.trim(), apiKey: apiKey.trim(), apiSecret: secret.trim() };
+    setApiKey(''); setSecret('');
+    if (await task('正在保存语音配置', sg => saveTtsConfig(input, sg).then(() => true))) { setAppId(''); toast('语音配置已保存到本机服务。'); }
+  };
+  const onClear = async () => {
+    if (await task('正在清除语音配置', sg => saveTtsConfig({ appId: '', apiKey: '', apiSecret: '' }, sg).then(() => true))) toast('已清除本机服务里的语音密钥。');
+  };
+  return (
+    <div className="stack">
+      <label className="field"><span>讯飞 App ID</span><input value={appId} onChange={e => setAppId(e.target.value)} placeholder="控制台「我的应用」里的 APPID" /></label>
+      <label className="field"><span>讯飞 API Key</span><input type="password" autoComplete="off" spellCheck={false} value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder={ready ? '已配置，不改就留空' : '每次更换配置都要重新填写'} /></label>
+      <label className="field"><span>讯飞 API Secret</span><input type="password" autoComplete="off" spellCheck={false} value={secret} onChange={e => setSecret(e.target.value)} placeholder={ready ? '已配置，不改就留空' : '每次更换配置都要重新填写'} /></label>
+      <div className="row">
+        <button className="primary grow" disabled={busy} onClick={onSave}>保存语音配置</button>
+        {ready && <button className="ghost grow" disabled={busy} onClick={onClear}>清除</button>}
+      </div>
     </div>
   );
 }

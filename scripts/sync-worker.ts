@@ -12,7 +12,7 @@ export const HEADER = '// 自动生成，请勿修改。源文件在仓库根目
 // 返回 [源文件, 副本] 对。保持 server/ 与 shared/ 的相对位置，这样 import 路径不用改。
 export function vendorFiles(): [string, string][] {
   const shared = readdirSync(join(root, 'shared')).filter(f => f.endsWith('.ts')).map(f => join('shared', f));
-  return ['server/ai.ts', ...shared].map(rel => [join(root, rel), join(VENDOR_DIR, rel)]);
+  return ['server/ai.ts', 'server/tts.ts', ...shared].map(rel => [join(root, rel), join(VENDOR_DIR, rel)]);
 }
 
 export function expected(source: string): string {
