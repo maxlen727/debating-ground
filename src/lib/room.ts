@@ -9,6 +9,7 @@ import { apiRequest } from './api.ts';
 import { task } from './ai.ts';
 import { clearLive, getLive, setLive, updateLive } from './stream.ts';
 import { debateTurns, seatName, slots } from './debate.ts';
+import { pushAudio, voiceFailed } from './voice.ts';
 
 /* ---------- 邀请链接 ---------- */
 // 邀请码放在 # 后面：浏览器不会把它发给托管界面的网站，打开后立即从地址栏移除
@@ -41,7 +42,7 @@ export function readInviteFromLocation() {
 }
 
 /* ---------- 把房间状态映射成本地讨论 ---------- */
-export function toSession(view: RoomView, prev: Session | null, link: Omit<RoomLink, 'status' | 'members' | 'speaker' | 'aiBusy' | 'error' | 'expiresAt'>): Session {
+export function toSession(view: RoomView, prev: Session | null, link: Omit<RoomLink, 'status' | 'members' | 'speaker' | 'aiBusy' | 'error' | 'expiresAt' | 'turnSeconds' | 'turnDeadline' | 'voiceAvailable'>): Session {
   const me = link.memberId;
   const same = prev?.room?.roomId === view.id ? prev : null;
   // 只有自己的发言算“我”的；同学的发言保留 memberId，界面上显示为同学
@@ -58,9 +59,17 @@ export function toSession(view: RoomView, prev: Session | null, link: Omit<RoomL
     learnerTurns: view.entries.filter(e => e.kind === 'msg' && e.memberId === me && !e.skipped).length,
     nextRole: 0, demoStep: 0, finished: view.status === 'finished', draft: same?.draft ?? '', previous: null,
     personas: setup.personas, seats: setup.seats, stages: setup.stages, turns: setup.turns, cursor: view.cursor,
-    review: same?.review ?? null, glossary: same?.glossary,
-    room: { ...link, status: view.status, members: view.members, speaker: view.speaker, aiBusy: view.aiBusy, error: view.error, expiresAt: view.expiresAt }
+    review: same?.review ?? null, glossary: same?.glossary, proposedPoints: view.proposals ?? [],
+    room: { ...link, status: view.status, members: view.members, speaker: view.speaker, aiBusy: view.aiBusy, error: view.error, expiresAt: view.expiresAt,
+      turnSeconds: setup.turnSeconds ?? 0, turnDeadline: deadlineOf(view), voiceAvailable: !!view.voiceAvailable }
   };
+}
+
+// 倒计时的截止时间换算成这台设备的时钟：后端时间和手机时间可能差好几秒甚至几分钟
+export function deadlineOf(view: RoomView, localNow = Date.now()): number {
+  const seconds = view.setup.turnSeconds ?? 0;
+  if (!seconds || !view.turnStartedAt || view.status !== 'live' || view.now === undefined) return 0;
+  return localNow + (view.turnStartedAt + seconds * 1000 - view.now);
 }
 
 // 现在能不能由我发言
@@ -151,6 +160,11 @@ function handle(msg: ServerMessage, target?: { backend: string; roomId: string; 
     return;
   }
   if (msg.type === 'state') return applyView(msg.room);
+  if (msg.type === 'audio') return pushAudio(msg.entryId, msg.seq, msg.last, msg.audio, msg.mime);
+  if (msg.type === 'quick') {
+    const me = getState().session?.room?.memberId;
+    return toast(msg.memberId === me ? `已提醒大家：${msg.text}` : `${msg.name}：${msg.text}`);
+  }
   if (msg.type === 'stream') {
     const s = getState().session;
     if (!s?.room) return;
@@ -167,6 +181,7 @@ function handle(msg: ServerMessage, target?: { backend: string; roomId: string; 
   }
   if (msg.type === 'error') {
     // 旧版后端不认识新加的操作（例如选席位），只会回“不支持的操作”；告诉用户该怎么办
+    voiceFailed();   // 朗读请求被拒（例如次数用完）时，按钮恢复成“朗读”
     if (msg.message === '不支持的操作。') return toast(getState().session?.room?.host ? '你的后端版本较旧，不支持这个操作。请按文档“怎么更新后端”更新后再试。' : '房主的后端版本较旧，不支持这个操作。请房主更新后端。');
     return toast(msg.message);
   }
@@ -204,8 +219,9 @@ function applyView(view: RoomView) {
 let onFinished: (() => Promise<void>) | null = null;
 export const setOnFinished = (fn: () => Promise<void>) => { onFinished = fn; };
 
-export function send(msg: ClientMessage) {
-  if (!socket || socket.readyState !== WebSocket.OPEN) { toast('正在重新连接房间，请稍后再试。'); return false; }
+// quiet：顺带发的状态（正在输入），连接断了就算了，不提示
+export function send(msg: ClientMessage, quiet = false) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) { if (!quiet) toast('正在重新连接房间，请稍后再试。'); return false; }
   socket.send(JSON.stringify(msg));
   return true;
 }
@@ -229,19 +245,24 @@ export function leave() {
 }
 
 /* ---------- 房主创建房间 ---------- */
-export function setupFrom(plan: Plan, config: DebateConfig & { remote: { url: string } }): RoomSetup {
+export function setupFrom(plan: Plan, config: DebateConfig & { remote: { url: string }; turnSeconds: number }): RoomSetup {
   const keyPoints = plan.keyPoints.map(k => k.trim()).filter(Boolean).slice(0, 6);
+  const turnSeconds = [0, 30, 60, 90, 120].includes(config.turnSeconds) ? config.turnSeconds : 0;
   if (plan.mode === 'debate') {
     const seats = slots(config).map(r => ({ ...r, name: seatName(r) }));
-    return { mode: 'debate', concept: plan.concept, topic: plan.topic.trim(), keyPoints, personas: [], opening: '', seats, stages: structuredClone(config.stages), turns: debateTurns(config), model: plan.model };
+    return { mode: 'debate', concept: plan.concept, topic: plan.topic.trim(), keyPoints, personas: [], opening: '', seats, stages: structuredClone(config.stages), turns: debateTurns(config), model: plan.model, turnSeconds };
   }
-  return { mode: 'roundtable', concept: plan.concept, topic: plan.topic.trim(), keyPoints, personas: plan.personas, opening: plan.opening, seats: [], stages: [], turns: [], model: plan.model };
+  return { mode: 'roundtable', concept: plan.concept, topic: plan.topic.trim(), keyPoints, personas: plan.personas, opening: plan.opening, seats: [], stages: [], turns: [], model: plan.model, turnSeconds };
 }
 
 export async function createRoom(setup: RoomSetup, hostName: string) {
   const backend = getState().config.remote.url;
   const created = await task('正在创建房间', signal => apiRequest<CreatedRoom>('/api/rooms', { method: 'POST', signal, body: JSON.stringify({ setup, hostName }) }, 'remote'));
-  if (!created) return false;
+  if (!created) {
+    // v0.8 之前的后端不认识“同学”席位
+    if (getState().ui.error.includes('辩论席位无效')) update(st => { st.ui.error = '你的后端版本较旧，不支持“同学”席位。请按文档“怎么更新后端”更新后再试。'; });
+    return false;
+  }
   leave();
   update(st => {
     // 先放一个占位的讨论，连上房间后用后端的状态替换

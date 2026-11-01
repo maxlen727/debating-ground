@@ -2,7 +2,8 @@
 // update(fn) 在副本上修改再整体替换，组件用 useApp() 订阅。
 import { useSyncExternalStore } from 'react';
 import type { Entry, ModeId, Persona, Previous, Reflection, Review, Seat, SeatConfig, Source, Stage, Team, TermCard, Turn, ExplainKind } from '../shared/types.ts';
-import type { RoomMember, RoomStatus, Speaker } from '../shared/room.ts';
+import type { PointProposal, RoomMember, RoomStatus, Speaker } from '../shared/room.ts';
+import { DEFAULT_VOICE } from '../shared/speech.ts';
 
 export type Screen = 'learn' | 'prepare' | 'session' | 'review' | 'library' | 'card' | 'settings' | 'join';
 
@@ -17,6 +18,8 @@ export interface Config {
   counts: Record<Team, number>;
   seats: Record<Team, SeatConfig[]>;
   stages: Stage[];
+  turnSeconds: 0 | 30 | 60 | 90 | 120;   // 多人房间里每次发言的提示时限，0 表示不计时
+  voiceName: string;                     // 讯飞发音人 ID
 }
 export interface Plan {
   mode: ModeId; concept: string; topic: string; keyPoints: string[]; opening: string;
@@ -29,6 +32,7 @@ export interface RoomLink {
   backend: string; roomId: string; token: string; invite: string;   // invite 只有房主保存，用来再次分享
   memberId: string; host: boolean;
   status: RoomStatus; members: RoomMember[]; speaker: Speaker; aiBusy: string | null; error: string; expiresAt: number;
+  turnSeconds: number; turnDeadline: number; voiceAvailable?: boolean;   // turnDeadline 已换算成这台设备的时钟，0 表示不计时
   connected: boolean; closed: string;                                // closed：房间不可用的原因，不再重连
   reflections: (Reflection & { after: string })[];                   // 小结只留在自己的设备上
 }
@@ -36,6 +40,8 @@ export interface Session {
   id: string; created: number; mode: ModeId; concept: string; topic: string; keyPoints: string[];
   covered: number[]; entries: Entry[]; learnerTurns: number; nextRole: number; demoStep: number;
   finished: boolean; draft: string; previous: Previous | null;
+  awaitingReview?: boolean;  // 辩论赛程走完、还没进入复盘：先让学习者读完最后的总结陈词
+  proposedPoints?: PointProposal[];   // 待确认的新要点；多人房间里以后端为准
   personas: Persona[];
   seats: DebateSeat[]; stages: Stage[]; turns: Turn[]; cursor: number;
   review: (Review & { source: Source; model?: string }) | null;
@@ -50,6 +56,7 @@ export interface Card extends Review {
 export interface AiStatus {
   available: boolean; configured: boolean; verified: boolean; baseURL: string; model: string;  // 本机服务
   remoteVerified: boolean; remoteModel: string;                                             // 自己部署的后端
+  ttsConfigured?: boolean; remoteTtsConfigured?: boolean;                                   // 讯飞朗读：本机服务 / 自己部署的后端
 }
 export interface Ui {
   screen: Screen;
@@ -79,12 +86,13 @@ export const defaultConfig = (): Config => ({
   stages: [
     { name: '开篇立论', kind: 'opening', rounds: 1 }, { name: '交叉质询', kind: 'cross', rounds: 1 },
     { name: '自由辩论', kind: 'free', rounds: 2 }, { name: '总结陈词', kind: 'closing', rounds: 1 }
-  ]
+  ],
+  turnSeconds: 0, voiceName: DEFAULT_VOICE
 });
 const defaultUi = (): Ui => ({ screen: 'learn', busy: null, error: '', toast: '', hint: null, explain: null, sheet: null, openCard: null, quiz: {}, join: null, invite: false, term: null });
 
 function load(): AppState {
-  const base: AppState = { config: defaultConfig(), plan: null, session: null, library: [], ai: { available: false, configured: false, verified: false, baseURL: '', model: '', remoteVerified: false, remoteModel: '' }, ui: defaultUi() };
+  const base: AppState = { config: defaultConfig(), plan: null, session: null, library: [], ai: { available: false, configured: false, verified: false, baseURL: '', model: '', remoteVerified: false, remoteModel: '', ttsConfigured: false, remoteTtsConfigured: false }, ui: defaultUi() };
   try {
     const saved = JSON.parse(localStorage.getItem(STORE) ?? 'null');
     if (saved) return { ...base, config: { ...base.config, ...saved.config }, plan: saved.plan ?? null, session: saved.session ?? null, library: Array.isArray(saved.library) ? saved.library : [], ui: { ...base.ui, screen: saved.screen === 'session' && saved.session && !saved.session.finished ? 'session' : 'learn' } };

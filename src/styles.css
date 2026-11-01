@@ -247,7 +247,12 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--b
 
 .composer { position: sticky; bottom: 0; z-index: 15; display: flex; flex-direction: column; gap: 8px; padding: 10px max(12px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px)); background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(12px); border-top: 1px solid var(--line); }
 .composer-done { padding-block: 4px; }
+.composer-done > button { flex: none; white-space: nowrap; }
 .turn-banner { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 0 4px; }
+.turn-countdown { font-size: 12.5px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.turn-countdown.soon, .turn-countdown.expired { color: var(--warn); }
+.tools-sep { flex: none; width: 1px; align-self: stretch; margin: 4px 2px; background: var(--line); }
+.tool.quiet { color: var(--muted); }
 .turn-banner .dot { width: 8px; height: 8px; border-radius: 50%; }
 .dot.team-A { background: var(--a-fg); } .dot.team-B { background: var(--b-fg); }
 .grow-right { margin-left: auto; font-variant-numeric: tabular-nums; }
@@ -354,6 +359,7 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--b
 .member.me { border-color: var(--brand); }
 .member.away { color: var(--muted); }
 .member small { font-size: 11px; color: var(--muted); }
+.member .typing-label { color: var(--brand); }
 .presence { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
 .presence.on { background: var(--good); }
 .room-status { width: 100%; font-size: 12.5px; color: var(--warn); }
@@ -397,4 +403,16 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--b
 @keyframes caret-pulse { 50% { opacity: .15; } }
 .msg.live .msg-meta span { color: var(--brand); }
 .msg-meta .link { font-size: 12px; color: var(--muted); text-decoration: underline; }
+
+/* ---------- 朗读、补充要点 ---------- */
+/* 看起来是一行小字，上下用负边距撑出 44px 的可点区域 */
+.voice-play { display: inline-flex; align-items: center; gap: 3px; min-height: 44px; margin: -14px 0 -14px auto; padding: 0 4px 0 10px; font-size: 12px; color: var(--muted); }
+.voice-play.on { color: var(--brand); font-weight: 600; }
+.points-btn { position: relative; flex: none; margin: -6px -8px -6px 0; }
+.points-btn .badge-dot { top: 4px; right: 2px; }
+.points-now { margin: 0; padding-left: 1.4em; display: grid; gap: 6px; font: var(--t-md)/var(--lh-serif) var(--f-display); }
+.points-now li.lit::marker { color: var(--lit-ink); }
+.points-now li.lit { color: var(--lit-ink); }
+.proposal { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--bg); }
+.proposal-text { margin: 0; font: var(--t-md)/1.6 var(--f-display); }
 @media (prefers-reduced-motion: reduce) { .ink, .stream-caret { animation: none; } }

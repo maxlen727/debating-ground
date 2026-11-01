@@ -41,6 +41,7 @@ const COST_REPLIES: [string, number[], string[]?][] = [
 ];
 
 // 演示模式里能查到的术语
+const DEMO_POINTS = ['机会成本不等于花掉的钱', '时间也有机会成本', '只比较最好的那个放弃项'];
 const DEMO_TERMS: Record<string, { definition: string; relation: string }> = {
   稀缺性: { definition: '想要的东西总比能拿到的多：时间、钱、精力都有限，用在一处就不能用在别处。', relation: '正因为资源稀缺，选择才有代价，机会成本才存在。' },
   成本收益分析: { definition: '把一个选择的所有代价和好处列出来比较，好处大于代价才值得做。', relation: '机会成本是“代价”这一栏里最容易漏掉的一项。' },
@@ -112,6 +113,13 @@ export async function demoRun<P extends Purpose>(purpose: P, payload: PayloadMap
       return { text, covered: [step % n] };
     }
     case 'debate': { const step = nextStep(); const text = debateText(s, s.turns[s.cursor]); return { text, covered: [step % n], terms: termsIn(text) }; }
+    case 'point': {
+      // 从备选里挑一条还没列出的；“机会成本”给真实的例子，其他概念给通用说明
+      const pool = cost ? DEMO_POINTS : [`「${s.concept}」最容易被误解的地方`, `「${s.concept}」在生活里的一个例子`, `「${s.concept}」不适用的情况`];
+      const point = pool.find(p => !s.keyPoints.includes(p));
+      if (!point) throw new Error('演示模式里的备选要点都已经列出了。');
+      return { data: { point, why: '演示模式：连接 API 后，AI 会根据目前的讨论提议一条还没讲到的要点。' } };
+    }
     case 'term': {
       const term = (payload as PayloadMap['term']).term;
       return { data: { term, ...(DEMO_TERMS[term] ?? { definition: `演示模式：连接 API 后，这里会用简单的话解释「${term}」。`, relation: '' }) } };

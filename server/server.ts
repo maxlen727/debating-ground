@@ -4,14 +4,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { synthesizeXfyun } from './tts.ts';
+import { SPEECH_SEGMENT } from '../shared/speech.ts';
 import { ApiError, normalizeConfig, buildRequest, finalize, complete, streamGenerate, STREAMABLE, type ApiConfig } from './ai.ts';
 import type { Purpose } from '../shared/types.ts';
 
-interface SessionState { config: ApiConfig | null; verified: boolean; active: AbortController | null; touched: number }
+interface TtsConfig { appId: string; apiKey: string; apiSecret: string }
+interface SessionState { config: ApiConfig | null; verified: boolean; active: AbortController | null; touched: number; tts: TtsConfig | null }
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json' };
-const PURPOSES: Purpose[] = ['prepare', 'discuss', 'debate', 'hint', 'explain', 'reflect', 'review', 'term'];
+const PURPOSES: Purpose[] = ['prepare', 'discuss', 'debate', 'hint', 'explain', 'reflect', 'review', 'term', 'point'];
 
 export function createServer({ fetchImpl = fetch, timeoutMs = 90000, root = path.join(here, '..', 'dist') }: { fetchImpl?: typeof fetch; timeoutMs?: number; root?: string } = {}) {
   const sessions = new Map<string, SessionState>();
@@ -34,16 +37,34 @@ export function createServer({ fetchImpl = fetch, timeoutMs = 90000, root = path
       let state = id ? sessions.get(id) : undefined;
       if (!state) {
         id = crypto.randomBytes(24).toString('hex');
-        state = { config: null, verified: false, active: null, touched: Date.now() };
+        state = { config: null, verified: false, active: null, touched: Date.now(), tts: null };
         sessions.set(id, state);
         res.setHeader('Set-Cookie', `sibian_session=${id}; HttpOnly; SameSite=Strict; Path=/`);
       }
       state.touched = Date.now();
       for (const [k, v] of sessions) if (!v.active && Date.now() - v.touched > 8 * 3600000) sessions.delete(k);
       const s = state;
-      const publicState = () => ({ configured: !!s.config, verified: s.verified, baseURL: s.config?.endpoint ?? '', model: s.config?.model ?? '' });
+      const publicState = () => ({ configured: !!s.config, verified: s.verified, baseURL: s.config?.endpoint ?? '', model: s.config?.model ?? '', ttsConfigured: !!(s.tts ?? envTts()) });
+      const envTts = () => (process.env.XFYUN_APP_ID && process.env.XFYUN_API_KEY && process.env.XFYUN_API_SECRET ? { appId: process.env.XFYUN_APP_ID, apiKey: process.env.XFYUN_API_KEY, apiSecret: process.env.XFYUN_API_SECRET } : null);
+      const ttsEnv = () => s.tts ?? envTts();
       try {
         if (req.method === 'GET' && url.pathname === '/api/config') return json(res, 200, publicState());
+        if (req.method === 'POST' && url.pathname === '/api/tts') {
+          const data = await body(req);
+          if (typeof data.text !== 'string' || Array.from(data.text).length > SPEECH_SEGMENT) throw new ApiError('朗读文本无效或太长。');
+          const t = ttsEnv();
+          if (!t) throw new ApiError('讯飞语音还没有配置。', 503);
+          return json(res, 200, await synthesizeXfyun(data.text, data.voice, { XFYUN_APP_ID: t.appId, XFYUN_API_KEY: t.apiKey, XFYUN_API_SECRET: t.apiSecret }));
+        }
+        if (req.method === 'POST' && url.pathname === '/api/tts/config') {
+          const data = await body(req);
+          const read = (key: string) => typeof data[key] === 'string' ? (data[key] as string).trim() : '';
+          const appId = read('appId'), apiKey = read('apiKey'), apiSecret = read('apiSecret');
+          if (!appId && !apiKey && !apiSecret) { s.tts = null; return json(res, 200, { ttsConfigured: !!envTts() }); }
+          if (!appId || !apiKey || !apiSecret) throw new ApiError('讯飞语音需要同时填写 App ID、API Key 和 API Secret。');
+          s.tts = { appId, apiKey, apiSecret };
+          return json(res, 200, { ttsConfigured: true });
+        }
         if (req.method === 'POST' && url.pathname === '/api/config') {
           if (s.active) throw new ApiError('请先取消当前请求。', 409);
           s.config = normalizeConfig(await body(req)); s.verified = false;
