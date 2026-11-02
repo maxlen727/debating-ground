@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { RoomCore, snapshotFor, validateSetup, type Generate, type RoomDeps, type SocketLike, type StoredRoom } from '../worker/src/room.ts';
 import type { RoomSetup, RoomView, ServerMessage } from '../shared/room.ts';
-import { ROOM_LIMITS } from '../shared/room.ts';
+import { ROOM_CHAT, ROOM_LIMITS } from '../shared/room.ts';
 import type { Purpose, SessionSnapshot } from '../shared/types.ts';
 import { debateTurns, slots } from '../src/lib/debate.ts';
 import { defaultConfig } from '../src/store.ts';
@@ -83,7 +83,10 @@ test('joining needs the room invite, not the backend password, and the invite is
   assert.equal(again.last().members.length, 2);
 });
 
-test('roundtable: people speak in turn and an AI guest answers after each person', async () => {
+// 圆桌是群聊：等大家停一停，AI 嘉宾再接话（Durable Object 的闹钟）
+async function settle(t: { tick(ms: number): void; core: RoomCore }, ms: number = ROOM_CHAT.replyAfterMs) { t.tick(ms); await t.core.alarm(); }
+
+test('roundtable is a group chat: anyone can speak any time; an AI guest replies once people pause', async () => {
   const t = await room();
   const guest = t.connect();
   await t.send(guest, { type: 'hello', invite: t.created.invite, name: '小明' });
@@ -92,43 +95,90 @@ test('roundtable: people speak in turn and an AI guest answers after each person
   await t.send(guest, { type: 'start' });
   assert.deepEqual(errors(guest).at(-1), '只有房主可以这样做。');
   await t.send(t.host, { type: 'start' });
-  const hostId = t.host.member!, guestId = guest.member!;
-  assert.deepEqual(t.host.last().speaker, { kind: 'member', id: hostId });
-  await t.send(guest, { type: 'say', text: '抢话' });
-  assert.equal(errors(guest).at(-1), '还没轮到你发言。');
+  assert.equal(t.host.last().speaker, null, 'no turns');
 
-  await t.send(t.host, { type: 'say', text: '机会成本是放弃的最好选择。' });
+  // 两个人连着说，AI 不抢话
+  await t.send(guest, { type: 'say', text: '机会成本是放弃的最好选择。' });
+  t.tick(1000);
+  await t.send(t.host, { type: 'say', text: '那沉没成本呢？' });
+  assert.equal(t.calls.length, 0, 'the AI waits while people are talking');
+  assert.ok(t.alarm <= 1_000_000 + 1000 + ROOM_CHAT.replyAfterMs, 'an alarm is set for the reply');
+  await settle(t);
+  assert.equal(t.calls.length, 1, 'one reply for the whole burst');
   let v = guest.last();
-  assert.deepEqual(v.entries.filter(e => e.kind === 'msg').map(e => e.kind === 'msg' && e.name), ['林教授', '束束', '周老师']);
-  assert.deepEqual(v.speaker, { kind: 'member', id: guestId }, 'next person after the AI guest');
+  assert.deepEqual(v.entries.filter(e => e.kind === 'msg').map(e => e.kind === 'msg' && e.name), ['林教授', '小明', '束束', '周老师']);
+  assert.equal(v.speaker, null);
   assert.deepEqual(v.covered, [0]);
-  // AI 看到的所有真人都是学习者
   assert.match(JSON.stringify(t.calls[0].payload.session.messages), /束束（学习者）/);
+  assert.match(JSON.stringify(t.calls[0].payload), /多人的群聊/);
 
-  await t.send(guest, { type: 'say', text: '沉没成本不该算进去。' });
-  v = t.host.last();
-  assert.equal(v.entries.filter(e => e.kind === 'msg').at(-1)!.kind === 'msg' && (v.entries.at(-1) as { name: string }).name, '林教授');
-  assert.deepEqual(v.speaker, { kind: 'member', id: hostId }, 'wraps around to the host');
+  // 说得太快
+  await t.send(t.host, { type: 'say', text: '再说一句' });
+  await t.send(t.host, { type: 'say', text: '又一句' });
+  assert.equal(errors(t.host).at(-1), '说得太快了，稍等一下。');
 
-  // 房主可以点名，也可以跳过
-  await t.send(t.host, { type: 'callOn', target: { kind: 'member', id: guestId } });
-  assert.deepEqual(t.host.last().speaker, { kind: 'member', id: guestId });
-  await t.send(t.host, { type: 'pass' });
-  assert.deepEqual(t.host.last().speaker, { kind: 'member', id: hostId });
+  // 一直有人说：最多等 maxWaitMs 也会接一次
+  for (let k = 0; k < 6; k++) { t.tick(2000); await t.send(k % 2 ? t.host : guest, { type: 'say', text: '接着聊 ' + k }); await t.core.alarm(); }
+  assert.equal(t.calls.length, 2, 'replied once while the chat kept going');
+
+  // 点了名的嘉宾来接
+  await settle(t, ROOM_CHAT.maxWaitMs);
+  t.tick(2000);
+  await t.send(guest, { type: 'say', text: '周老师你怎么看？' });
+  await settle(t);
+  assert.equal((guest.last().entries.filter(e => e.kind === 'msg').at(-1) as { name: string }).name, '周老师');
+
+  // 房主点名同学只是提醒一句；点名嘉宾马上说
+  await t.send(t.host, { type: 'callOn', target: { kind: 'member', id: guest.member! } });
+  assert.equal((t.host.last().entries.at(-1) as { text: string }).text, '束束 请 小明 说说看。');
   const before = t.calls.length;
   await t.send(t.host, { type: 'callOn', target: { kind: 'ai', id: 'r1' } });
   assert.equal(t.calls.length, before + 1);
+  await t.send(t.host, { type: 'pass' });
+  assert.match(errors(t.host).at(-1)!, /不用跳过/);
 });
 
-test('roundtable skips people who are offline', async () => {
+test('people can talk while an AI guest is speaking; the next reply takes their words into account', async () => {
+  let release: () => void = () => {};
+  let calls = 0;
+  const t = await room('roundtable', async () => { calls++; if (calls === 1) await new Promise<void>(r => { release = r; }); return { text: '回应 ' + calls, covered: [] }; });
+  const guest = t.connect();
+  await t.send(guest, { type: 'hello', invite: t.created.invite, name: '小明' });
+  await t.send(t.host, { type: 'start' });
+  await t.send(t.host, { type: 'say', text: '我先说' });
+  t.tick(ROOM_CHAT.replyAfterMs);
+  const speaking = t.core.alarm();
+  await new Promise(r => setTimeout(r, 0));
+  assert.match(t.host.last().aiBusy ?? '', /正在思考/);
+  t.tick(2000);
+  await t.send(guest, { type: 'say', text: '我插一句' });
+  assert.deepEqual(errors(guest), [], 'not blocked while the AI is talking');
+  release(); await speaking;
+  await settle(t);
+  assert.equal(calls, 2, 'the interruption gets its own reply');
+  const names = t.host.last().entries.filter(e => e.kind === 'msg').map(e => (e as { name: string }).name);
+  assert.deepEqual(names, ['林教授', '束束', '小明', '周老师', '林教授']);
+});
+
+test('the host can pause AI guests; they then only speak when called on', async () => {
   const t = await room();
   const guest = t.connect();
   await t.send(guest, { type: 'hello', invite: t.created.invite, name: '小明' });
   await t.send(t.host, { type: 'start' });
-  guest.open = false;
-  await t.core.onClose();
-  await t.send(t.host, { type: 'say', text: '我先说' });
-  assert.deepEqual(t.host.last().speaker, { kind: 'member', id: t.host.member });
+  await t.send(guest, { type: 'aiPause', paused: true });
+  assert.match(errors(guest).at(-1)!, /只有房主/);
+  await t.send(t.host, { type: 'aiPause', paused: true });
+  assert.equal(t.host.last().aiPaused, true);
+  await t.send(guest, { type: 'say', text: '我们自己聊会儿' });
+  await settle(t, ROOM_CHAT.maxWaitMs);
+  assert.equal(t.calls.length, 0);
+  await t.send(t.host, { type: 'callOn', target: { kind: 'ai', id: 'r0' } });
+  assert.equal(t.calls.length, 1, 'still answers when called on');
+  await t.send(t.host, { type: 'aiPause', paused: false });
+  t.tick(2000);
+  await t.send(guest, { type: 'say', text: '继续' });
+  await settle(t);
+  assert.equal(t.calls.length, 2);
 });
 
 test('AI failure stops the room with a visible error and keeps progress; the host retries', async () => {
@@ -136,6 +186,7 @@ test('AI failure stops the room with a visible error and keeps progress; the hos
   const t = await room('roundtable', async () => { if (fail) throw new Error('boom'); return { text: '好的', covered: [] }; });
   await t.send(t.host, { type: 'start' });
   await t.send(t.host, { type: 'say', text: '我先说' });
+  await settle(t);
   let v = t.host.last();
   assert.equal(v.error, 'AI 发言失败。');
   assert.equal(v.aiBusy, null);
@@ -292,6 +343,7 @@ test('room AI turns carry terms, and only marked terms can be looked up', async 
   });
   await t.send(t.host, { type: 'start' });
   await t.send(t.host, { type: 'say', text: '我先说' });
+  await settle(t);
   const ai = t.host.last().entries.filter(e => e.kind === 'msg').at(-1)!;
   assert.ok(ai.kind === 'msg' && ai.terms?.[0] === '稀缺性');
   await t.send(t.host, { type: 'ask', reqId: 'a', purpose: 'term', entryId: ai.id, term: '稀缺性' });
@@ -344,6 +396,7 @@ test('room AI speech is relayed to everyone while it is being written, then save
   await t.send(guest, { type: 'hello', invite: t.created.invite, name: '小明' });
   await t.send(t.host, { type: 'start' });
   await t.send(t.host, { type: 'say', text: '我先说' });
+  await settle(t);
   const streams = guest.inbox.filter((m): m is Extract<ServerMessage, { type: 'stream' }> => m.type === 'stream');
   assert.ok(streams.length >= 2, 'several partial updates');
   assert.equal(new Set(streams.map(m => m.id)).size, 1);
@@ -391,6 +444,7 @@ test('reading aloud uses its own quota, never the AI quota, and plays only for t
   assert.match(errors(guest).at(-1)!, /朗读次数已经用完/);
   await t.send(t.host, { type: 'start' });
   await t.send(t.host, { type: 'say', text: '是放弃的东西' });
+  await settle(t);
   assert.equal(t.stored!.aiCalls, 1, 'the AI guest still answers');
 });
 
@@ -399,6 +453,7 @@ test('long messages are read aloud segment by segment; a backend without iFlytek
   const t = await room('roundtable', async (_p, _x) => ({ text: '这是一句很长的话。'.repeat(80), covered: [], model: 'm' }), async text => { parts.push(text); return { audio: btoa(String(parts.length)), mime: 'audio/mpeg' }; });
   await t.send(t.host, { type: 'start' });
   await t.send(t.host, { type: 'say', text: '我先说' });
+  await settle(t);
   const long = t.host.last().entries.filter(e => e.kind === 'msg').at(-1)!;
   await t.send(t.host, { type: 'speak', entryId: long.id, voice: '' });
   const got = audioOf(t.host);
@@ -488,7 +543,8 @@ test('new key points: classmates propose, the host decides, everyone sees the sa
 
 test('the turn timer is sent with the backend clock so phones with a wrong clock still count down correctly', async () => {
   const t = setup();
-  const s = { ...ROUNDTABLE, turnSeconds: 60 };
+  // 发言限时只用在辩论：圆桌是群聊，没有“这一轮”
+  const s = { ...debateSetup(), turnSeconds: 60 };
   const created = await t.core.init({ roomId: 'r'.repeat(22), setup: s, hostName: '束束' });
   const host = t.connect();
   await t.send(host, { type: 'resume', token: created.hostToken });
@@ -501,6 +557,10 @@ test('the turn timer is sent with the backend clock so phones with a wrong clock
   assert.equal(deadlineOf(v, phone), phone + 60_000);
   assert.equal(deadlineOf({ ...v, turnStartedAt: 0 }, phone), 0, 'no timer while the AI speaks');
   assert.equal(validateSetup({ ...ROUNDTABLE, turnSeconds: 45 }).turnSeconds, 0, 'only the offered limits are accepted');
+  // 圆桌不计时
+  const r = await room();
+  await r.send(r.host, { type: 'start' });
+  assert.equal(r.host.last().turnStartedAt, 0);
 });
 
 test('voice input in a room: audio goes to iFlytek through the room, text comes back only to the speaker', async () => {

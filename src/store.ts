@@ -35,7 +35,7 @@ export interface RoomLink {
   backend: string; roomId: string; token: string; invite: string;   // invite 只有房主保存，用来再次分享
   memberId: string; host: boolean;
   status: RoomStatus; members: RoomMember[]; speaker: Speaker; aiBusy: string | null; error: string; expiresAt: number;
-  turnSeconds: number; turnDeadline: number; voiceAvailable?: boolean; listenAvailable?: boolean;   // turnDeadline 已换算成这台设备的时钟，0 表示不计时
+  turnSeconds: number; turnDeadline: number; voiceAvailable?: boolean; listenAvailable?: boolean; aiPaused?: boolean;   // turnDeadline 已换算成这台设备的时钟，0 表示不计时
   connected: boolean; closed: string;                                // closed：房间不可用的原因，不再重连
   reflections: (Reflection & { after: string })[];                   // 小结只留在自己的设备上
 }

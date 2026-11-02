@@ -43,7 +43,7 @@ export function readInviteFromLocation() {
 }
 
 /* ---------- 把房间状态映射成本地讨论 ---------- */
-export function toSession(view: RoomView, prev: Session | null, link: Omit<RoomLink, 'status' | 'members' | 'speaker' | 'aiBusy' | 'error' | 'expiresAt' | 'turnSeconds' | 'turnDeadline' | 'voiceAvailable' | 'listenAvailable'>): Session {
+export function toSession(view: RoomView, prev: Session | null, link: Omit<RoomLink, 'status' | 'members' | 'speaker' | 'aiBusy' | 'error' | 'expiresAt' | 'turnSeconds' | 'turnDeadline' | 'voiceAvailable' | 'listenAvailable' | 'aiPaused'>): Session {
   const me = link.memberId;
   const same = prev?.room?.roomId === view.id ? prev : null;
   // 只有自己的发言算“我”的；同学的发言保留 memberId，界面上显示为同学
@@ -62,7 +62,7 @@ export function toSession(view: RoomView, prev: Session | null, link: Omit<RoomL
     personas: setup.personas, seats: setup.seats, stages: setup.stages, turns: setup.turns, cursor: view.cursor,
     review: same?.review ?? null, glossary: same?.glossary, proposedPoints: view.proposals ?? [], context: setup.context,
     room: { ...link, status: view.status, members: view.members, speaker: view.speaker, aiBusy: view.aiBusy, error: view.error, expiresAt: view.expiresAt,
-      turnSeconds: setup.turnSeconds ?? 0, turnDeadline: deadlineOf(view), voiceAvailable: !!view.voiceAvailable, listenAvailable: !!view.listenAvailable }
+      turnSeconds: setup.turnSeconds ?? 0, turnDeadline: deadlineOf(view), voiceAvailable: !!view.voiceAvailable, listenAvailable: !!view.listenAvailable, aiPaused: !!view.aiPaused }
   };
 }
 
@@ -76,8 +76,9 @@ export function deadlineOf(view: RoomView, localNow = Date.now()): number {
 // 现在能不能由我发言
 export function mySpeakingTurn(s: Session | null): boolean {
   const room = s?.room;
-  if (!s || !room || room.status !== 'live' || room.aiBusy || room.error) return false;
-  if (s.mode === 'roundtable') return room.speaker?.kind === 'member' && room.speaker.id === room.memberId;
+  if (!s || !room || room.status !== 'live') return false;
+  if (s.mode === 'roundtable') return true;   // 圆桌是群聊，随时可以说，AI 说着话也能插嘴
+  if (room.aiBusy || room.error) return false;
   const t = s.turns[s.cursor];
   const mine = room.members.find(m => m.id === room.memberId)?.seat;
   return !!t && !!mine && t.role.id === mine;
