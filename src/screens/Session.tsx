@@ -2,10 +2,12 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { MODES } from '../../shared/modes.ts';
 import { QUICK_MESSAGES } from '../../shared/room.ts';
 import type { ChatMessage, Entry, Reflection } from '../../shared/types.ts';
-import { QUICK, addReflection, aiTakeover, callOn, currentTurn, decidePoint, dropReflection, finish, generateSeat, hint, nextSpeaker, noteTyping, openTerm, passTurn, pickSeat, proposePoint, quick, quickMessage, retryAI, send, setReflectionDraft, skipSeat, startRoom, stopTyping, submitReflection, suggestPoint, toggleAiPause, toggleListen, toggleVoice, listenAvailable, voiceAvailable } from '../actions.ts';
+import { QUICK, addReflection, aiTakeover, callOn, currentTurn, decidePoint, dropReflection, finish, generateSeat, hint, nextSpeaker, noteTyping, openBranch, openTerm, passTurn, pickSeat, proposePoint, quick, quickMessage, retryAI, send, setReflectionDraft, skipSeat, startRoom, stopTyping, submitReflection, suggestPoint, toggleAiPause, toggleListen, toggleVoice, listenAvailable, voiceAvailable } from '../actions.ts';
 import { Empty, ErrorBanner, Icon, Sheet } from '../components/ui.tsx';
 import { CaretField } from '../components/SmoothCaret.tsx';
 import { Reveal } from '../components/Reveal.tsx';
+import { BackLine, BackSheet, BranchChips, CanvasPath, ForkForm, ForkHeader, TreeSheet } from '../components/Canvas.tsx';
+import { levelEntries } from '../lib/canvas.ts';
 import { DebateBoard, NextLectern, RosterSheet, StageDivider, seatWho } from '../components/DebateArena.tsx';
 import { useLive } from '../lib/stream.ts';
 import { cancelAI } from '../lib/ai.ts';
@@ -21,7 +23,7 @@ export function Session() {
   const live = useLive();
   const count = s ? s.entries.length : 0;
   const aiBusy = s?.room?.aiBusy;
-  useEffect(() => { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); }, [count, ui.busy, ui.hint, aiBusy, live?.id]);
+  useEffect(() => { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); }, [count, ui.busy, ui.hint, aiBusy, live?.id, s?.at]);
   // 生成中跟着文字往下滚；用户自己往上翻时不打扰
   const growing = live?.kind === 'msg' ? live.text.length : 0;
   useEffect(() => {
@@ -36,6 +38,9 @@ export function Session() {
   );
 
   const debate = s.mode === 'debate';
+  const canvas = s.mode === 'canvas';
+  // 知识画布只显示正在看的这一层（主干或某个分支）
+  const shown = canvas ? levelEntries(s, s.at) : s.entries;
   const room = s.room;
   const sheetMsg = s.entries.find((m): m is ChatMessage => m.id === ui.sheet && m.kind === 'msg');
   const lastAi = [...s.entries].reverse().find(m => m.kind === 'msg' && !m.human && !m.memberId)?.id;
@@ -69,14 +74,17 @@ export function Session() {
         </div>
         {room && <RoomBar s={s} />}
         {debate && <DebateBoard s={s} />}
+        {canvas && <CanvasPath s={s} />}
       </div>
 
       <main className="thread pad">
-        {s.entries.map((m, i) => (
+        {canvas && <ForkHeader s={s} />}
+        {shown.map((m, i) => (
           <Fragment key={m.id}>
             {/* 辩论：环节变了就画一条分隔线 */}
             {debate && m.kind === 'msg' && m.stage !== undefined && m.stage !== prevStage(s, i) && <StageDivider name={s.stages[m.stage]?.name ?? ''} />}
             <EntryView m={m} s={s} showTip={m.id === lastAi && s.learnerTurns === 0 && !s.finished} voice={voice} />
+            {canvas && m.kind === 'msg' && <BranchChips s={s} entryId={m.id} />}
           </Fragment>
         ))}
         {live?.kind === 'msg' && !s.entries.some(e => e.id === live.id) ? <LiveMessage s={s} onStop={room ? undefined : cancelAI} />
@@ -93,7 +101,7 @@ export function Session() {
         </Sheet>
       )}
       {sheetMsg && (
-        <Sheet title="追问这句" onClose={() => update(st => { st.ui.sheet = null; })}>
+        <Sheet title={canvas && !s.finished ? "追问或展开" : "追问这句"} onClose={() => update(st => { st.ui.sheet = null; })}>
           <blockquote className="quote">{sheetMsg.text.length > 80 ? sheetMsg.text.slice(0, 80) + '…' : sheetMsg.text}</blockquote>
           <div className="action-list">
             {QUICK.map(q => <button key={q.kind} className="action" onClick={() => quick(q.kind, sheetMsg.id)}><span>{q.label}</span><Icon name="chevron" size={18} /></button>)}
@@ -104,6 +112,7 @@ export function Session() {
               <div className="row wrap">{sheetMsg.terms.map(t => <button key={t} className="chip term-chip" onClick={() => openTerm(t, sheetMsg.id)}>{t}</button>)}</div>
             </div>
           )}
+          {canvas && !s.finished && <ForkForm m={sheetMsg} />}
           {(debate || room) && <p className="fineprint">{room ? '解释由讲解助手单独给你，不打断别人的发言。' : '辩论中，解释由讲解助手单独给出，不打断赛程。'}</p>}
         </Sheet>
       )}
@@ -114,6 +123,7 @@ export function Session() {
               <p className="sheet-text">{ui.term.definition}</p>
               {ui.term.relation && <p className="term-relation"><b>和「{s.concept}」的关系</b>{ui.term.relation}</p>}
               <p className="fineprint">{s.review ? '已存进这次的知识卡片。' : '已记下，复盘后会和这次的知识卡片存在一起。'}查词不占用发言轮次。</p>
+              {canvas && !s.finished && <button className="secondary block" disabled={!!ui.busy} onClick={() => openBranch(ui.term!.messageId, ui.term!.term)}><Icon name="branch" size={16} />展开一个分支，聊聊「{ui.term.term}」</button>}
             </>
           ) : <p className="sheet-text muted">正在查这个词……</p>}
         </Sheet>
@@ -123,6 +133,8 @@ export function Session() {
       {room?.host && ui.invite && <InviteSheet s={s} />}
       {ui.sheet === 'points' && <PointsSheet s={s} />}
       {debate && ui.sheet === 'roster' && <RosterSheet s={s} />}
+      {canvas && ui.sheet === 'tree' && <TreeSheet s={s} />}
+      {canvas && ui.sheet === 'back' && <BackSheet s={s} />}
       {ui.sheet === 'finish' && (
         <Sheet title="现在结束比赛？" onClose={() => update(st => { st.ui.sheet = null; })}>
           <p className="sheet-text">还有 {s.turns.length - s.cursor} 次发言没有进行，包括后面的总结陈词。结束后{room ? '每个人' : '你'}只能按已有的发言复盘。</p>
@@ -395,6 +407,7 @@ function Composer({ s }: { s: S }) {
         <button className="tool" disabled={busy} onClick={() => addReflection()}><Icon name="note" size={16} />写个小结</button>
         {!debate && s.personas.length > 1 && <button className="tool" disabled={busy} onClick={nextSpeaker}><Icon name="people" size={16} />请下一位</button>}
         {debate && <button className="tool" disabled={busy} onClick={skipSeat}>跳过本席</button>}
+        {s.mode === 'canvas' && s.at && <button className="tool" disabled={busy} onClick={() => update(st => { st.ui.sheet = 'back'; })}><Icon name="turn-back" size={16} />带回{s.branches?.find(b => b.id === s.at)?.parent ? '上一层' : '主干'}</button>}
       </div>
       {humanTurn
         ? <DraftInput s={s} placeholder={debate ? `${turn?.action ?? '发言'}：我方认为……因为……` : s.mode === 'teach' ? '开始讲解……' : '说说你的想法……'} />
@@ -416,6 +429,7 @@ function WithTerms({ text, terms }: { text: string; terms?: string[] }) {
 
 function EntryView({ m, s, showTip, voice }: { m: Entry; s: S; showTip: boolean; voice: boolean }) {
   if (m.kind === 'sys') {
+    if (m.back) return <BackLine m={m} s={s} />;
     const topic = m.text.match(/^(讨论题|辩题)：([\s\S]+)$/);
     return topic ? <div className="topic-line"><small>{topic[1]}</small><p>{topic[2]}</p></div> : <div className="sysline">{m.text}</div>;
   }
@@ -445,7 +459,7 @@ function EntryView({ m, s, showTip, voice }: { m: Entry; s: S; showTip: boolean;
               const term = termAt(e.target);
               if (term) openTerm(term, m.id); else update(st => { st.ui.sheet = m.id; });
             }}><Reveal id={m.id} text={m.text} live={false} final={<WithTerms text={m.text} terms={m.terms} />} /></button>}
-        {showTip && <small className="tip">轻点发言可以追问：没听懂、举例、反驳、分辨事实。{!!m.terms?.length && '带虚线的词，点一下看解释。'}</small>}
+        {showTip && <small className="tip">{s.mode === 'canvas' ? '轻点发言可以追问，或从这句展开一个分支单独聊。' : '轻点发言可以追问：没听懂、举例、反驳、分辨事实。'}{!!m.terms?.length && '带虚线的词，点一下看解释。'}</small>}
       </div>
     </div>
   );

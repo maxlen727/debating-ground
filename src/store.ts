@@ -51,7 +51,11 @@ export interface Session {
   review: (Review & { source: Source; model?: string }) | null;
   room?: RoomLink;
   glossary?: TermCard[];   // 这次讨论里点开看过的术语
+  branches?: Branch[];     // 知识画布：从某句发言展开的分支
+  at?: string;             // 知识画布：正在看的分支（没有就是主干）
 }
+// 知识画布的一个分支：从 from 这条发言展开（它在 parent 那一层），gist 是学习者带回上一层的一句话
+export interface Branch { id: string; parent?: string; from: string; topic: string; gist?: string; created: number }
 export interface Card extends Review {
   id: string; sessionId: string; concept: string; topic: string; mode: ModeId; created: number;
   source: Source; model?: string; level: number; due: number; reviews: { at: number; remembered: boolean }[];

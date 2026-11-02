@@ -1,6 +1,6 @@
 // 前端与本机服务共用的数据结构
 
-export type ModeId = 'socratic' | 'roundtable' | 'teach' | 'debate';
+export type ModeId = 'socratic' | 'roundtable' | 'teach' | 'debate' | 'canvas';
 export type Team = 'A' | 'B';
 export type PointStatus = 'mastered' | 'partial' | 'missing';
 export type StageKind = 'opening' | 'cross' | 'free' | 'closing';
@@ -31,9 +31,11 @@ export interface ChatMessage {
   skipped?: boolean;
   memberId?: string;    // 多人房间里，这条发言来自哪位成员
   terms?: string[];     // 发言里学习者可能不熟悉的术语（不含概念本身和要点）
+  branch?: string;      // 知识画布：这条发言属于哪个分支（没有就是主干）
 }
-export interface SystemLine { id: string; kind: 'sys'; text: string }
-export interface Reflection { id: string; kind: 'reflect'; text: string; feedback: string; draft: string }
+// back：知识画布里从某个分支带回来的小结（text 是学习者自己写的那句）
+export interface SystemLine { id: string; kind: 'sys'; text: string; branch?: string; back?: string }
+export interface Reflection { id: string; kind: 'reflect'; text: string; feedback: string; draft: string; branch?: string }
 export type Entry = ChatMessage | SystemLine | Reflection;
 
 export interface QuizItem { q: string; options: string[]; answer: number; why: string }
@@ -60,6 +62,7 @@ export interface SessionSnapshot {
   stages?: Stage[];
   finished?: boolean;
   context?: string;     // 学习者交代的背景（具体事件类的话题）
+  branch?: { topic: string; from: string; path: string[] };   // 知识画布：正在聊的分支、从哪句话展开、上层分支的话题
 }
 
 // needsContext：输入是一件具体的事、模型不了解经过时，先请学习者交代背景（这时其他字段为空）
