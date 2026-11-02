@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { MODES } from '../../shared/modes.ts';
 import type { Review as R, TermCard } from '../../shared/types.ts';
 import { discussAgain, generateReview, resume } from '../actions.ts';
@@ -23,7 +24,7 @@ export function ReviewBody({ r, terms }: { r: R; terms?: TermCard[] }) {
       <section className="panel">
         <h3 className="section-label">要点掌握情况</h3>
         <ul className="point-list">
-          {r.points.map((p, i) => <li key={i}><Pill status={p.status} /><div><b>{p.label}</b><span>{p.note}</span></div></li>)}
+          {r.points.map((p, i) => <li key={i} style={{ '--vtn': 'pt-' + i } as CSSProperties}><Pill status={p.status} /><div><b>{p.label}</b><span>{p.note}</span></div></li>)}
         </ul>
       </section>
       {r.misconceptions.length > 0 && (

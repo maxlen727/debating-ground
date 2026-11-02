@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { MODES } from '../../shared/modes.ts';
 import { QUICK_MESSAGES } from '../../shared/room.ts';
@@ -64,7 +65,7 @@ export function Session() {
         <div className="progress" aria-label={`要点进度 ${s.covered.length}/${s.keyPoints.length}`}>
           <span className="progress-count">{s.covered.length}<small>/{s.keyPoints.length}</small></span>
           <div className="scroll-x progress-chips" role="list">
-            {s.keyPoints.map((k, i) => <span role="listitem" key={i} className={'pt' + (s.covered.includes(i) ? ' lit' : '')}>{k}</span>)}
+            {s.keyPoints.map((k, i) => <span role="listitem" key={i} className={'pt' + (s.covered.includes(i) ? ' lit' : '')} style={{ '--vtn': 'pt-' + i } as CSSProperties}>{k}</span>)}
           </div>
           {!s.finished && (
             <button className="icon-btn points-btn" aria-label={pending ? `补充要点，${pending} 条待确认` : '补充要点'} onClick={() => update(st => { st.ui.sheet = 'points'; })}>

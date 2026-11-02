@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { useState } from 'react';
 import { MODES } from '../../shared/modes.ts';
 import { discussAgain, openCard, rateCard } from '../actions.ts';
@@ -33,7 +34,7 @@ export function Library() {
               <ul className="card-list">
                 {list.map(c => (
                   <li key={c.id}>
-                    <button className={'kcard' + (c.due <= now ? ' due' : '')} onClick={() => openCard(c.id)}>
+                    <button className={'kcard' + (c.due <= now ? ' due' : '')} style={{ '--vtn': 'card-' + c.id } as CSSProperties} onClick={() => openCard(c.id)}>
                       <span className="row between"><b>{c.concept}</b><small className={c.due <= now ? 'due-tag' : 'muted'}>{c.due <= now ? '待复习' : '下次 ' + dueLabel(c.due, now)}</small></span>
                       <span className="kline">{c.oneLine}</span>
                       <Meter c={c} />
@@ -58,7 +59,7 @@ export function CardView() {
   const answered = Object.keys(ui.quiz['c:' + c.id] ?? {}).length;
   const open = showReview || !c.quiz.length || answered >= c.quiz.length;
   return (
-    <div className="screen card-view">
+    <div className="screen card-view" style={{ '--vtn': 'card-' + c.id } as CSSProperties}>
       <TopBar title={c.concept} sub={`${MODES[c.mode].name} · 已复习 ${c.reviews.length} 次`} back="library" />
       <div className="stack pad">
         <p className="lede topic">{c.topic}</p>

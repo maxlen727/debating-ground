@@ -1,5 +1,5 @@
 // 通用界面组件
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { cancelAI } from '../lib/ai.ts';
 import { go, update, useApp, type Screen } from '../store.ts';
 import type { PointStatus, QuizItem } from '../../shared/types.ts';
@@ -73,13 +73,15 @@ export function TabBar() {
 
 export function Sheet({ title, onClose, children, className = '' }: { title: string; onClose: () => void; children: ReactNode; className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
+  // 在页面过渡里打开的面板由过渡负责从按钮里长出来，不再叠一层自己的弹出动画
+  const [morphing] = useState(() => typeof document !== 'undefined' && !!document.documentElement.dataset.nav);
   useEffect(() => {
     const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', k); ref.current?.focus();
     return () => window.removeEventListener('keydown', k);
   }, [onClose]);
   return (
-    <div className="sheet-backdrop" onClick={onClose}>
+    <div className={'sheet-backdrop' + (morphing ? ' morphing' : '')} onClick={onClose}>
       <div className={'sheet ' + className} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} ref={ref} onClick={e => e.stopPropagation()}>
         <div className="sheet-grip" aria-hidden="true" />
         <div className="sheet-head"><h2>{title}</h2><button className="icon-btn" aria-label="关闭" onClick={onClose}><Icon name="close" /></button></div>

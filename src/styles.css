@@ -537,3 +537,93 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--b
 .tool.on { background: color-mix(in srgb, var(--brand) 12%, var(--bg)); border-color: color-mix(in srgb, var(--brand) 45%, var(--line)); color: var(--brand); font-weight: 600; }
 .teaching-banner .dot { background: var(--brand); }
 .teaching-banner .link { min-height: 32px; }
+
+/* ---------- 页面与面板的连贯动效（View Transitions） ----------
+   前进：旧页往左退半步、变暗，新页从右边滑进来；后退反过来。
+   同名元素（概念、讨论方式、主按钮、返回键、底部导航、卡片、要点）从旧位置变形到新位置。
+   面板从点开它的按钮长出来，关上时缩回去。 */
+:root { --vt-d: 480ms; --vt-ease: cubic-bezier(.22, 1, .36, 1); --vt-out: cubic-bezier(.4, 0, 1, 1); }
+::view-transition-group(*) { animation-duration: var(--vt-d); animation-timing-function: var(--vt-ease); }
+::view-transition-old(*), ::view-transition-new(*) { animation-duration: calc(var(--vt-d) * .6); }
+::view-transition-old(*):only-child { animation-name: vt-fade-out; }
+::view-transition-new(*):only-child { animation-name: vt-fade-in; }
+::view-transition-new(root):only-child, ::view-transition-old(root):only-child { animation-name: none; }
+
+/* 整页 */
+:root[data-nav="forward"]::view-transition-old(root) { animation: var(--vt-d) var(--vt-ease) both vt-page-out; }
+:root[data-nav="forward"]::view-transition-new(root) { animation: var(--vt-d) var(--vt-ease) 40ms both vt-page-in; }
+:root[data-nav="back"]::view-transition-old(root) { animation: calc(var(--vt-d) * .85) var(--vt-ease) both vt-page-out-back; }
+:root[data-nav="back"]::view-transition-new(root) { animation: var(--vt-d) var(--vt-ease) both vt-page-in-back; }
+:root[data-nav="left"]::view-transition-old(root) { animation: calc(var(--vt-d) * .8) var(--vt-ease) both vt-tab-out-left; }
+:root[data-nav="left"]::view-transition-new(root) { animation: calc(var(--vt-d) * .8) var(--vt-ease) both vt-tab-in-right; }
+:root[data-nav="right"]::view-transition-old(root) { animation: calc(var(--vt-d) * .8) var(--vt-ease) both vt-tab-out-right; }
+:root[data-nav="right"]::view-transition-new(root) { animation: calc(var(--vt-d) * .8) var(--vt-ease) both vt-tab-in-left; }
+:root[data-nav="expand"]::view-transition-old(root) { animation: var(--vt-d) var(--vt-ease) both vt-recede; }
+:root[data-nav="expand"]::view-transition-new(root), :root[data-nav="collapse"]::view-transition-old(root) { animation: calc(var(--vt-d) * .5) ease both vt-fade-out; }
+:root[data-nav="expand"]::view-transition-new(root) { animation-name: vt-fade-in; animation-delay: 120ms; }
+:root[data-nav="collapse"]::view-transition-new(root) { animation: var(--vt-d) var(--vt-ease) both vt-return; }
+/* 开关面板时页面本身不动 */
+:root[data-nav="open"]::view-transition-old(root), :root[data-nav="open"]::view-transition-new(root),
+:root[data-nav="close"]::view-transition-old(root), :root[data-nav="close"]::view-transition-new(root),
+:root[data-nav="swap"]::view-transition-old(root), :root[data-nav="swap"]::view-transition-new(root) { animation: none; }
+
+@keyframes vt-page-out { to { transform: translateX(-18%) scale(.97); opacity: 0; filter: brightness(.92); } }
+@keyframes vt-page-in { from { transform: translateX(28%); opacity: 0; } }
+@keyframes vt-page-out-back { to { transform: translateX(28%); opacity: 0; } }
+@keyframes vt-page-in-back { from { transform: translateX(-18%) scale(.97); opacity: 0; filter: brightness(.92); } }
+@keyframes vt-tab-out-left { to { transform: translateX(-8%); opacity: 0; } }
+@keyframes vt-tab-in-right { from { transform: translateX(8%); opacity: 0; } }
+@keyframes vt-tab-out-right { to { transform: translateX(8%); opacity: 0; } }
+@keyframes vt-tab-in-left { from { transform: translateX(-8%); opacity: 0; } }
+@keyframes vt-recede { to { transform: scale(.94); opacity: 0; filter: brightness(.9); } }
+@keyframes vt-return { from { transform: scale(.94); opacity: 0; filter: brightness(.9); } }
+@keyframes vt-fade-in { from { opacity: 0; } }
+@keyframes vt-fade-out { to { opacity: 0; } }
+@keyframes vt-drop { to { transform: translateY(110%); } }
+@keyframes vt-raise { from { transform: translateY(110%); } }
+
+/* 一直连着的元素：概念、讨论方式、主按钮、返回键、底部导航 */
+.learn .concept-field, .prepare .topbar-title h1, .session .topbar-title h1 { view-transition-name: concept; }
+.learn .mode.on b, .prepare .topbar-title p, .session .topbar-title p { view-transition-name: mode; }
+.learn .dock .primary, .prepare .dock .primary, .session .composer { view-transition-name: cta; }
+.topbar > .icon-btn:first-child { view-transition-name: back; }
+.tabbar { view-transition-name: tabbar; }
+/* 文字类的变形按比例缩放、靠左对齐，不拉伸变形 */
+::view-transition-old(concept), ::view-transition-new(concept), ::view-transition-old(mode), ::view-transition-new(mode) { height: 100%; width: auto; object-fit: contain; object-position: left center; }
+::view-transition-old(cta), ::view-transition-new(cta) { height: 100%; object-fit: cover; }
+/* 进入沉浸页时底部导航沉下去，回来时升起 */
+::view-transition-old(tabbar):only-child { animation: calc(var(--vt-d) * .6) var(--vt-out) both vt-drop; }
+::view-transition-new(tabbar):only-child { animation: var(--vt-d) var(--vt-ease) 80ms both vt-raise; }
+::view-transition-old(back):only-child { animation: calc(var(--vt-d) * .4) ease both vt-fade-out; }
+::view-transition-new(back):only-child { animation: calc(var(--vt-d) * .6) ease 120ms both vt-fade-in; }
+
+/* 只在连着它们的那次导航里共用名字：卡片 ↔ 详情，讨论页的要点 → 复盘里的行 */
+:root[data-nav="expand"] .kcard, :root[data-nav="collapse"] .kcard, :root[data-nav="expand"] .card-view, :root[data-nav="collapse"] .card-view,
+:root[data-nav="forward"] .session .pt, :root[data-nav="forward"] .review .point-list li,
+:root[data-nav="back"] .session .pt, :root[data-nav="back"] .review .point-list li { view-transition-name: var(--vtn, none); }
+
+/* 卡片长成整页：像一个容器展开，内容按原大小露出来 */
+.kcard, .card-view { view-transition-class: card; }
+::view-transition-group(*.card) { overflow: clip; border-radius: 16px; animation-duration: 560ms; animation-timing-function: cubic-bezier(.2, .9, .25, 1); }
+::view-transition-old(*.card), ::view-transition-new(*.card) { height: auto; width: 100%; inset: 0 auto auto 0; object-fit: none; object-position: left top; }
+::view-transition-old(*.card) { animation: 200ms ease both vt-fade-out; }
+::view-transition-new(*.card) { animation: 320ms ease 60ms both vt-fade-in; }
+:root[data-nav="collapse"]::view-transition-old(*.card) { animation: 280ms ease both vt-fade-out; }
+:root[data-nav="collapse"]::view-transition-new(*.card) { animation: 240ms ease 160ms both vt-fade-in; }
+
+/* 面板：从按钮长出来，内容从顶部展开，不压扁 */
+.sheet { view-transition-name: sheet; }
+.sheet-backdrop { view-transition-name: sheet-backdrop; }
+.sheet-backdrop.morphing, .sheet-backdrop.morphing .sheet { animation: none; }
+::view-transition-group(sheet) { animation-duration: 520ms; animation-timing-function: cubic-bezier(.2, .9, .25, 1); }
+::view-transition-group(sheet) { overflow: clip; border-radius: 20px; }
+::view-transition-old(sheet), ::view-transition-new(sheet) { height: auto; width: auto; inset: 0 auto auto 0; object-fit: none; }
+::view-transition-old(sheet) { animation: 160ms ease both vt-fade-out; }
+::view-transition-new(sheet) { animation: 260ms ease 80ms both vt-fade-in; }
+:root[data-nav="close"]::view-transition-old(sheet) { animation: 260ms ease both vt-fade-out; }
+:root[data-nav="close"]::view-transition-new(sheet) { animation: 200ms ease 120ms both vt-fade-in; }
+::view-transition-group(sheet-backdrop) { animation-duration: 360ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+}
