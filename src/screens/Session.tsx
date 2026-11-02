@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { MODES } from '../../shared/modes.ts';
 import { QUICK_MESSAGES } from '../../shared/room.ts';
 import type { ChatMessage, Entry, Reflection } from '../../shared/types.ts';
-import { QUICK, addReflection, aiTakeover, callOn, currentTurn, decidePoint, dropReflection, finish, generateSeat, hint, nextSpeaker, noteTyping, openTerm, passTurn, pickSeat, proposePoint, quick, quickMessage, retryAI, send, setReflectionDraft, skipSeat, startRoom, stopTyping, submitReflection, suggestPoint, toggleListen, toggleVoice, listenAvailable, voiceAvailable } from '../actions.ts';
+import { QUICK, addReflection, aiTakeover, callOn, currentTurn, decidePoint, dropReflection, finish, generateSeat, hint, nextSpeaker, noteTyping, openTerm, passTurn, pickSeat, proposePoint, quick, quickMessage, retryAI, send, setReflectionDraft, skipSeat, startRoom, stopTyping, submitReflection, suggestPoint, toggleAiPause, toggleListen, toggleVoice, listenAvailable, voiceAvailable } from '../actions.ts';
 import { Empty, ErrorBanner, Icon, Sheet } from '../components/ui.tsx';
 import { CaretField } from '../components/SmoothCaret.tsx';
 import { Reveal } from '../components/Reveal.tsx';
@@ -257,7 +257,7 @@ function SeatSheet({ s }: { s: S }) {
 function CallOnSheet({ s }: { s: S }) {
   const room = s.room!;
   return (
-    <Sheet title="请谁发言" onClose={() => update(st => { st.ui.sheet = null; })}>
+    <Sheet title="请谁说说" onClose={() => update(st => { st.ui.sheet = null; })}>
       <div className="action-list">
         {room.members.map(m => <button key={m.id} className="action" onClick={() => callOn({ kind: 'member', id: m.id })}><span>{m.id === room.memberId ? '我' : m.name}{!m.online && <small className="muted"> · 不在线</small>}</span><Icon name="chevron" size={18} /></button>)}
         {s.personas.map(p => <button key={p.id} className="action" onClick={() => callOn({ kind: 'ai', id: p.id })}><span>{p.name}<small className="muted"> · AI 嘉宾</small></span><Icon name="chevron" size={18} /></button>)}
@@ -298,6 +298,11 @@ function RoomComposer({ s }: { s: S }) {
     <>
       {room.error ? (
         <div className="alert" role="alert"><span>{room.error}</span>{room.host && <button className="link" onClick={retryAI}>重试</button>}</div>
+      ) : s.mode === 'roundtable' ? (
+        // 圆桌是群聊：没有“轮到谁”，只说清楚 AI 嘉宾什么时候接话
+        <div className="turn-banner chat-banner">
+          {room.aiBusy ? <b>{room.aiBusy}</b> : room.aiPaused ? <span>AI 嘉宾暂停接话，房主点名时才说</span> : <span>想说就说，大家停下来几秒后 AI 嘉宾会接话</span>}
+        </div>
       ) : (
         <div className="turn-banner">
           {s.mode === 'debate' && t && <span className={'dot team-' + t.role.team} aria-hidden="true" />}
@@ -314,13 +319,14 @@ function RoomComposer({ s }: { s: S }) {
         <button className="tool" disabled={busy} onClick={() => addReflection()}><Icon name="note" size={16} />写个小结</button>
         {room.host && s.mode === 'roundtable' && <button className="tool" disabled={!!room.aiBusy} onClick={() => update(st => { st.ui.sheet = 'callon'; })}><Icon name="people" size={16} />点名</button>}
         {room.host && humanSeat && !mine && !room.aiBusy && <button className="tool" onClick={aiTakeover}>让 AI 代答</button>}
-        {(mine || room.host) && !room.aiBusy && <button className="tool" onClick={passTurn}>{mine ? '这次先跳过' : '跳过当前发言'}</button>}
+        {room.host && s.mode === 'roundtable' && <button className="tool" aria-pressed={!!room.aiPaused} onClick={toggleAiPause}>{room.aiPaused ? '恢复 AI 接话' : '暂停 AI 接话'}</button>}
+        {s.mode === 'debate' && (mine || room.host) && !room.aiBusy && <button className="tool" onClick={passTurn}>{mine ? '这次先跳过' : '跳过当前发言'}</button>}
         {s.mode === 'debate' && <button className="tool" onClick={() => update(st => { st.ui.sheet = 'seats'; })}><Icon name="people" size={16} />{mySeat(s) ? '换席位' : '上场辩论'}</button>}
         {/* 快捷短语：只是提醒大家，不进讨论记录 */}
         <span className="tools-sep" aria-hidden="true" />
         {QUICK_MESSAGES.map(text => <button key={text} className="tool quiet" onClick={() => quickMessage(text)}>{text}</button>)}
       </div>
-      {mine ? <DraftInput s={s} placeholder={s.mode === 'debate' ? `${t?.action ?? '发言'}：我方认为……因为……` : '说说你的想法……'} /> : <p className="lobby-note">{room.aiBusy ? '稍等，AI 正在发言。' : '轮到你时，这里会出现输入框。'}</p>}
+      {mine ? <DraftInput s={s} placeholder={s.mode === 'debate' ? `${t?.action ?? '发言'}：我方认为……因为……` : '说点什么，随时可以插话……'} /> : <p className="lobby-note">{room.aiBusy ? '稍等，AI 正在发言。' : '轮到你时，这里会出现输入框。'}</p>}
     </>
   );
 }

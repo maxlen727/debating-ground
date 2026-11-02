@@ -254,6 +254,8 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--b
 .composer-done { padding-block: 4px; }
 .composer-done > button { flex: none; white-space: nowrap; }
 .turn-banner { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 0 4px; }
+.chat-banner { color: var(--muted); }
+.chat-banner b { color: var(--ink); }
 .turn-countdown { font-size: 12.5px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
 .turn-countdown.soon, .turn-countdown.expired { color: var(--warn); }
 .tools-sep { flex: none; width: 1px; align-self: stretch; margin: 4px 2px; background: var(--line); }

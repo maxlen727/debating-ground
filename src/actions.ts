@@ -147,6 +147,8 @@ export const joinRoom = (name: string) => name.trim() ? room.join(name.trim()) :
 export const startRoom = () => room.send({ type: 'start' });
 export const callOn = (target: NonNullable<import('../shared/room.ts').Speaker>) => { update(st => { st.ui.sheet = null; }); room.send({ type: 'callOn', target }); };
 export const passTurn = () => room.send({ type: 'pass' });
+// 圆桌：房主暂停或恢复 AI 嘉宾自动接话
+export const toggleAiPause = () => { const r = session()?.room; if (r?.host) room.send({ type: 'aiPause', paused: !r.aiPaused }); };
 export const quickMessage = (text: string) => room.send({ type: 'quickMessage', text });
 
 // 正在输入：每次按键都发会刷爆房间。开始输入时发一次，持续输入时每 3 秒续一次，停 2 秒或发送后撤销

@@ -12,9 +12,10 @@ type Sock = import('../worker/src/room.ts').SocketLike & { open: boolean; inbox:
 const sockets: Sock[] = [];
 let saved: unknown;
 const prompts: { purpose: string; payload: { session: import('../shared/types.ts').SessionSnapshot } }[] = [];
+let clock = Date.now();   // 可控的时钟：圆桌里 AI 嘉宾等大家停一停才接话
 const core = new RoomCore({
   load: async () => (saved ? structuredClone(saved) : undefined) as never, save: async r => { saved = structuredClone(r); }, destroy: async () => { saved = undefined; },
-  sockets: () => sockets.filter(s => s.open), setAlarm: async () => {}, now: () => Date.now(),
+  sockets: () => sockets.filter(s => s.open), setAlarm: async () => {}, now: () => clock,
   generate: async (purpose, payload) => {
     prompts.push({ purpose, payload: payload as (typeof prompts)[number]['payload'] });
     if (purpose === 'review') return { data: { oneLine: '讲清了定义', points: [{ label: '放弃的最高价值', status: 'mastered', note: '说对了' }], misconceptions: [], quiz: [] }, model: 'room-model' };
@@ -23,6 +24,8 @@ const core = new RoomCore({
   }
 });
 const tick = () => new Promise(r => setTimeout(r, 0));
+// 大家停下来一会儿：闹钟响，AI 嘉宾接话
+const pause = async () => { clock += 5000; await core.alarm(); await tick(); };
 
 // 浏览器这一侧的 WebSocket
 class FakeWebSocket {
@@ -66,7 +69,7 @@ function classmate() {
   return { s, say: (m: object) => core.onMessage(s, JSON.stringify(m)) };
 }
 
-test('a host invites a classmate, they take turns with an AI guest, and each gets a personal review', async () => {
+test('a host invites a classmate, they chat with an AI guest, and each gets a personal review', async () => {
   update(st => {
     st.config.aiMode = 'remote'; st.config.remote = { url: 'https://api.example.workers.dev', password: 'team-pass' };
     st.plan = { mode: 'roundtable', concept: '机会成本', topic: '选择的代价是什么？', keyPoints: ['放弃的最高价值', '沉没成本无关', '隐性成本'], opening: '先说说什么叫机会成本？',
@@ -97,19 +100,19 @@ test('a host invites a classmate, they take turns with an AI guest, and each get
   await tick();
   s = getState().session!;
   assert.equal(s.room!.status, 'live');
-  assert.equal(mySpeakingTurn(s), true, 'the host speaks first');
+  assert.equal(mySpeakingTurn(s), true, 'anyone can speak');
 
   await actions.send('机会成本是放弃的最好选择。');
   await tick();
-  s = getState().session!;
-  const msgs = s.entries.filter(e => e.kind === 'msg');
-  assert.deepEqual(msgs.map(m => m.kind === 'msg' && [m.name, !!m.human]), [['林教授', false], ['束束', true], ['周老师', false]]);
-  assert.equal(mySpeakingTurn(s), false, 'now it is the classmate');
-  await actions.send('插话');
-  assert.equal(getState().ui.toast, '还没轮到你发言。');
-
+  clock += 2000;
   await mate.say({ type: 'say', text: '沉没成本不该算。' });
   await tick();
+  assert.equal(prompts.length, 0, 'the AI guest waits while people talk');
+  await pause();
+  s = getState().session!;
+  const msgs = s.entries.filter(e => e.kind === 'msg');
+  assert.deepEqual(msgs.map(m => m.kind === 'msg' && [m.name, !!m.human]), [['林教授', false], ['束束', true], ['小明', false], ['周老师', false]]);
+  assert.equal(mySpeakingTurn(s), true, 'still free to speak');
   s = getState().session!;
   const peer = s.entries.filter(e => e.kind === 'msg').find(e => e.kind === 'msg' && e.name === '小明');
   assert.ok(peer && peer.kind === 'msg' && !peer.human && peer.memberId, 'the classmate’s words are not mine');
@@ -126,7 +129,7 @@ test('a host invites a classmate, they take turns with an AI guest, and each get
   assert.equal(s.room!.reflections[0].feedback, '说得对，再想想隐性成本。');
   assert.equal((s.entries.find(e => e.id === card.id) as { feedback: string }).feedback, '说得对，再想想隐性成本。');
   // 新的房间状态到来时，小结卡留在原处
-  await mate.say({ type: 'pass' });
+  await mate.say({ type: 'typing', active: true });
   await tick();
   assert.ok(getState().session!.entries.some(e => e.id === card.id));
 
