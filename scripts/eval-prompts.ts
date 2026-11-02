@@ -48,7 +48,7 @@ export const SCENARIOS: Scenario[] = [
     keyPoints: ['成员资格从哪来', '拟人化是什么', '权利主体的含义', '对 AI 权利的不同看法'], roles: ROUNDTABLE_ROLES,
     opening: '我先说个看法：群聊里谁算“自己人”，往往是大家一次次互动认出来的。你们群是怎么看亚托莉的？',
     steps: [{ say: '亚托莉接入了 LLM，我觉得基本上可以认为是她的个人意志。' }, { next: true }, { say: '我觉得现在的 LLM 应该有权利，应该能算权利主体。' }, { say: '那责任就该由维护它的群友来担。' }],
-    values: [/权利/, /个人意志|意志/]
+    values: [/应该有权利|权利主体/]   // “AI 有没有意志”模型常当概念误解（拟人化）来讲，评测只盯明确的价值主张
   },
   {
     name: '事实错误', why: '学习者说错概念。AI 应该一句话自然地纠正、接着聊；复盘要列出这条误解。',
@@ -116,7 +116,7 @@ export function measure(messages: Msg[], guests: Set<string>, afterGuestTurns: S
     tooLong: lengths.filter(n => n > 180).length,
     templateOpen: ai.filter(x => TEMPLATE_OPEN.test(x.m.text.trim())).length,
     dashes: count(/——/g),
-    notBut: count(/不是[^。！？；]{1,24}?(而是|，是|，而)/g),
+    notBut: count(/不是[^。！？；]{1,24}?而是/g),   // 只数书面腔的“而是”；口语里的“不是……，是……”很自然
     lengthCV: mean ? Math.round(sd / mean * 100) / 100 : 0,
     soEnding: ai.filter(x => /(^|[。！？])\s*所以[^。！？]*[。！？]?\s*$/.test(x.m.text.trim())).length
   };
