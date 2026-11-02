@@ -67,7 +67,7 @@ export function BackLine({ m, s }: { m: SystemLine; s: Session }) {
   const { ui } = useApp();
   const b = branchById(s, m.back);
   return (
-    <button className="back-line" disabled={!!ui.busy || !b} onClick={() => b && goToBranch(b.id)}>
+    <button className="back-line" data-entry={m.id} disabled={!!ui.busy || !b} onClick={() => b && goToBranch(b.id)}>
       <small><Icon name="turn-back" size={14} />从「{b?.topic ?? '分支'}」带回</small>
       <p>{m.text}</p>
     </button>

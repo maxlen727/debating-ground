@@ -5,6 +5,8 @@ import { seatName } from '../lib/debate.ts';
 import { seatOwner } from '../lib/room.ts';
 import { update, type DebateSeat, type Session } from '../store.ts';
 import { Sheet } from './ui.tsx';
+import { useEffect } from 'react';
+import { flash } from '../lib/light.ts';
 
 const SIDE = { A: '正方', B: '反方' } as const;
 const STANCE = { A: '支持', B: '反对' } as const;
@@ -25,6 +27,12 @@ export function DebateBoard({ s }: { s: Session }) {
   const turn: Turn | undefined = s.turns[s.cursor];
   const over = s.finished || s.awaitingReview || !turn;
   const stage = turn ? s.stages[turn.stage] : undefined;
+  // 轮到下一位时，他的席位牌亮一下，光带上阵营色
+  useEffect(() => {
+    if (over || !turn) return;
+    const t = setTimeout(() => flash(document.querySelector('.seat-tok.on'), { color: turn.role.team === 'A' ? 'var(--a-fg)' : 'var(--b-fg)', radius: 150, strength: 0.8 }), 200);
+    return () => clearTimeout(t);
+  }, [s.cursor, over]);
   const groups = s.stages.map((_, i) => s.turns.map((t, k) => ({ t, k })).filter(x => x.t.stage === i)).filter(g => g.length);
   const side = (team: 'A' | 'B') => (
     <div className={'board-side side-' + team}>

@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import { Fragment, useEffect, useRef, useState } from 'react';
+import { flash } from '../lib/light.ts';
 import { MODES } from '../../shared/modes.ts';
 import { QUICK_MESSAGES } from '../../shared/room.ts';
 import type { ChatMessage, Entry, Reflection } from '../../shared/types.ts';
@@ -19,9 +20,34 @@ import { usePlaying } from '../lib/voice.ts';
 import { listeningSince, useListening } from '../lib/listen.ts';
 import { go, toast, update, useApp, type Session as S } from '../store.ts';
 
+// 光：要点刚被点亮时从那个小标签发光，新发言落下时从它身上发一点光，照亮周围的按钮和气泡
+function useLightCues(s: S | null) {
+  const seen = useRef<{ id: string; covered: number[]; last?: string; at?: string } | null>(null);
+  useEffect(() => {
+    if (!s) return;
+    const prev = seen.current;
+    const last = s.entries.at(-1)?.id;
+    seen.current = { id: s.id, covered: [...s.covered], last, at: s.at };
+    if (!prev || prev.id !== s.id || prev.at !== s.at) return;   // 刚打开、换了分支：不闪
+    const lit = s.covered.find(i => !prev.covered.includes(i));
+    if (lit !== undefined) {
+      const chip = document.querySelectorAll('.progress .pt')[lit];
+      chip?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      const t = setTimeout(() => flash(chip, { radius: 230 }), 260);
+      return () => clearTimeout(t);
+    }
+    if (last && last !== prev.last) {
+      // 等列表滚到底再发光，光才落在它现在的位置
+      const t = setTimeout(() => flash(document.querySelector(`[data-entry="${last}"] .bubble`) ?? document.querySelector(`[data-entry="${last}"]`), { radius: 170, strength: 0.55, duration: 1300 }), 380);
+      return () => clearTimeout(t);
+    }
+  }, [s?.id, s?.covered.length, s?.entries.length, s?.at]);
+}
+
 export function Session() {
   const { session: s, ui } = useApp();
   const live = useLive();
+  useLightCues(s);
   const count = s ? s.entries.length : 0;
   const aiBusy = s?.room?.aiBusy;
   useEffect(() => { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); }, [count, ui.busy, ui.hint, aiBusy, live?.id, s?.at]);
@@ -453,7 +479,7 @@ function EntryView({ m, s, showTip, voice }: { m: Entry; s: S; showTip: boolean;
   // 辩论按阵营分左右（正方左、反方右），不按“是不是我”
   const side = debate ? ' side-' + (m.team ?? 'A') + (me ? ' mine' : '') : (me ? ' me' : '') + (peer ? ' peer' : '');
   return (
-    <div className={'msg' + side}>
+    <div className={'msg' + side} data-entry={m.id}>
       <span className={'avatar tone-' + tone} aria-hidden="true">{avatarText}</span>
       <div className="msg-body">
         <div className="msg-meta"><b>{label}</b>{meta && <span>{meta}</span>}{m.skipped && <span>已跳过</span>}{voice && !m.skipped && <VoiceButton id={m.id} label={label} />}</div>
@@ -476,7 +502,7 @@ function ReflectCard({ m, concept }: { m: Reflection; concept: string }) {
   const live = useLive();
   const streaming = live?.kind === 'reflect' && live.id === m.id && !!live.text;
   return (
-    <section className="reflect" aria-label="小结卡">
+    <section className="reflect" aria-label="小结卡" data-entry={m.id}>
       <h3>停一下，用自己的话说说</h3>
       {m.text ? (
         <>
