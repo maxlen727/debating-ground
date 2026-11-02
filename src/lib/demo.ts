@@ -7,7 +7,8 @@ const ROLES: Record<ModeId, PrepareResult['roles']> = {
   socratic: [{ name: '苏珩', title: '追问者', persona: '温和，但不放过任何含糊的说法' }],
   roundtable: [{ name: '周衡', title: '经济学家', persona: '从稀缺和取舍看问题' }, { name: '沈知', title: '心理学家', persona: '关注人为什么常常忽略代价' }, { name: '顾远', title: '企业管理者', persona: '从真实的经营决策出发' }],
   teach: [{ name: '小满', title: '学生', persona: '高二学生，爱较真' }],
-  debate: []
+  debate: [],
+  canvas: [{ name: '林枝', title: '伙伴', persona: '好奇心重，聊着聊着爱说“这个词值得单独聊聊”' }]
 };
 const GENERIC_ROLES: Record<ModeId, PrepareResult['roles']> = {
   ...ROLES,
@@ -17,19 +18,19 @@ const GENERIC_ROLES: Record<ModeId, PrepareResult['roles']> = {
 function costPrep(mode: ModeId): PrepareResult {
   return {
     concept: '机会成本',
-    topic: { socratic: '周末去打工赚 300 元，真正的代价是什么？', roundtable: '为什么人们总是低估自己选择的代价？', teach: '向一个高中生讲清楚什么是机会成本', debate: '上大学的最大成本是学费' }[mode],
+    topic: { socratic: '周末去打工赚 300 元，真正的代价是什么？', roundtable: '为什么人们总是低估自己选择的代价？', teach: '向一个高中生讲清楚什么是机会成本', debate: '上大学的最大成本是学费', canvas: '周末去打工赚 300 元，真正的代价是什么？' }[mode],
     keyPoints: ['放弃的最佳选择', '只算次优那一项', '包含隐性代价', '区别于沉没成本', '用于比较决策'],
     roles: ROLES[mode],
-    opening: { socratic: '我们从一个具体场景开始吧。你周六去打工赚了 300 元，你觉得这个选择花掉了你什么？', roundtable: '我先抛砖引玉：经济学里没有免费的午餐，任何选择都有代价。主持人想先听哪个角度？', teach: '老师好！我听说过“机会成本”这个词，但它和普通的“成本”有啥区别啊？花钱不就是成本吗？', debate: '' }[mode]
+    opening: { socratic: '我们从一个具体场景开始吧。你周六去打工赚了 300 元，你觉得这个选择花掉了你什么？', roundtable: '我先抛砖引玉：经济学里没有免费的午餐，任何选择都有代价。主持人想先听哪个角度？', teach: '老师好！我听说过“机会成本”这个词，但它和普通的“成本”有啥区别啊？花钱不就是成本吗？', debate: '', canvas: '我们从一个具体场景开始吧。你周六去打工赚了 300 元，你觉得这个选择花掉了你什么？聊到哪个词想深挖，点那句话就能展开一个分支。' }[mode]
   };
 }
 function genericPrep(c: string, mode: ModeId): PrepareResult {
   return {
     concept: c,
-    topic: { socratic: `「${c}」到底是什么？它和相近的概念有什么不同？`, roundtable: `「${c}」在不同领域里意味着同一件事吗？`, teach: `向一个高中生讲清楚「${c}」`, debate: `理解「${c}」的关键在于它的定义，而不在于它的应用` }[mode],
+    topic: { socratic: `「${c}」到底是什么？它和相近的概念有什么不同？`, roundtable: `「${c}」在不同领域里意味着同一件事吗？`, teach: `向一个高中生讲清楚「${c}」`, debate: `理解「${c}」的关键在于它的定义，而不在于它的应用`, canvas: `「${c}」到底在讲什么？它牵扯到哪些别的概念？` }[mode],
     keyPoints: [`${c}的定义`, '它要解决什么问题', '一个典型例子', '常见的误解', '和相近概念的区别'],
     roles: GENERIC_ROLES[mode],
-    opening: { socratic: `先说说你的直觉：你觉得「${c}」大概在讲什么？`, roundtable: `我们今天聊「${c}」。主持人能先说说，你是在什么场合第一次遇到它的吗？`, teach: `老师好！「${c}」这个词我常听到，但一直不懂。它到底是什么意思呀？`, debate: '' }[mode]
+    opening: { socratic: `先说说你的直觉：你觉得「${c}」大概在讲什么？`, roundtable: `我们今天聊「${c}」。主持人能先说说，你是在什么场合第一次遇到它的吗？`, teach: `老师好！「${c}」这个词我常听到，但一直不懂。它到底是什么意思呀？`, debate: '', canvas: `我们从直觉开始：你觉得「${c}」大概在讲什么？聊到哪个词想深挖，就从那句话展开一个分支。` }[mode]
   };
 }
 
@@ -104,6 +105,18 @@ function nextStep(): number {
 
 const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
 
+// 知识画布的分支：展开时先讲个大概，之后请学习者把它和概念连起来（好带一句话回主干）
+function branchReply(s: Session, opening: boolean) {
+  const topic = s.branches?.find(b => b.id === s.at)?.topic ?? '';
+  const known = DEMO_TERMS[topic];
+  if (opening) return {
+    text: known ? `好，先把「${topic}」单独拎出来聊。${known.definition}你身边有什么东西是这样的？`
+      : `好，先把「${topic}」单独拎出来聊。演示模式里我没法真的讲解它；连接 API 后，这里会先讲个大概、举个例子，再听你怎么想。`,
+    covered: []
+  };
+  return { text: `这个例子挺具体的。要是让你用一句话说「${topic}」和「${s.concept}」是什么关系，你会怎么说？想好了就可以带着这句话回主干。`, covered: [] };
+}
+
 export async function demoRun<P extends Purpose>(purpose: P, payload: PayloadMap[P], delay = 450): Promise<unknown> {
   await wait(delay);
   const s = getState().session;
@@ -122,9 +135,10 @@ export async function demoRun<P extends Purpose>(purpose: P, payload: PayloadMap
       const p = payload as PayloadMap['discuss'];
       const role = s.personas.find(r => r.id === p.roleId) ?? s.personas[0];
       const step = nextStep();
-      if (cost && s.mode === 'socratic') { const [text, covered, terms] = COST_REPLIES[step % COST_REPLIES.length]; return { text, covered, terms }; }
+      if (s.mode === 'canvas' && s.at) return branchReply(s, !!p.task);
+      if (cost && (s.mode === 'socratic' || s.mode === 'canvas')) { const [text, covered, terms] = COST_REPLIES[step % COST_REPLIES.length]; return { text, covered, terms }; }
       const kp = s.keyPoints[step % n];
-      const text = s.mode === 'socratic' ? `你说的有一部分是对的。那我们看看「${kp}」：你能用自己的话说说，并举一个例子吗？`
+      const text = s.mode === 'socratic' || s.mode === 'canvas' ? `你说的有一部分是对的。那我们看看「${kp}」：你能用自己的话说说，并举一个例子吗？`
         : s.mode === 'teach' ? `老师，我还是没太懂「${kp}」。能举个生活里的例子吗？`
           : `从${role.title}的角度看，讨论「${s.concept}」时最容易被忽略的是「${kp}」。主持人怎么看？`;
       return { text, covered: [step % n] };

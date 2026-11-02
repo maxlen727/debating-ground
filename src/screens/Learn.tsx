@@ -7,7 +7,7 @@ import { CaretField } from '../components/SmoothCaret.tsx';
 import { go, update, useApp } from '../store.ts';
 
 const EXAMPLES = ['机会成本', '贝叶斯定理', '边际效用', '认知失调', '光速不变原理', '梯度下降'];
-const GLYPH: Record<ModeId, string> = { socratic: '问', roundtable: '圆', teach: '讲', debate: '辩' };
+const GLYPH: Record<ModeId, string> = { socratic: '问', roundtable: '圆', teach: '讲', debate: '辩', canvas: '枝' };
 
 export function Learn() {
   const conceptRef = useRef<HTMLInputElement>(null);

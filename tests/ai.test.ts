@@ -333,3 +333,26 @@ test('debate preparation gives each side topic-specific backgrounds; a fixed top
   assert.equal(user(fixed).topic, '我改过的题目');
   assert.doesNotMatch(fixed.messages[0].content, /只输出 \{"needsContext"/, 'a fixed topic never asks for background');
 });
+
+test('knowledge canvas: a branch turn stays on the branch topic; branch info is validated', () => {
+  const canvas: SessionSnapshot = { ...learning, mode: 'canvas' };
+  const trunk = buildRequest('discuss', { session: canvas, roleId: 'r0' });
+  assert.match(trunk.messages[0].content, /知识画布/);
+  assert.doesNotMatch(trunk.messages[0].content, /从主干岔出去的一个分支/);
+  const branch = { topic: '稀缺性', from: '时间也有稀缺性。', path: [] };
+  const r = buildRequest('discuss', { session: { ...canvas, branch }, roleId: 'r0' });
+  assert.match(r.messages[0].content, /从主干岔出去的一个分支/);
+  assert.match(r.messages[0].content, /不要急着把话题拉回主干/);
+  assert.deepEqual(user(r).branch, branch);
+  assert.ok(r.exclude!.includes('稀缺性'), 'the branch topic is not marked as an unfamiliar term inside its own branch');
+  // 分支只属于知识画布；字段不对就拒绝
+  assert.throws(() => buildRequest('discuss', { session: { ...learning, branch }, roleId: 'r0' }), /分支信息无效/);
+  assert.throws(() => buildRequest('discuss', { session: { ...canvas, branch: { topic: '', from: '', path: [] } }, roleId: 'r0' }));
+  assert.throws(() => buildRequest('discuss', { session: { ...canvas, branch: { ...branch, path: 'x' } }, roleId: 'r0' }));
+  // 复盘说明分支里的发言和主干一样算数；别的模式不加这句
+  assert.match(buildRequest('review', { session: canvas }).messages[0].content, /分支：/);
+  assert.doesNotMatch(buildRequest('review', { session: learning }).messages[0].content, /树状/);
+  // 准备：一位讨论伙伴，有开场白
+  const prep = buildRequest('prepare', { concept: '机会成本', mode: 'canvas' });
+  assert.match(prep.messages[0].content, /讨论伙伴/);
+});

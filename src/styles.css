@@ -491,3 +491,44 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--b
 .proposal { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--bg); }
 .proposal-text { margin: 0; font: var(--t-md)/1.6 var(--f-display); }
 @media (prefers-reduced-motion: reduce) { .ink, .stream-caret { animation: none; } }
+
+/* ---------- 知识画布 ---------- */
+.modes .mode:last-child:nth-child(odd) { grid-column: 1 / -1; }
+/* 路径条：主干 › 分支 › 子分支，右边是整棵树 */
+.canvas-path { display: flex; align-items: center; gap: 8px; padding: 0 max(16px, env(safe-area-inset-right, 0px)) 8px max(16px, env(safe-area-inset-left, 0px)); }
+.canvas-path ol { flex: 1; min-width: 0; display: flex; align-items: center; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.canvas-path li { flex: none; display: flex; align-items: center; gap: 2px; color: var(--muted); font-size: 13px; }
+.crumb { min-height: 36px; padding: 0 10px; border-radius: 10px; background: none; border: 0; color: var(--muted); font-size: 13px; max-width: 12em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crumb:not(:disabled):hover { background: var(--bg); color: var(--ink); }
+.crumb.here { color: var(--brand); font-weight: 650; background: color-mix(in srgb, var(--brand) 10%, transparent); }
+.crumb:disabled { cursor: default; }
+.crumb.here:disabled { opacity: 1; }
+.tree-btn { flex: none; min-width: 44px; height: 36px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--brand); }
+.tree-btn small { font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; }
+/* 分支开头：从哪句话展开，这一枝要弄懂什么 */
+.fork-head { display: flex; flex-direction: column; gap: 10px; padding-bottom: 6px; border-bottom: 1px dashed var(--line); }
+.fork-from { margin: 0; padding: 8px 12px; border-left: 3px solid color-mix(in srgb, var(--brand) 55%, var(--line)); background: var(--bg); border-radius: 0 10px 10px 0; color: var(--muted); font: var(--t-sm)/var(--lh-serif) var(--f-display); }
+.fork-from small { display: block; font: 12px/1.6 var(--f-body); margin-bottom: 2px; }
+.fork-head h2 { margin: 0; font: 700 var(--t-lg)/1.4 var(--f-display); color: var(--ink); text-wrap: balance; }
+/* 发言下面的分支入口：一根小枝从发言里长出来 */
+.branch-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: -8px 0 0 44px; }
+.msg.me + .branch-chips { justify-content: flex-end; margin: -8px 44px 0 0; }
+.branch-chip { position: relative; display: inline-flex; align-items: center; gap: 5px; min-height: 36px; padding: 0 12px 0 10px; border-radius: 18px; border: 1px solid color-mix(in srgb, var(--brand) 35%, var(--line)); background: var(--surface); color: var(--brand); font-size: 13px; }
+.branch-chip b { font-weight: 650; }
+.branch-chip small { color: var(--muted); font-size: 12px; }
+.branch-chip.back { background: color-mix(in srgb, var(--brand) 8%, var(--surface)); }
+/* 从分支带回的一句话：学习者自己的结论，用衬线 */
+.back-line { align-self: stretch; display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 10px 14px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--brand) 30%, var(--line)); background: color-mix(in srgb, var(--brand) 6%, var(--surface)); color: var(--ink); }
+.back-line small { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--brand); font-weight: 600; }
+.back-line p { margin: 0; font: var(--t-md)/var(--lh-serif) var(--f-display); }
+/* 整棵树 */
+.tree, .tree ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.tree ul { margin-top: 4px; }
+.tree-node { width: 100%; min-height: 44px; display: flex; align-items: center; gap: 6px; padding-right: 12px; border-radius: 12px; border: 0; background: none; text-align: left; color: var(--ink); }
+.tree-node b { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-node small { margin-left: auto; flex: none; font-size: 12px; color: var(--muted); }
+.tree-node:not(:disabled):hover { background: var(--bg); }
+.tree-node.here { background: color-mix(in srgb, var(--brand) 10%, transparent); color: var(--brand); }
+.tree-node svg { flex: none; color: var(--brand); }
+.fork-form .chip { display: inline-flex; align-items: center; gap: 4px; color: var(--brand); min-height: 36px; }
+.serif-input { font-family: var(--f-display); line-height: var(--lh-serif); }

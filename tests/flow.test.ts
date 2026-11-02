@@ -334,3 +334,73 @@ test('editing the topic offers to update the roles for it; topic and key points 
   assert.equal(p.opening, '新的开场白');
   assert.equal(p.rolesFor, '我自己改的题目');
 });
+
+test('knowledge canvas (demo): branch from a word, talk there, bring one line back, review covers both', async () => {
+  update(s => { s.config.concept = '机会成本'; s.config.mode = 'canvas'; });
+  await actions.prepare();
+  actions.startSession();
+  await actions.send('少玩了一天');
+  let s = getState().session!;
+  const said = s.entries.findLast(e => e.kind === 'msg' && !e.human)!;
+  assert.ok(said.kind === 'msg' && said.terms?.includes('稀缺性'));
+  await actions.openBranch(said.id, '稀缺性');
+  s = getState().session!;
+  const b = s.branches![0];
+  assert.equal(s.at, b.id);
+  assert.equal(b.from, said.id);
+  const opener = s.entries.at(-1)!;
+  assert.ok(opener.kind === 'msg' && opener.branch === b.id && /稀缺性/.test(opener.text), 'the partner opens the branch on its topic');
+  await actions.send('比如周末的时间');
+  s = getState().session!;
+  assert.ok(s.entries.slice(-2).every(e => e.branch === b.id), 'talk inside the branch stays in the branch');
+  // 分支里，AI 看到的是主干到分叉点 + 这个分支
+  const snap = actions.snapshot(s);
+  assert.equal(snap.branch?.topic, '稀缺性');
+  assert.ok(snap.messages.some(m => m.text === '少玩了一天'));
+  assert.ok(snap.messages.some(m => m.text === '比如周末的时间'));
+
+  actions.bringBack('');
+  assert.equal(getState().session!.at, b.id, 'an empty line is not brought back');
+  actions.bringBack('时间和钱一样有限，用在一处就不能用在别处');
+  s = getState().session!;
+  assert.equal(s.at, undefined);
+  assert.equal(s.branches![0].gist, '时间和钱一样有限，用在一处就不能用在别处');
+  const trunk = actions.snapshot(s);
+  assert.equal(trunk.branch, undefined);
+  assert.ok(!trunk.messages.some(m => m.text === '比如周末的时间'), 'the trunk does not see the branch talk');
+  assert.ok(trunk.messages.some(m => m.kind === 'reflect' && m.text.includes('从分支「稀缺性」带回')), 'but it sees the line brought back');
+  // 复盘看整场：分支里的发言带着分支标记
+  const whole = actions.snapshot(s, true);
+  assert.ok(whole.messages.some(m => m.text === '比如周末的时间' && m.action === '分支：稀缺性'));
+
+  await actions.send('那做家教也是代价');
+  assert.equal(getState().session!.entries.at(-1)!.branch, undefined, 'back on the trunk');
+  await actions.finish();
+  assert.ok(getState().session!.review, 'review generated');
+  assert.equal(getState().library.length, 1);
+});
+
+test('knowledge canvas (API): a branch request carries only the path and the branch topic', async () => {
+  apiOn();
+  update(s => {
+    s.plan = { mode: 'canvas', concept: '机会成本', topic: '代价是什么？', keyPoints: ['放弃的最佳选择', '区别于沉没成本'], opening: '你觉得呢？', personas: [{ id: 'r0', tone: 'c', name: '林枝', title: '伙伴', persona: '' }], source: 'api', model: 'chosen', previous: null };
+  });
+  actions.startSession();
+  const sent: Record<string, unknown>[] = [];
+  let n = 0;
+  mockFetch(body => { sent.push(body.payload); n++; return Response.json({ text: `回复${n}`, covered: [], terms: n === 1 ? [] : [], model: 'chosen' }); });
+  await actions.send('少玩了一天');            // 回复1 在主干
+  await actions.send('那健身卡呢');            // 回复2 在主干
+  const s = getState().session!;
+  const first = s.entries.find(e => e.kind === 'msg' && e.text === '回复1')!;
+  await actions.openBranch(first.id, '稀缺性');  // 回复3：分支开场
+  const req = sent.at(-1)!.session as import('../shared/types.ts').SessionSnapshot;
+  assert.deepEqual(req.branch, { topic: '稀缺性', from: '回复1', path: [] });
+  const texts = req.messages.map(m => m.text);
+  assert.ok(texts.includes('回复1') && !texts.includes('那健身卡呢') && !texts.includes('回复2'), 'nothing said after the fork point');
+  assert.match(String(sent.at(-1)!.task), /稀缺性/);
+  assert.equal(getState().session!.entries.at(-1)!.branch, getState().session!.at);
+  // 太长的话题、非画布模式都不开分支
+  await actions.openBranch(first.id, '很'.repeat(41));
+  assert.equal(getState().session!.branches!.length, 1);
+});

@@ -8,19 +8,31 @@ import { playingId, speakText, startVoice, stopVoice } from './lib/voice.ts';
 import { cancelListening, listeningPhase, startListening, stopListening } from './lib/listen.ts';
 import * as room from './lib/room.ts';
 import { debateTurns, seatName, slots } from './lib/debate.ts';
+import { branchChain, pathEntries } from './lib/canvas.ts';
 import { DAY, schedule } from './lib/srs.ts';
 
 const TONES = ['c', 'a', 'b'] as const;
 const session = () => getState().session;
 
-export function snapshot(s: Session): SessionSnapshot {
+// whole：复盘要看整场讨论；知识画布平时只给 AI 看当前分支的路径（主干到分叉点 + 这个分支）
+export function snapshot(s: Session, whole = false): SessionSnapshot {
+  const canvas = s.mode === 'canvas';
+  const entries = canvas && !whole ? pathEntries(s) : s.entries;
+  const topicOf = (id?: string) => id && canvas ? s.branches?.find(b => b.id === id)?.topic : undefined;
+  const label = (id?: string) => whole && topicOf(id) ? `分支：${topicOf(id)}` : undefined;
+  const chain = canvas && !whole ? branchChain(s) : [];
+  const here = chain.at(-1);
+  const from = here && s.entries.find(e => e.id === here.from);
   return {
     mode: s.mode, concept: s.concept, topic: s.topic, keyPoints: s.keyPoints,
     roles: s.personas.map(r => ({ id: r.id, name: r.name, title: r.title, persona: r.persona })),
-    messages: s.entries.flatMap((m): SessionSnapshot['messages'] => m.kind === 'msg' && !m.skipped ? [{ kind: 'msg', name: m.name, text: m.text, action: m.action }]
-      : m.kind === 'reflect' && m.text ? [{ kind: 'reflect', name: '学习者', text: m.text }] : []),
+    messages: entries.flatMap((m): SessionSnapshot['messages'] => m.kind === 'msg' && !m.skipped ? [{ kind: 'msg', name: m.name, text: m.text, action: m.action ?? label(m.branch) }]
+      : m.kind === 'reflect' && m.text ? [{ kind: 'reflect', name: '学习者', text: m.text, action: label(m.branch) }]
+        // 从分支带回来的那句话是学习者自己写的，算他的小结
+        : m.kind === 'sys' && m.back && topicOf(m.back) && m.text ? [{ kind: 'reflect', name: '学习者', text: `（从分支「${topicOf(m.back)}」带回）${m.text}`, action: label(m.branch) }] : []),
     turns: s.mode === 'debate' ? s.turns : undefined, cursor: s.mode === 'debate' ? s.cursor : undefined,
-    stages: s.mode === 'debate' ? s.stages : undefined, finished: s.finished, context: s.context || undefined
+    stages: s.mode === 'debate' ? s.stages : undefined, finished: s.finished, context: s.context || undefined,
+    branch: here ? { topic: here.topic, from: from && from.kind === 'msg' ? from.text.slice(0, 300) : '', path: chain.slice(0, -1).map(b => b.topic) } : undefined
   };
 }
 const markCovered = (s: Session, list: number[] = []) => { for (const i of list) if (i >= 0 && i < s.keyPoints.length && !s.covered.includes(i)) s.covered.push(i); };
@@ -183,7 +195,7 @@ room.setOnFinished(async () => {
 function pushLearner(text: string) {
   update(st => {
     const s = st.session!;
-    s.entries.push({ id: uid(), kind: 'msg', who: 'learner', name: '学习者', human: true, text, source: 'human' });
+    s.entries.push({ id: uid(), kind: 'msg', who: 'learner', name: '学习者', human: true, text, source: 'human', branch: s.at });
     s.learnerTurns++; s.draft = ''; st.ui.hint = null;
   });
 }
@@ -209,11 +221,12 @@ export async function speak(roleId: string, task?: string) {
   const s = session(); if (!s) return;
   const role = s.personas.find(r => r.id === roleId)!;
   const id = uid();
+  const at = s.at;   // 生成期间换了分支，回复仍然放回提问的那个分支
   const res = await runAI('discuss', { session: snapshot(s), roleId, task }, `${role.name} 正在思考`, { id, kind: 'msg', who: role.id });
   if (!res || session()?.id !== s.id) return clearLive(id);
   update(st => {
     const ss = st.session!;
-    ss.entries.push({ id, kind: 'msg', who: role.id, name: role.name, text: res.text, source: res.source, model: res.model, terms: res.terms?.length ? res.terms : undefined });
+    ss.entries.push({ id, kind: 'msg', who: role.id, name: role.name, text: res.text, source: res.source, model: res.model, terms: res.terms?.length ? res.terms : undefined, branch: at });
     markCovered(ss, res.covered);
   });
   clearLive(id);
@@ -394,9 +407,9 @@ function maybeReflect() {
 }
 export function addReflection(auto = false) {
   const s = session(); if (!s) return;
-  if (s.entries.some(m => m.kind === 'reflect' && !m.text)) { if (!auto) toast('先完成上面那张小结卡。'); return; }
+  if (s.entries.some(m => m.kind === 'reflect' && !m.text && m.branch === s.at)) { if (!auto) toast('先完成上面那张小结卡。'); return; }
   update(st => {
-    const card = { id: uid(), kind: 'reflect' as const, text: '', feedback: '', draft: '' };
+    const card = { id: uid(), kind: 'reflect' as const, text: '', feedback: '', draft: '', branch: s.at };
     st.session!.entries.push(card);
     // 多人讨论的小结只留在自己的设备上，记下它跟在哪条发言后面
     st.session!.room?.reflections.push({ ...card, after: s.entries.at(-1)?.id ?? '' });
@@ -431,6 +444,48 @@ export async function submitReflection(id: string) {
     markCovered(st.session!, res.covered);
   });
   clearLive(id);
+}
+
+/* ---------- 知识画布 ---------- */
+const BRANCH_TOPIC_MAX = 40;
+// 从一条发言展开一个分支，AI 先把这个话题讲个大概
+export async function openBranch(fromId: string, topic: string) {
+  const s = session(); topic = topic.trim();
+  if (!s || s.mode !== 'canvas' || s.finished || getState().ui.busy) return;
+  if (!topic) return toast('写下这个分支想弄懂什么。');
+  if (topic.length > BRANCH_TOPIC_MAX) return toast(`分支话题写短一点，${BRANCH_TOPIC_MAX} 字以内。`);
+  const from = s.entries.find(e => e.id === fromId);
+  if (!from || from.kind !== 'msg') return;
+  const id = uid();
+  update(st => {
+    const ss = st.session!;
+    (ss.branches ??= []).push({ id, parent: from.branch, from: fromId, topic, created: Date.now() });
+    ss.at = id; ss.draft = '';
+    st.ui.sheet = null; st.ui.term = null; st.ui.hint = null;
+  });
+  await speak(s.personas[0].id, `学习者从这句话展开了一个分支，想弄懂「${topic}」。先用两三句话说说它大概是什么，最好带一个具体例子，再听听他怎么想。`);
+}
+// 跳到某个分支（undefined 是主干）
+export function goToBranch(at?: string) {
+  const s = session();
+  if (!s || s.mode !== 'canvas' || getState().ui.busy) return;
+  if (at && !s.branches?.some(b => b.id === at)) return;
+  update(st => { st.session!.at = at; st.session!.draft = ''; st.ui.sheet = null; st.ui.hint = null; });
+}
+// 带回上一层：学习者用一句话说这个分支弄懂了什么，挂在上一层，之后那一层的 AI 能看到
+export function bringBack(gist: string) {
+  const s = session(); gist = gist.trim();
+  const here = s?.branches?.find(b => b.id === s.at);
+  if (!s || !here || getState().ui.busy) return;
+  if (!gist) return toast('用一句话写下这个分支弄懂了什么，或者先不写，直接回去。');
+  update(st => {
+    const ss = st.session!;
+    const b = ss.branches!.find(x => x.id === here.id)!;
+    b.gist = gist.slice(0, 300);
+    ss.entries.push({ id: uid(), kind: 'sys', text: b.gist, branch: here.parent, back: here.id });
+    ss.at = here.parent; ss.draft = '';
+    st.ui.sheet = null; st.ui.hint = null;
+  });
 }
 
 /* ---------- 术语小卡片 ---------- */
@@ -475,7 +530,7 @@ export async function generateReview() {
   const s = session(); if (!s) return;
   const res = s.room
     ? await room.ask<{ data: Review; model?: string }>({ type: 'ask', purpose: 'review', reflections: s.room.reflections.filter(r => r.text).map(r => r.text) }, '正在复盘你在这场讨论里的理解').then(r => r && { ...r, source: 'api' as const })
-    : await runAI('review', { session: snapshot(s) }, '正在复盘整场讨论');
+    : await runAI('review', { session: snapshot(s, true) }, '正在复盘整场讨论');
   if (!res || session()?.id !== s.id) return;
   update(st => {
     const ss = st.session!;
