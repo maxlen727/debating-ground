@@ -244,6 +244,9 @@ test('discussion partners: no mandatory question, no sentence-by-sentence correc
     assert.match(p, /不要把立场当成错误来纠正/);
     assert.match(p, /温和纠正一下/, 'stock phrases are named as things not to say');
     assert.match(p, /还没有定论的问题.*当作开放问题/, 'contested questions stay open');
+    // 活人感：长短随内容、不加引号复述、不用对仗和破折号、讲具体的东西
+    assert.match(p, /像一个真人在聊天/); assert.match(p, /不要把对方的话加上引号复述/); assert.match(p, /不用破折号/); assert.match(p, /长短跟着内容走/);
+    assert.doesNotMatch(p, /通常 60 到 120 字/, 'no fixed length band');
     // 通用约束还在
     assert.match(p, /不要编造来源/); assert.match(p, /区分事实与观点/); assert.match(p, /\[\[要点/);
   }

@@ -85,7 +85,15 @@ export const SCENARIOS: Scenario[] = [
 export interface Metrics {
   aiTurns: number; questions: number; questionRatio: number; longestQuestionRun: number;
   askedAfterGuest: number; stock: string[]; avgLength: number; tooLong: number;
+  // “AI 味”：真人试用时觉得 AI 味太重。这些是读评测记录时最显眼的几种
+  templateOpen: number;   // 用套路开头的段数（“我同意…我再补一层”“顺着你这句”“打个比方”）
+  dashes: number;         // 破折号“——”的个数
+  notBut: number;         // “不是……而是……”式对仗的个数
+  lengthCV: number;       // 段落长短的变化（标准差 / 平均值）；真人说话有长有短
+  soEnding: number;       // 最后一句用“所以”总结的段数
 }
+// 套路开头：只看每段开头的十几个字
+const TEMPLATE_OPEN = /^.{0,10}?(我同意|我认同|同意|没错|我想补|我再补|我补一|补一层|再补一|再拆一|顺着|打个比方|举个例子|换个说法|换个画面|这个比方|这个例子|说得对|说到点子上|拎出来|(说的|提的|那句|这句)[“"「])/;
 // guests：AI 角色的名字；afterGuestTurns：哪几段 AI 发言是“请下一位”触发的
 export function measure(messages: Msg[], guests: Set<string>, afterGuestTurns: Set<number> = new Set()): Metrics {
   const ai = messages.map((m, i) => ({ m, i })).filter(x => guests.has(x.m.name));
@@ -98,15 +106,23 @@ export function measure(messages: Msg[], guests: Set<string>, afterGuestTurns: S
     for (const w of STOCK) if (m.text.includes(w)) stock.add(w);
   }
   const lengths = ai.map(x => Array.from(x.m.text).length);
+  const mean = lengths.length ? lengths.reduce((a, b) => a + b, 0) / lengths.length : 0;
+  const sd = lengths.length ? Math.sqrt(lengths.reduce((a, b) => a + (b - mean) ** 2, 0) / lengths.length) : 0;
+  const count = (re: RegExp) => ai.reduce((n, x) => n + (x.m.text.match(re)?.length ?? 0), 0);
   const questions = ai.filter(x => ASKS.test(x.m.text.trim())).length;
   return {
     aiTurns: ai.length, questions, questionRatio: ai.length ? questions / ai.length : 0, longestQuestionRun: longest,
     askedAfterGuest, stock: [...stock], avgLength: lengths.length ? Math.round(lengths.reduce((a, b) => a + b, 0) / lengths.length) : 0,
-    tooLong: lengths.filter(n => n > 180).length
+    tooLong: lengths.filter(n => n > 180).length,
+    templateOpen: ai.filter(x => TEMPLATE_OPEN.test(x.m.text.trim())).length,
+    dashes: count(/——/g),
+    notBut: count(/不是[^。！？；]{1,24}?(而是|，是|，而)/g),
+    lengthCV: mean ? Math.round(sd / mean * 100) / 100 : 0,
+    soEnding: ai.filter(x => /(^|[。！？])\s*所以[^。！？]*[。！？]?\s*$/.test(x.m.text.trim())).length
   };
 }
 // 合格线：大于这些就算“又在拷问了”
-export const LIMITS = { questionRatio: 0.6, longestQuestionRun: 2, askedAfterGuest: 0, stock: 0, tooLong: 0 };
+export const LIMITS = { questionRatio: 0.6, longestQuestionRun: 2, askedAfterGuest: 0, stock: 0, tooLong: 0, templateOpen: 0.3, dashes: 0.25, notBut: 0.3, lengthCV: 0.25, soEnding: 0.3 };
 // 反向讲解里，学生的疑问就是推动学习者讲解的方式，比例可以高一些（但仍不能连着问）
 export const RATIO_BY_MODE: Partial<Record<ModeId, number>> = { teach: 0.75 };
 export function problems(m: Metrics, mode?: ModeId): string[] {
@@ -116,6 +132,13 @@ export function problems(m: Metrics, mode?: ModeId): string[] {
   if (m.askedAfterGuest > LIMITS.askedAfterGuest) out.push(`接其他嘉宾的话时仍向学习者提问 ${m.askedAfterGuest} 次`);
   if (m.stock.length) out.push(`套话：${m.stock.join('、')}`);
   if (m.tooLong > LIMITS.tooLong) out.push(`${m.tooLong} 段超过 180 字`);
+  // AI 味（按每段算，避免场景长短不同时没法比）
+  const per = (n: number) => m.aiTurns ? n / m.aiTurns : 0;
+  if (per(m.templateOpen) > LIMITS.templateOpen) out.push(`${m.templateOpen} 段用套路开头`);
+  if (per(m.dashes) > LIMITS.dashes) out.push(`破折号 ${m.dashes} 个`);
+  if (per(m.notBut) > LIMITS.notBut) out.push(`“不是……而是”式对仗 ${m.notBut} 处`);
+  if (per(m.soEnding) > LIMITS.soEnding) out.push(`${m.soEnding} 段结尾用“所以”总结`);
+  if (m.aiTurns >= 4 && m.lengthCV < LIMITS.lengthCV) out.push(`段落长短太平均（变化 ${m.lengthCV}）`);
   return out;
 }
 
@@ -187,25 +210,25 @@ async function main() {
   const list = SCENARIOS.filter(s => !only.length || only.includes(s.name));
   const model = process.env.SIBIAN_MODEL || '自己部署的后端';
   const lines = [`# 提示词评测 · ${new Date().toLocaleString('zh-CN')}`, '', `模型：${model}`, ''];
-  const table = ['| 场景 | AI 发言 | 以提问结尾 | 最长连续提问 | 接嘉宾时问学习者 | 套话 | 平均字数 | 问题 |', '| --- | --- | --- | --- | --- | --- | --- | --- |'];
+  const table = ['| 场景 | AI 发言 | 以提问结尾 | 最长连续提问 | 接嘉宾时问学习者 | 套话 | 套路开头 / 所以结尾 | 破折号 / 对仗 | 平均字数（长短变化） | 问题 |', '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |'];
   const details: string[] = [];
   for (const s of list) {
     process.stdout.write(`跑「${s.name}」…`);
     try {
       const r = await run(s, call);
       const m = r.metrics;
-      table.push(`| ${s.name} | ${m.aiTurns} | ${m.questions}（${Math.round(m.questionRatio * 100)}%） | ${m.longestQuestionRun} | ${m.askedAfterGuest} | ${m.stock.join('、') || '无'} | ${m.avgLength} | ${r.issues.join('；') || '✓'} |`);
+      table.push(`| ${s.name} | ${m.aiTurns} | ${m.questions}（${Math.round(m.questionRatio * 100)}%） | ${m.longestQuestionRun} | ${m.askedAfterGuest} | ${m.stock.join('、') || '无'} | ${m.templateOpen} / ${m.soEnding} | ${m.dashes} / ${m.notBut} | ${m.avgLength}（${m.lengthCV}） | ${r.issues.join('；') || '✓'} |`);
       details.push(`## ${s.name}\n\n${s.why}\n\n` + r.messages.map(x => `**${x.name}${r.guests.has(x.name) ? '' : '（模拟）'}**：${x.text}`).join('\n\n')
         + `\n\n**复盘**：${r.review.oneLine}\n\n需要纠正：${r.review.misconceptions.map(x => `${x.said} → ${x.fix}`).join('；') || '无'}\n\n立场：${r.review.stances?.map(x => `${x.said}（${x.note}）`).join('；') || '无'}`);
       console.log(r.issues.length ? ` 有 ${r.issues.length} 个问题` : ' ✓');
     } catch (e) {
-      table.push(`| ${s.name} | – | – | – | – | – | – | 失败：${(e as Error).message} |`);
+      table.push(`| ${s.name} | – | – | – | – | – | – | – | – | 失败：${(e as Error).message} |`);
       console.log(' 失败：' + (e as Error).message);
     }
   }
   let prep = '';
   if (!only.length) { process.stdout.write('跑准备阶段…'); try { prep = await prepareChecks(call); console.log(' 完成'); } catch (e) { prep = '失败：' + (e as Error).message; console.log(' 失败'); } }
-  lines.push(...table, '', `合格线：以提问结尾不超过 ${LIMITS.questionRatio * 100}%（反向讲解 ${RATIO_BY_MODE.teach! * 100}%），连续提问不超过 ${LIMITS.longestQuestionRun} 段，接嘉宾时不问学习者，没有套话，单段不超过 180 字；复盘不把立场当误解，说错的概念要纠正。`, '');
+  lines.push(...table, '', `合格线：以提问结尾不超过 ${LIMITS.questionRatio * 100}%（反向讲解 ${RATIO_BY_MODE.teach! * 100}%），连续提问不超过 ${LIMITS.longestQuestionRun} 段，接嘉宾时不问学习者，没有套话，单段不超过 180 字；AI 味：套路开头和“所以”结尾各不超过 30% 的段落，破折号每段平均不超过 0.25 个，“不是……而是”不超过 0.3 处，段落长短变化不低于 0.25；复盘不把立场当误解，说错的概念要纠正。`, '');
   if (prep) lines.push('## 准备阶段', '', prep, '');
   lines.push(...details);
   const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'eval-out');

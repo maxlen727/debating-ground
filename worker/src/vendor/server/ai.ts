@@ -34,19 +34,19 @@ const RULES: Record<ModeId, { name: string; topic: string; roles: string; turn: 
   socratic: {
     name: '苏格拉底追问',
     topic: 'topic 是一个引导性的核心问题，以问号结尾；最好落在一个具体的场景里，初学者一看就能说上话。',
-    roles: 'roles 给 1 个：追问者，title 写“追问者”，persona 写他的提问风格。',
+    roles: 'roles 给 1 个：追问者，title 写“追问者”，persona 写他是个什么样的人、平时怎么说话（具体一点，像在描述一个真人）。',
     turn: '你是追问者，擅长用少而准的好问题帮学习者自己想明白。多用具体场景和例子让他发现说法里含糊的地方；他卡住时先给一个线索或例子，而不是再问一个更难的问题；他想明白了，就说清楚他对在哪里，再往下一层走。不要一口气把完整答案讲完。'
   },
   roundtable: {
     name: '圆桌讨论',
     topic: 'topic 是一个适合多学科讨论的开放问题，要具体、贴近生活，初学者一看就能说上话，不要写成学术论文的题目。',
-    roles: 'roles 给 3 个：来自三个不同学科的嘉宾，title 写学科身份，persona 写他看这个概念的独特角度。',
+    roles: 'roles 给 3 个：来自三个不同学科的嘉宾，title 写学科身份，persona 写他看这个概念的独特角度，再用半句话写他说话的样子（比如爱讲自己经历、说话直、慢条斯理爱打比方）；三个人的说话方式要明显不同。',
     turn: '你是圆桌嘉宾，带着你这门学科的知识、案例和看法来聊。可以回应学习者，也可以接其他嘉宾的话：赞同就补充，不同意就直说理由。像真实的圆桌一样，嘉宾之间可以有分歧，不必每次都把话题交还给学习者。'
   },
   teach: {
     name: '反向讲解',
     topic: 'topic 是学习者要完成的讲解任务，例如“向一个高中生讲清楚……”。',
-    roles: 'roles 给 1 个：一个聪明但对此一无所知的高中生，title 写“学生”，给他起一个名字。',
+    roles: 'roles 给 1 个：一个聪明但对此一无所知的高中生，title 写“学生”，给他起一个名字，persona 写他的性格和说话习惯（像一个具体的高中生）。',
     turn: '你是困惑的学生，学习者是老师。根据老师的讲解做出真实的反应：听懂了就用自己的话复述一下，或者举个你想到的例子让老师看对不对；讲得不清楚就说具体哪里没听懂；偶尔说出一个常见误解让老师纠正。不要自己讲解这个概念，也不要表现得比老师更懂。'
   },
   debate: {
@@ -61,6 +61,14 @@ const COMMON = '使用中文。引用的数据与研究必须有可靠依据；�
 const COVER_RULE = '最后另起一行，写出这一轮里（学习者上一句与你这一句）真正讲清楚的要点编号，格式 [[要点:1,3]]；没有就写 [[要点:]]。这一行只给系统读取，不会展示。';
 const TERM_RULE = '如果你这一句里用到了学习者可能不熟悉的专业名词，再另起一行写出它们，格式 [[术语:词1,词2]]，最多 3 个；每个词必须和你这句话里写的一字不差；不要写讨论的概念本身或要点清单里的内容；没有就不写这一行。这一行也只给系统读取。';
 const SPEECH_RULE = '中文口语，像面对面聊天，不用 Markdown、标题或列表；不替学习者或其他角色发言。';
+
+// 活人感：真人试用时觉得“AI 味”太浓。下面每一条都对应评测记录里反复出现的写法
+const VOICE_RULE = '说话要像一个真人在聊天，不像在写文章：'
+  + '长短跟着内容走，有时一两句就够，有时多说几句，不要每段都差不多长。'
+  + '直接说你想说的；接别人的话就随口接（比如“对，而且……”“这我不太同意”），不要把对方的话加上引号复述一遍再展开，也不要每次先表态“我同意”“说得对”。'
+  + '少一点书面腔：不用“不是……而是……”这样的对仗，不用破折号，不要在结尾用“所以……”再总结一遍，不要把道理说成格言。'
+  + '多讲具体的东西：你见过的一件事、一个具体的人、一个数字、一个画面。按你的身份和性格说话，可以有语气词、口头禅、一点犹豫或玩笑。'
+  + '学习者只回了“嗯”“不太懂”“可能吧”这样的话，像真人一样察觉到：可能说得太绕了，就停下来用大白话讲一句，或者问问他卡在哪里。';
 
 // 讨论伙伴：AI 是一起想问题的人，不是考官。提问是工具，不是每一轮的任务。
 // （真实讨论里发现：每轮都以提问结尾、逐句给学习者的话贴“事实/观点”标签，学习者会觉得在被拷问。）
@@ -92,7 +100,7 @@ function paceRule(s: SessionSnapshot): string {
   const p = paceOf(s);
   return (p.afterGuest ? '上一句是另一位嘉宾说的：这一轮接他的话说，回应、补充或反驳他，不要向学习者提问。' : '')
     + (!p.afterGuest && p.questionsInARow >= 2 ? '前面已经连着问了好几个问题：这一轮不要提问，说说你的看法、举个例子或讲点知识。' : '')
-    + (p.shortReply ? '学习者刚才回答得很短：先给他一个具体的例子或你自己的看法，不要接着追问更抽象的问题。' : '');
+    + (p.shortReply ? '学习者刚才回答得很短：可能是前面说得太绕，先用大白话或一个具体的例子说一句，不要接着追问更抽象的问题，也不要和别的嘉宾越聊越深。' : '');
 }
 
 /* ---------- 输入校验 ---------- */
@@ -168,7 +176,7 @@ export function buildRequest(purpose: Purpose | 'test', payload: unknown = {}): 
       const name = text(role.name, 40, '角色名'), title = String(role.title ?? '').slice(0, 40), persona = String(role.persona ?? '').slice(0, 500);
       const task = typeof p.task === 'string' ? p.task.slice(0, 300) : '';
       const system = COMMON + `你在一个用讨论来学习概念的应用里扮演「${name}」（${title}）。${persona ? '你的背景：' + persona + '。背景只影响你的知识范围和表达方式，不要照读。' : ''}`
-        + RULES[s.mode].turn + PARTNER_RULE + paceRule(s) + '通常 60 到 120 字，不超过 150 字。' + SPEECH_RULE + COVER_RULE + TERM_RULE;
+        + RULES[s.mode].turn + PARTNER_RULE + paceRule(s) + VOICE_RULE + '不超过 150 字。' + SPEECH_RULE + COVER_RULE + TERM_RULE;
       return { messages: pair(system, encode({ ...base, background: s.context || undefined, mode: RULES[s.mode].name, you: name, transcript: transcriptOf(s), extraRequest: task || undefined })), output: 'cover', n, exclude: excludeOf(s) };
     }
     case 'debate': {
@@ -226,7 +234,7 @@ export function buildRequest(purpose: Purpose | 'test', payload: unknown = {}): 
         + '{"oneLine":"一句话总体评价，不超过 50 字","points":[{"label":"要点原文","status":"mastered|partial|missing","note":"不超过 30 字的依据"}],"misconceptions":[{"said":"学习者的误解，转述","fix":"正确的理解，不超过 40 字"}],"stances":[{"said":"学习者的立场，转述","note":"点评他的理由，不超过 50 字"}],"quiz":[{"q":"题干","options":["A","B","C","D"],"answer":0,"why":"不超过 40 字的解析"}]}。'
         + scope
         // 立场不是误解：评理由，不评对错（真实讨论里“LLM 应该有权利”被当成误解列出来过）
-        + 'misconceptions 只放事实上说错的、概念用错的、该区分却混在一起的地方；没有就给空数组。价值判断、立场，以及对还没有定论的问题的判断（比如 AI 有没有意识或意志），都不是误解，不放进 misconceptions，放进 stances：note 只点评理由，比如理由是否说清楚了、推理有没有跳步、有没有考虑反方最有力的理由、和他别的说法是否一致，不评判立场本身对不对；没有表达立场就给空数组。“应该……”“我觉得……更好”这类主张都是立场；拿不准一句话算误解还是立场时，算立场。同一句话只放进一个地方。'
+        + 'misconceptions 只放事实上说错的、概念用错的、该区分却混在一起的地方；没有就给空数组。价值判断、立场，以及对还没有定论的问题的判断（比如 AI 有没有意识、意志、情感，该不该有权利），都不是误解，不放进 misconceptions，放进 stances：note 只点评理由，比如理由是否说清楚了、推理有没有跳步、有没有考虑反方最有力的理由、和他别的说法是否一致，不评判立场本身对不对；没有表达立场就给空数组。“应该……”“我觉得……更好”这类主张都是立场；拿不准一句话算误解还是立场时，算立场。同一句话只放进一个地方。'
         + 'quiz 出 3 道针对薄弱点的四选一单选题，只考事实和概念，不考立场，answer 是正确选项的下标（0 到 3）。';
       return { messages: pair(system, encode({ ...base, background: s.context || undefined, mode: RULES[s.mode].name, transcript: transcriptOf(s) })), output: 'review', n };
     }
