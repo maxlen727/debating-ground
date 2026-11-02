@@ -211,10 +211,66 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--b
 .pt { flex: none; font-size: 12px; padding: 4px 10px; border-radius: 20px; border: 1px dashed var(--line); color: var(--muted); transition: background .5s, color .5s, border-color .5s; }
 .pt.lit { border: 1px solid transparent; background: var(--lit); color: var(--lit-ink); font-weight: 650; animation: glow .9s ease-out; }
 @keyframes glow { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--lit-ink) 45%, transparent); } 100% { box-shadow: 0 0 0 8px transparent; } }
-.stage-strip { padding: 0 max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px)); gap: 6px; }
-.stage-pill { flex: none; font-size: 12px; padding: 3px 10px; border-radius: 8px; background: var(--bg); color: var(--muted); }
-.stage-pill.on { background: var(--brand); color: var(--brand-ink); font-weight: 600; }
-.stage-pill.done { text-decoration: line-through; opacity: .7; }
+/* 辩论台面：正方左、反方右，中间是当前环节；底下的赛程条每格一次发言 */
+.board { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 4px 10px; width: calc(100% - 2 * max(16px, env(safe-area-inset-left, 0px))); margin: 0 auto 10px; padding: 8px 10px; border-radius: 14px; background: var(--bg); border: 1px solid var(--line); text-align: left; color: var(--ink); font: inherit; cursor: pointer; }
+.board:active { transform: scale(.995); }
+.board-side { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.board-side.side-B { align-items: flex-end; text-align: right; }
+.board-name { font-size: 13px; font-weight: 700; display: flex; gap: 4px; align-items: baseline; }
+.side-A .board-name { color: var(--a-fg); }
+.side-B .board-name { color: var(--b-fg); }
+.board-name small { font-size: 11px; font-weight: 500; color: var(--muted); }
+.seat-toks { display: flex; gap: 4px; flex-wrap: wrap; }
+.side-B .seat-toks { flex-direction: row-reverse; }
+.seat-tok { position: relative; min-width: 30px; height: 30px; padding: 0 8px 0 6px; margin: 4px 4px 0 0; border-radius: 9px; display: grid; place-items: center; font-size: 12px; font-weight: 650; border: 1.5px solid transparent; }
+.side-A .seat-tok { background: var(--a-bg); color: var(--a-fg); }
+.side-B .seat-tok { background: var(--b-bg); color: var(--b-fg); }
+.seat-tok i { position: absolute; right: -6px; top: -6px; font: 600 9px/14px var(--f-body); font-style: normal; width: 14px; height: 14px; border-radius: 50%; background: var(--surface); color: var(--muted); text-align: center; }
+.seat-tok.mine { border-color: currentColor; }
+.seat-tok.on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px currentColor; animation: seat-on 1.6s ease-in-out infinite; }
+@keyframes seat-on { 50% { box-shadow: 0 0 0 2px var(--surface), 0 0 0 5px color-mix(in srgb, currentColor 40%, transparent); } }
+.board-mid { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 64px; }
+.board-mid b { font-size: 14px; white-space: nowrap; }
+.board-mid small { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.track { grid-column: 1 / -1; display: flex; gap: 6px; margin-top: 4px; }
+.track-stage { flex: 1; display: flex; gap: 2px; min-width: 0; }
+.track i { flex: 1; height: 5px; border-radius: 3px; background: var(--line); }
+.track i.done.side-A { background: color-mix(in srgb, var(--a-fg) 55%, var(--line)); }
+.track i.done.side-B { background: color-mix(in srgb, var(--b-fg) 55%, var(--line)); }
+.track i.now.side-A { background: var(--a-fg); }
+.track i.now.side-B { background: var(--b-fg); }
+.track i.now { animation: blink 1.4s ease-in-out infinite; }
+@keyframes blink { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .seat-tok.on, .track i.now { animation: none; } }
+/* 环节分隔 */
+.stage-div { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); margin-block: 4px; }
+.stage-div::before, .stage-div::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.stage-div span { padding: 2px 10px; border-radius: 10px; background: var(--bg); font-weight: 600; }
+/* 辩论发言：按阵营左右分开，气泡带阵营色 */
+.msg.side-B { flex-direction: row-reverse; }
+.msg.side-B .msg-body { align-items: flex-end; }
+.msg.side-A .bubble { background: color-mix(in srgb, var(--a-bg) 45%, var(--raised)); border-color: color-mix(in srgb, var(--a-fg) 22%, var(--line)); }
+.msg.side-B .bubble { background: color-mix(in srgb, var(--b-bg) 45%, var(--raised)); border-color: color-mix(in srgb, var(--b-fg) 22%, var(--line)); border-radius: 16px 4px 16px 16px; color: var(--ink); }
+.msg.side-A.mine .bubble { border-color: var(--a-fg); border-width: 1.5px; }
+.msg.side-B.mine .bubble { border-color: var(--b-fg); border-width: 1.5px; }
+/* 下一位的空讲台 */
+.lectern-next { display: flex; flex-direction: column; gap: 2px; max-width: 78%; padding: 10px 14px; border-radius: 14px; border: 1.5px dashed var(--line); font-size: 13px; color: var(--muted); }
+.lectern-next.side-A { align-self: flex-start; border-color: color-mix(in srgb, var(--a-fg) 45%, var(--line)); }
+.lectern-next.side-B { align-self: flex-end; text-align: right; border-color: color-mix(in srgb, var(--b-fg) 45%, var(--line)); }
+.lectern-who { font-weight: 650; }
+.side-A .lectern-who { color: var(--a-fg); }
+.side-B .lectern-who { color: var(--b-fg); }
+/* 双方阵容 */
+.roster { display: flex; flex-direction: column; gap: 14px; }
+.roster-side { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 14px; }
+.roster-side.side-A { background: color-mix(in srgb, var(--a-bg) 50%, var(--raised)); }
+.roster-side.side-B { background: color-mix(in srgb, var(--b-bg) 50%, var(--raised)); }
+.roster-side h3 { margin: 0; font-size: 14px; }
+.roster-side.side-A h3 { color: var(--a-fg); }
+.roster-side.side-B h3 { color: var(--b-fg); }
+.roster-seat b { font-size: 14px; }
+.roster-seat small { font-weight: 500; color: var(--muted); }
+.roster-seat p { margin: 2px 0 0; font-size: 13px; color: var(--muted); line-height: 1.6; }
 
 .thread { flex: 1; display: flex; flex-direction: column; gap: 16px; padding-block: 18px 12px; }
 .sysline { align-self: center; max-width: 92%; text-align: center; font-size: 12.5px; color: var(--muted); background: var(--bg); padding: 6px 14px; border-radius: 14px; line-height: 1.6; }

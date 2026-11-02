@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { MODES } from '../../shared/modes.ts';
 import { QUICK_MESSAGES } from '../../shared/room.ts';
 import type { ChatMessage, Entry, Reflection } from '../../shared/types.ts';
@@ -6,6 +6,7 @@ import { QUICK, addReflection, aiTakeover, callOn, currentTurn, decidePoint, dro
 import { Empty, ErrorBanner, Icon, Sheet } from '../components/ui.tsx';
 import { CaretField } from '../components/SmoothCaret.tsx';
 import { Reveal } from '../components/Reveal.tsx';
+import { DebateBoard, NextLectern, RosterSheet, StageDivider, seatWho } from '../components/DebateArena.tsx';
 import { useLive } from '../lib/stream.ts';
 import { cancelAI } from '../lib/ai.ts';
 import { seatName } from '../lib/debate.ts';
@@ -36,7 +37,6 @@ export function Session() {
 
   const debate = s.mode === 'debate';
   const room = s.room;
-  const turn = currentTurn(s);
   const sheetMsg = s.entries.find((m): m is ChatMessage => m.id === ui.sheet && m.kind === 'msg');
   const lastAi = [...s.entries].reverse().find(m => m.kind === 'msg' && !m.human && !m.memberId)?.id;
   const canFinish = !room || room.host;
@@ -68,17 +68,20 @@ export function Session() {
           )}
         </div>
         {room && <RoomBar s={s} />}
-        {debate && (
-          <div className="stage-strip scroll-x" aria-label="比赛环节">
-            {s.stages.map((st, i) => <span key={i} className={'stage-pill' + (turn?.stage === i ? ' on' : (turn && i < turn.stage) || s.finished || s.awaitingReview ? ' done' : '')}>{st.name}</span>)}
-          </div>
-        )}
+        {debate && <DebateBoard s={s} />}
       </div>
 
       <main className="thread pad">
-        {s.entries.map(m => <EntryView key={m.id} m={m} s={s} showTip={m.id === lastAi && s.learnerTurns === 0 && !s.finished} voice={voice} />)}
+        {s.entries.map((m, i) => (
+          <Fragment key={m.id}>
+            {/* 辩论：环节变了就画一条分隔线 */}
+            {debate && m.kind === 'msg' && m.stage !== undefined && m.stage !== prevStage(s, i) && <StageDivider name={s.stages[m.stage]?.name ?? ''} />}
+            <EntryView m={m} s={s} showTip={m.id === lastAi && s.learnerTurns === 0 && !s.finished} voice={voice} />
+          </Fragment>
+        ))}
         {live?.kind === 'msg' && !s.entries.some(e => e.id === live.id) ? <LiveMessage s={s} onStop={room ? undefined : cancelAI} />
-          : <>{aiBusy && <Typing label={aiBusy} />}{ui.busy && <Typing label={ui.busy} onStop={cancelAI} />}</>}
+          : aiBusy || ui.busy ? <>{aiBusy && <Typing label={aiBusy} />}{ui.busy && <Typing label={ui.busy} onStop={cancelAI} />}</>
+            : debate && <NextLectern s={s} waiting={nextWaiting(s)} />}
       </main>
 
       {ui.explain && (
@@ -119,6 +122,7 @@ export function Session() {
       {room && ui.sheet === 'seats' && <SeatSheet s={s} />}
       {room?.host && ui.invite && <InviteSheet s={s} />}
       {ui.sheet === 'points' && <PointsSheet s={s} />}
+      {debate && ui.sheet === 'roster' && <RosterSheet s={s} />}
       {ui.sheet === 'finish' && (
         <Sheet title="现在结束比赛？" onClose={() => update(st => { st.ui.sheet = null; })}>
           <p className="sheet-text">还有 {s.turns.length - s.cursor} 次发言没有进行，包括后面的总结陈词。结束后{room ? '每个人' : '你'}只能按已有的发言复盘。</p>
@@ -149,8 +153,8 @@ function LiveMessage({ s, onStop }: { s: S; onStop?: () => void }) {
   const tone = debate ? (seat?.team === 'A' ? 'a' : 'b') : persona?.tone ?? 'a';
   if (!live.text) return <Typing label={live.label} onStop={onStop} />;
   return (
-    <div className="msg live" aria-live="polite" aria-busy="true">
-      <span className={'avatar tone-' + tone} aria-hidden="true">{debate ? live.who : persona?.name.slice(0, 1) ?? '…'}</span>
+    <div className={'msg live' + (debate ? ' side-' + (seat?.team ?? 'A') : '')} aria-live="polite" aria-busy="true">
+      <span className={'avatar tone-' + tone} aria-hidden="true">{debate ? (live.who ?? '').slice(1) : persona?.name.slice(0, 1) ?? '…'}</span>
       <div className="msg-body">
         <div className="msg-meta"><b>{debate ? (seat ? seatName(seat) : live.label) : `${persona?.name ?? ''}${persona?.title ? ' · ' + persona.title : ''}`}</b><span>正在说</span>{onStop && <button className="link" onClick={onStop}>停止</button>}</div>
         <div className="bubble"><Reveal id={live.id} text={live.text} live /></div>
@@ -383,7 +387,7 @@ function Composer({ s }: { s: S }) {
   return (
     <>
       {debate && turn && (
-        <div className="turn-banner"><span className={'dot team-' + turn.role.team} aria-hidden="true" />轮到 <b>{seatName(turn.role)}</b>{turn.role.type === 'human' ? '（你）' : ''} · {turn.action}{turn.target ? ` → ${turn.target}` : ''}<span className="muted grow-right">{s.cursor + 1}/{s.turns.length}</span></div>
+        <div className="turn-banner"><span className={'dot team-' + turn.role.team} aria-hidden="true" />轮到 <b>{seatName(turn.role)}</b>{turn.role.type === 'human' ? '（你）' : ''} · {turn.action}{turn.target ? ` → ${targetName(s, turn.target)}` : ''}<span className="muted grow-right">{s.cursor + 1}/{s.turns.length}</span></div>
       )}
       <HintCard />
       <div className="tools scroll-x">
@@ -420,14 +424,17 @@ function EntryView({ m, s, showTip, voice }: { m: Entry; s: S; showTip: boolean;
   const peer = isPeer(m);
   const persona = s.personas.find(r => r.id === m.who);
   const debate = s.mode === 'debate';
-  const tone = me ? 'me' : debate ? (m.team === 'A' ? 'a' : 'b') : peer ? 'peer' : persona?.tone ?? 'a';
+  const tone = debate ? (m.team === 'A' ? 'a' : 'b') : me ? 'me' : peer ? 'peer' : persona?.tone ?? 'a';
   const seat = debate ? m.name.replace(/（.*）$/, '') : '';
+  const target = debate && m.target ? s.seats.find(x => x.id === m.target) : undefined;
   const label = me ? (debate ? seat + ' · 你' : '你')
     : debate ? m.name : peer ? m.name : `${m.name}${persona?.title ? ' · ' + persona.title : ''}`;
-  const meta = [debate ? m.action : '', m.source === 'demo' && !me ? '演示' : m.source === 'api' && !me ? m.model : '', peer && !debate ? '同学' : ''].filter(Boolean).join(' · ');
-  const avatarText = me ? '我' : debate ? m.who : m.name.slice(0, 1);
+  const meta = [debate ? (m.action ?? '') + (target ? ` → ${seatName(target)}` : '') : '', m.source === 'demo' && !me ? '演示' : m.source === 'api' && !me ? m.model : '', peer && !debate ? '同学' : ''].filter(Boolean).join(' · ');
+  const avatarText = debate ? m.who.slice(1) : me ? '我' : m.name.slice(0, 1);
+  // 辩论按阵营分左右（正方左、反方右），不按“是不是我”
+  const side = debate ? ' side-' + (m.team ?? 'A') + (me ? ' mine' : '') : (me ? ' me' : '') + (peer ? ' peer' : '');
   return (
-    <div className={'msg' + (me ? ' me' : '') + (peer ? ' peer' : '')}>
+    <div className={'msg' + side}>
       <span className={'avatar tone-' + tone} aria-hidden="true">{avatarText}</span>
       <div className="msg-body">
         <div className="msg-meta"><b>{label}</b>{meta && <span>{meta}</span>}{m.skipped && <span>已跳过</span>}{voice && !m.skipped && <VoiceButton id={m.id} label={label} />}</div>
@@ -531,3 +538,20 @@ function MicButton({ phase }: { phase: ReturnType<typeof useListening> }) {
     </button>
   );
 }
+
+// 辩论：上一条发言属于哪个环节（第一条之前当作“没有”）
+function prevStage(s: S, i: number): number | undefined {
+  for (let k = i - 1; k >= 0; k--) { const e = s.entries[k]; if (e.kind === 'msg' && e.stage !== undefined) return e.stage; }
+  return undefined;
+}
+// 下一位的空讲台上写什么：等谁
+function nextWaiting(s: S): string {
+  const t = s.turns[s.cursor];
+  const seat = t && s.seats.find(x => x.id === t.role.id);
+  if (!seat) return '';
+  const who = seatWho(s, seat);
+  if (who.short === '我') return '轮到你';
+  if (s.room) return who.short === 'AI' ? 'AI 准备中' : who.short === '空' ? '等同学入座' : `等${who.long}发言`;
+  return 'AI 待发言';
+}
+const targetName = (s: S, id: string) => { const t = s.seats.find(x => x.id === id); return t ? seatName(t) : id; };
