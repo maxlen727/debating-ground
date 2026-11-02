@@ -4,6 +4,7 @@ import { useSyncExternalStore } from 'react';
 import type { Entry, ModeId, Persona, Previous, Reflection, Review, Seat, SeatConfig, Source, Stage, Team, TermCard, Turn, ExplainKind } from '../shared/types.ts';
 import type { PointProposal, RoomMember, RoomStatus, Speaker } from '../shared/room.ts';
 import { DEFAULT_VOICE } from '../shared/speech.ts';
+import { holdingRenders, transition, type View } from './lib/motion.ts';
 
 export type Screen = 'learn' | 'prepare' | 'session' | 'review' | 'library' | 'card' | 'settings' | 'join';
 
@@ -132,15 +133,27 @@ function persist() {
 }
 
 export const getState = () => state;
+// 界面上“在哪一页、开着哪个面板”：它变了，就用连贯动效切换
+const viewOf = (s: AppState): View => ({
+  screen: s.ui.screen,
+  overlay: s.ui.sheet ?? (s.ui.term ? 'term:' + s.ui.term.term : s.ui.explain ? 'explain' : s.ui.invite ? 'invite' : null)
+});
+// 界面读的是 rendered，不是最新的 state：页面过渡拍下旧画面之前，界面一直显示旧状态，
+// 哪怕前面还有一次没画完的更新（比如点开卡片时先记下卡片 id，再换页）
+let rendered: AppState = state;
+const notify = () => { rendered = state; listeners.forEach(l => l()); };
 export function update(fn: (draft: AppState) => void) {
+  const before = viewOf(state);
   const next = structuredClone(state);
   fn(next);
   state = next;
   persist();
-  listeners.forEach(l => l());
+  const after = viewOf(next);
+  if (before.screen !== after.screen || before.overlay !== after.overlay) transition(before, after, notify);
+  else if (!holdingRenders()) notify();
 }
 export function useApp(): AppState {
-  return useSyncExternalStore(cb => { listeners.add(cb); return () => listeners.delete(cb); }, () => state);
+  return useSyncExternalStore(cb => { listeners.add(cb); return () => listeners.delete(cb); }, () => rendered);
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -149,14 +162,14 @@ export function toast(text: string) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => update(s => { s.ui.toast = ''; }), 3000);
 }
+// 换页时回到顶部由 transition 在新的一帧里做
 export function go(screen: Screen) {
   update(s => { s.ui.screen = screen; s.ui.sheet = null; s.ui.explain = null; });
-  globalThis.scrollTo?.({ top: 0 });
 }
 export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 // 测试用：重置为初始状态
 export function resetForTests(next?: Partial<AppState>) {
   state = { ...load(), ...next };
-  listeners.forEach(l => l());
+  notify();
 }

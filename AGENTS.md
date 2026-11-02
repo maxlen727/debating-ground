@@ -71,6 +71,7 @@ cd worker && npm install && npm run dev   # 本地运行后端（先把 .dev.var
 - 新的多行输入框用 `CaretField` 包一层，和其他输入框一样有平滑光标。
 - 文案站在用户一侧，说清楚会发生什么：按钮写动作（“开始讨论”），错误写原因和办法，不道歉、不含糊。不用 emoji 当图标。
 - 尊重 `prefers-reduced-motion`；输入框字号不小于 16px（避免手机缩放）。
+- 动效讲“从哪里来，回哪里去”：换页面、开关面板都经过 `update()` 交给 `lib/motion.ts`，不要绕开它直接改 DOM 或另写转场。跨页面是同一个东西的新元素，在 `styles.css` 的“连贯动效”一节登记 `view-transition-name`；只在某次导航里才连着的，用 `--vtn` 加 `data-nav` 限定。
 - 改了界面，在手机宽度下截图检查，并把截图附在 PR 里。
 
 ## 改提示词时
