@@ -5,6 +5,8 @@ import { discussAgain, generateReview, resume } from '../actions.ts';
 import { BusyStrip, Empty, ErrorBanner, Icon, Pill, Quiz, TopBar } from '../components/ui.tsx';
 import { exportSession } from '../lib/exporter.ts';
 import { go, useApp } from '../store.ts';
+import { useEffect } from 'react';
+import { flash } from '../lib/light.ts';
 
 export function Ring({ done, total }: { done: number; total: number }) {
   const r = 30, c = 2 * Math.PI * r, frac = total ? done / total : 0;
@@ -55,6 +57,13 @@ export function ReviewBody({ r, terms }: { r: R; terms?: TermCard[] }) {
 
 export function Review() {
   const { session: s, ui, library } = useApp();
+  // 复盘出来时，掌握度圆环亮一下（等页面过渡结束）
+  const ready = !!s?.review;
+  useEffect(() => {
+    if (!ready) return;
+    const t = setTimeout(() => flash(document.querySelector('.review .ring'), { radius: 240, strength: 0.9, duration: 1800 }), 520);
+    return () => clearTimeout(t);
+  }, [ready, s?.id]);
   if (!s) return <div className="screen"><TopBar title="理解复盘" back="learn" /><Empty title="还没有复盘" text="完成一次讨论后，这里会显示你弄懂了多少。" /></div>;
   const r = s.review;
   const hasInput = s.entries.some(m => (m.kind === 'msg' && m.human) || (m.kind === 'reflect' && m.text));

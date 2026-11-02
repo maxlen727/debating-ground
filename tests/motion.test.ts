@@ -32,3 +32,9 @@ test('without View Transitions the change is applied at once', () => {
   transition(v('learn'), v('prepare'), () => { done++; });
   assert.equal(done, 1);
 });
+
+test('light: flashing without a page (Node, tests) is a no-op', async () => {
+  const { flash } = await import('../src/lib/light.ts');
+  assert.doesNotThrow(() => flash({ x: 1, y: 2 }));
+  assert.doesNotThrow(() => flash(null));
+});
