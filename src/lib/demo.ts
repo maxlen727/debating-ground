@@ -33,6 +33,16 @@ function genericPrep(c: string, mode: ModeId): PrepareResult {
   };
 }
 
+// 演示：辩手的认知背景（真实模型会按论题生成）
+const COST_DEBATERS = {
+  A: ['在县城读完高中、家里供两个孩子上学的大一新生', '做过三年学费贷款咨询的银行职员', '研究教育回报率的经济学研究生', '自己交学费、边打工边读书的夜校学生'],
+  B: ['高中毕业直接进厂、五年后当上班组长的技术工人', '劳动经济学老师，关心被放弃的工资和经验', '中途辍学创业的程序员', '心理咨询师，常听学生谈“耽误的青春”']
+};
+const genericDebaters = (c: string) => ({
+  A: [`在工作中天天用到「${c}」的从业者`, `教「${c}」的中学老师`, `写过「${c}」科普文章的作者`, `刚学完「${c}」的大学生`],
+  B: [`觉得「${c}」被说得太玄的工程师`, `研究「${c}」反例的学者`, `只在考试里见过「${c}」的学生`, `对「${c}」有不同定义的另一学科的研究者`]
+});
+
 const COST_REPLIES: [string, number[], string[]?][] = [
   ['你说到了“少玩了一天”，这很重要：时间也有稀缺性，代价不只是钱。那如果那天你本来可以去做家教赚 500 元，这时打工的代价又是什么？', [0, 2], ['稀缺性']],
   ['对，关键是你放弃的选项里最好的那一个。睡懒觉、打游戏、做家教都被放弃了，为什么只算做家教？', [1]],
@@ -95,7 +105,10 @@ export async function demoRun<P extends Purpose>(purpose: P, payload: PayloadMap
   const s = getState().session;
   if (purpose === 'prepare') {
     const p = payload as PayloadMap['prepare'];
-    return { data: p.concept === '机会成本' ? costPrep(p.mode) : genericPrep(p.concept, p.mode) };
+    const prep = p.concept === '机会成本' ? costPrep(p.mode) : genericPrep(p.concept, p.mode);
+    if (p.mode === 'debate') prep.debaters = p.concept === '机会成本' ? COST_DEBATERS : genericDebaters(p.concept);
+    if (p.topic) prep.topic = p.topic;   // 学习者改过的题目照用
+    return { data: prep };
   }
   if (!s) return null;
   const cost = s.concept === '机会成本';

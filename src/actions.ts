@@ -1,7 +1,7 @@
 // 学习流程的所有操作：准备 → 讨论 → 小结 → 复盘 → 知识库
-import type { ChatMessage, ExplainKind, PointSuggestion, Previous, Review, SessionSnapshot, TermCard } from '../shared/types.ts';
+import type { ChatMessage, ExplainKind, PointSuggestion, Previous, Review, SessionSnapshot, Team, TermCard } from '../shared/types.ts';
 import { getState, go, toast, uid, update } from './store.ts';
-import type { Card, Session } from './store.ts';
+import type { Card, Config, Session } from './store.ts';
 import { runAI } from './lib/ai.ts';
 import { clearLive } from './lib/stream.ts';
 import { playingId, speakText, startVoice, stopVoice } from './lib/voice.ts';
@@ -42,11 +42,38 @@ export async function prepare(previous: Previous | null = null, knownContext?: s
   update(s => {
     s.plan = {
       mode: config.mode, concept: d.concept || concept, topic: d.topic, keyPoints: d.keyPoints, opening: d.opening,
-      personas: d.roles.map((r, i) => ({ id: 'r' + i, tone: TONES[i % 3], name: r.name, title: r.title, persona: r.persona })),
-      source: res.source, model: res.model, previous, context
+      personas: personasOf(d.roles),
+      source: res.source, model: res.model, previous, context, debaters: d.debaters, rolesFor: d.topic
     };
+    applyDebaters(s.config, d.debaters);
     s.ui.context = null;
     s.ui.screen = 'prepare';
+  });
+}
+const personasOf = (roles: { name: string; title: string; persona: string }[]) =>
+  roles.map((r, i) => ({ id: 'r' + i, tone: TONES[i % 3], name: r.name, title: r.title, persona: r.persona }));
+// 辩手背景跟着这次的论题走：每次准备都覆盖，之前手动改过的不会带到下一场
+function applyDebaters(config: Config, debaters?: Record<Team, string[]>) {
+  if (!debaters) return;
+  for (const t of ['A', 'B'] as const) debaters[t].forEach((bg, i) => {
+    config.seats[t][i] = { type: config.seats[t][i]?.type ?? 'ai', bg };
+  });
+}
+
+// 准备页改了讨论题：题目和要点不动，只让角色（圆桌嘉宾、追问者、辩手背景、开场白）按新题目重新设定
+export async function refreshRoles() {
+  const { plan } = getState();
+  if (!plan || getState().ui.busy) return;
+  const topic = plan.topic.trim();
+  if (!topic) return toast('先写好讨论题。');
+  const res = await runAI('prepare', { concept: plan.concept, mode: plan.mode, previous: plan.previous, context: plan.context, topic }, '正在按新题目设定角色');
+  if (!res) return;
+  const d = res.data;
+  update(s => {
+    const p = s.plan; if (!p) return;
+    if (p.mode !== 'debate' && d.roles.length) { p.personas = personasOf(d.roles); p.opening = d.opening || p.opening; }
+    if (d.debaters) { p.debaters = d.debaters; applyDebaters(s.config, d.debaters); }
+    p.rolesFor = topic;
   });
 }
 export const setContextDraft = (text: string) => update(s => { if (s.ui.context) s.ui.context.text = text; });

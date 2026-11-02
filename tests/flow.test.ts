@@ -282,3 +282,38 @@ test('a specific event: the AI asks for background first, then everything uses i
   assert.equal(turn.purpose, 'discuss');
   assert.match(turn.session.context, /亚托莉/);
 });
+
+test('debater backgrounds follow the topic: each preparation replaces them, edits do not leak into the next debate', async () => {
+  update(s => { s.config.concept = '机会成本'; s.config.mode = 'debate'; s.config.seats.A[1] = { type: 'ai', bg: '我上一场手动改的背景' }; });
+  await actions.prepare();
+  const seats = getState().config.seats;
+  assert.equal(seats.A[0].bg, '在县城读完高中、家里供两个孩子上学的大一新生');
+  assert.notEqual(seats.A[1].bg, '我上一场手动改的背景');
+  assert.equal(seats.A[0].type, 'human', 'who sits in a seat is kept');
+  update(s => { s.config.seats.B[0].bg = '这一场我改的'; });
+  update(s => { s.config.concept = '边际效用'; });
+  await actions.prepare();
+  assert.match(getState().config.seats.B[0].bg, /边际效用/);
+});
+
+test('editing the topic offers to update the roles for it; topic and key points stay', async () => {
+  const calls: Record<string, unknown>[] = [];
+  mockFetch(({ purpose, payload }) => {
+    calls.push(payload);
+    return new Response(JSON.stringify({ data: { concept: '机会成本', topic: payload.topic ?? '原来的题目', keyPoints: ['生成的要点一', '生成的要点二'], roles: [{ name: payload.topic ? '新嘉宾' : '旧嘉宾', title: '经济学', persona: '按题目设定' }], opening: payload.topic ? '新的开场白' : '旧的开场白' }, model: 'm' }));
+    void purpose;
+  });
+  apiOn();
+  update(s => { s.config.concept = '机会成本'; s.config.mode = 'socratic'; });
+  await actions.prepare();
+  assert.equal(getState().plan!.rolesFor, '原来的题目');
+  update(s => { s.plan!.topic = '我自己改的题目'; s.plan!.keyPoints = ['我的要点', '另一个']; });
+  await actions.refreshRoles();
+  const p = getState().plan!;
+  assert.equal(calls.at(-1)!.topic, '我自己改的题目');
+  assert.equal(p.topic, '我自己改的题目');
+  assert.deepEqual(p.keyPoints, ['我的要点', '另一个']);
+  assert.equal(p.personas[0].name, '新嘉宾');
+  assert.equal(p.opening, '新的开场白');
+  assert.equal(p.rolesFor, '我自己改的题目');
+});
