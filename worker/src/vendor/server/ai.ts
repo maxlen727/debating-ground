@@ -52,7 +52,7 @@ const RULES: Record<ModeId, { name: string; topic: string; roles: string; turn: 
   debate: {
     name: '正反辩论',
     topic: 'topic 是一个两边都有得辩、能逼出这个概念关键点的辩题，写成可以支持或反对的陈述句，不加引号。',
-    roles: 'roles 给空数组（辩手由学习者自己编排）。',
+    roles: 'roles 给空数组（辩手由学习者自己编排）。另给 debaters：{"A":[4 个字符串],"B":[4 个字符串]}，是正方（支持）和反方（反对）各 4 位辩手的认知背景，每个一句话、不超过 40 字，写这个人是谁、从什么经验或关切出发看这个辩题；同一方的 4 位要彼此不同，要贴合这个辩题，不写成“理性”“严谨”这类空话。',
     turn: ''
   }
 };
@@ -140,17 +140,20 @@ export function buildRequest(purpose: Purpose | 'test', payload: unknown = {}): 
       weakPoints: Array.isArray(p.previous.weak) ? p.previous.weak.slice(0, 6).map(x => String(x).slice(0, 60)) : []
     } : null;
     const context = typeof p.context === 'string' ? p.context.trim().slice(0, 600) : '';
+    const fixedTopic = typeof p.topic === 'string' ? p.topic.trim().slice(0, 300) : '';
     const opening = modeId === 'debate' ? 'opening 给空字符串。' : 'opening 是第一个角色的开场白，中文口语，不超过 80 字：先抛出一个具体的场景、例子或你的看法，再自然地请学习者说说想法；不要直接把要点讲完。';
     const pointGuidance = modeId === 'debate'
       ? 'keyPoints 是本场辩论最值得交锋的 3 到 4 个核心争点或判断标准；简洁、彼此有区别，不要把它们写成必须逐项完成的清单。'
       : 'keyPoints 是真正理解这个概念要弄懂的 4 到 5 个要点，每个不超过 12 个字，由浅入深。要点写“要弄懂的东西”：概念、关键的区分、机制、各方的理由；不要写成立场或结论。有争议的问题写成“对××的不同看法”，常见的误解也可以列进去。';
     // 输入是一件具体的事（某个群、某个人、某次争论），模型又不了解经过时，先请学习者交代背景，别凭空出题
-    const needContext = context ? '' : '如果学习者写的不是一个概念或术语，而是一件具体的事（某个群聊、某个人、某次争论、不广为人知的事件），而你并不确定它的经过，就不要猜，只输出 {"needsContext":"一句话，请学习者简单说说经过；只点出最关键的一两点，不要列一串问题"}。';
+    const needContext = context || fixedTopic ? '' : '如果学习者写的不是一个概念或术语，而是一件具体的事（某个群聊、某个人、某次争论、不广为人知的事件），而你并不确定它的经过，就不要猜，只输出 {"needsContext":"一句话，请学习者简单说说经过；只点出最关键的一两点，不要列一串问题"}。';
     const system = COMMON + '你是一个用讨论来学习概念的应用里的备课老师，为一次讨论做准备。只输出一个 JSON 对象，不要任何说明或代码块标记。格式：{"concept":"规范化后的概念名","topic":"…","keyPoints":["…"],"roles":[{"name":"中文名","title":"身份","persona":"一句话描述"}],"opening":"…"}。'
       + pointGuidance + mode.topic + mode.roles + opening + needContext
       + (context ? '资料中的 background 是学习者交代的经过，讨论题、要点和开场白都要以它为准；里面没有的细节不要编。' : '')
+      // 学习者在准备页改了讨论题：题目照用，角色和开场白围绕新题目重新设定
+      + (fixedTopic ? '讨论题已经由学习者定好，就是资料中的 topic：原样放进 topic，不要改写；角色、开场白和辩手背景都围绕它来设定。' : '')
       + (prev ? '学习者以前讨论过这个概念，资料中的 weakPoints 是上次还模糊或没讲到的地方。这次的讨论题和开场白要从这些薄弱点切入。' : '');
-    return { messages: pair(system, JSON.stringify({ concept, mode: mode.name, background: context || undefined, previous: prev })), output: 'prepare', mode: modeId, asked: !!context };
+    return { messages: pair(system, JSON.stringify({ concept, mode: mode.name, topic: fixedTopic || undefined, background: context || undefined, previous: prev })), output: 'prepare', mode: modeId, asked: !!context || !!fixedTopic };
   }
 
   const s = checkSession(p.session);
@@ -299,6 +302,11 @@ export function finalize(request: BuiltRequest, result: { text: string; model: s
     const keyPoints = arr(data.keyPoints).map(k => short(k, 40)).filter(Boolean).slice(0, 6);
     const roles = debate ? [] : arr(data.roles).filter(isObj).filter(r => r.name).slice(0, 3).map(r => ({ name: short(r.name, 20), title: short(r.title, 20), persona: short(r.persona, 200) }));
     const out: PrepareResult = { concept: short(data.concept, 40), topic: short(data.topic, 200), keyPoints, roles, opening: debate ? '' : short(data.opening, 400) };
+    if (debate && isObj(data.debaters)) {
+      const side = (v: unknown) => arr(v).map(x => short(x, 120)).filter(Boolean).slice(0, 4);
+      const d = { A: side(data.debaters.A), B: side(data.debaters.B) };
+      if (d.A.length && d.B.length) out.debaters = d;
+    }
     if (keyPoints.length < 2 || !out.topic || (!debate && (!roles.length || !out.opening))) throw new ApiError('模型返回的讨论准备不完整，请重试。', 502);
     return { data: out, model: result.model };
   }

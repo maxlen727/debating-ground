@@ -316,3 +316,17 @@ test('sameClaim tells paraphrases of one claim from different claims', () => {
   assert.equal(sameClaim('现在的LLM应该有权利', '机会成本就是花掉的钱'), false);
   assert.equal(sameClaim('', '什么'), false);
 });
+
+test('debate preparation gives each side topic-specific backgrounds; a fixed topic is kept', () => {
+  const r = buildRequest('prepare', { concept: '机会成本', mode: 'debate' });
+  assert.match(r.messages[0].content, /debaters/);
+  const out = finalize(r, { text: JSON.stringify({ concept: '机会成本', topic: '上大学的最大成本是学费', keyPoints: ['a', 'b', 'c'], roles: [], opening: '', debaters: { A: ['县城新生', '银行职员', '研究生', '夜校学生', '多余的'], B: ['技术工人', '劳动经济学老师'] } }), model: 'm' }) as { data: { debaters: { A: string[]; B: string[] } } };
+  assert.deepEqual(out.data.debaters, { A: ['县城新生', '银行职员', '研究生', '夜校学生'], B: ['技术工人', '劳动经济学老师'] });
+  const none = finalize(r, { text: JSON.stringify({ concept: 'x', topic: 't', keyPoints: ['a', 'b'], roles: [], opening: '', debaters: { A: [] } }), model: 'm' }) as { data: { debaters?: unknown } };
+  assert.equal(none.data.debaters, undefined, 'missing sides are dropped, not half-filled');
+
+  const fixed = buildRequest('prepare', { concept: '机会成本', mode: 'roundtable', topic: '我改过的题目' });
+  assert.match(fixed.messages[0].content, /讨论题已经由学习者定好/);
+  assert.equal(user(fixed).topic, '我改过的题目');
+  assert.doesNotMatch(fixed.messages[0].content, /只输出 \{"needsContext"/, 'a fixed topic never asks for background');
+});

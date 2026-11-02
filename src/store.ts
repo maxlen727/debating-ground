@@ -25,6 +25,8 @@ export interface Plan {
   mode: ModeId; concept: string; topic: string; keyPoints: string[]; opening: string;
   personas: Persona[]; source: Source; model?: string; previous: Previous | null;
   context?: string;   // 学习者交代的背景（具体事件类的话题）
+  debaters?: Record<Team, string[]>;   // 辩论：按论题生成的辩手背景，增加席位时从这里取
+  rolesFor?: string;  // 角色是按哪道题设定的；学习者改了题目后用来提示“角色还是旧的”
 }
 export interface DebateSeat extends Seat { name: string }
 // 多人讨论房间。房间状态以后端为准，这里是最近一次收到的副本。

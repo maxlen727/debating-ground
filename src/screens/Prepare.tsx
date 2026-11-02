@@ -2,7 +2,7 @@ import { MODES, STAGE_KINDS } from '../../shared/modes.ts';
 import type { StageKind, Team } from '../../shared/types.ts';
 import { useRef, useState } from 'react';
 import { CaretField } from '../components/SmoothCaret.tsx';
-import { canInvite, inviteFriends, prepare, startSession } from '../actions.ts';
+import { canInvite, inviteFriends, prepare, refreshRoles, startSession } from '../actions.ts';
 import { BusyStrip, ErrorBanner, Icon, Sheet, Stepper, TopBar } from '../components/ui.tsx';
 import { debateTurns, slots } from '../lib/debate.ts';
 import { go, update, useApp } from '../store.ts';
@@ -35,6 +35,13 @@ export function Prepare() {
         <section className="panel">
           <h3 className="section-label">{debate ? '辩题' : '讨论题'}</h3>
           <textarea className="topic-input" value={plan.topic} maxLength={200} rows={2} aria-label="讨论题" onChange={e => setPlan(p => { p.topic = e.target.value; })} />
+          {/* 角色是按原来的题目设定的：题目改了，提示一下，可以只更新角色 */}
+          {plan.source === 'api' && plan.rolesFor !== undefined && plan.topic.trim() && plan.topic.trim() !== plan.rolesFor.trim() && (
+            <div className="roles-stale">
+              <span>{debate ? '辩手背景' : '角色'}还是按原来的题目设定的。</span>
+              <button className="ghost small" disabled={busy} onClick={refreshRoles}>按新题目更新{debate ? '辩手背景' : '角色'}</button>
+            </div>
+          )}
         </section>
 
         <section className="panel">
@@ -135,7 +142,9 @@ function Seats() {
   const { config } = useApp();
   const setCount = (t: Team, n: number) => update(s => {
     s.config.counts[t] = n;
-    while (s.config.seats[t].length < n) s.config.seats[t].push({ type: 'ai', bg: '从实际案例出发，关注论证的适用条件。' });
+    // 新席位用这次按论题生成的背景；没有（演示或旧后端）才用通用的一句
+    while (s.config.seats[t].length < n) s.config.seats[t].push({ type: 'ai', bg: s.plan?.debaters?.[t][s.config.seats[t].length] ?? '从实际案例出发，关注论证的适用条件。' });
+    for (let i = 0; i < n; i++) if (!s.config.seats[t][i].bg.trim() && s.plan?.debaters?.[t][i]) s.config.seats[t][i].bg = s.plan.debaters[t][i];
   });
   return (
     <section className="panel">
