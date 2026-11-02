@@ -169,6 +169,23 @@ test('single-player debate: a seat left for classmates is played by AI', async (
   assert.ok(getState().session!.cursor >= 2, 'AI spoke for 反方一辩');
 });
 
+test('demo debate: a rebuttal quotes only what the opponent said, not the quote inside it', async () => {
+  update(s => {
+    s.config.mode = 'debate';
+    s.plan = { mode: 'debate', concept: '机会成本', topic: '上大学的最大成本是学费', keyPoints: ['放弃的最佳选择', '区别于沉没成本'], opening: '', personas: [], source: 'demo', previous: null };
+  });
+  actions.startSession();
+  await actions.send('我方立论……');
+  for (let i = 0; i < 8 && !getState().session!.finished; i++) {
+    const t = actions.currentTurn(getState().session);
+    if (!t) break;
+    if (t.role.type === 'human') await actions.send('我方回应……'); else await actions.generateSeat();
+  }
+  for (const m of getState().session!.entries) {
+    if (m.kind === 'msg') assert.ok((m.text.match(/对方辩友刚才表示/g) ?? []).length <= 1, m.text);
+  }
+});
+
 test('streaming in API mode: text shows while it is written; a failure removes it and keeps progress', async () => {
   const { getLive } = await import('../src/lib/stream.ts');
   apiOn(); learningPlan(); actions.startSession();

@@ -88,7 +88,11 @@ function debateText(s: Session, t: Turn): string {
   else if (t.action === '答辩') text = '回应对方质询：我方主张以明确的适用范围为前提，不主张无条件适用。边界之外的情形需要另行判断，不能直接否定边界以内的结论。';
   else if (t.action === '总结陈词') text = `谢谢主席。我方对本辩题的${stance}立场不变。核心分歧在于「${s.concept}」的适用条件、比较标准和举证责任。结论必须由相应论据支持，不能把可能性直接等同于必然性。谢谢。`;
   else text = '对方辩友，从一个案例推导普遍结论，需要说明案例具有何种代表性。我方质疑的正是这一推导，而非案例是否可能发生。请对方回应其适用范围。';
-  if (opponent && opponent.kind === 'msg' && t.action !== '立论' && t.action !== '总结陈词') text = `对方辩友刚才表示：“${opponent.text.slice(0, 60)}${opponent.text.length > 60 ? '…' : ''}”\n\n` + text;
+  if (opponent && opponent.kind === 'msg' && t.action !== '立论' && t.action !== '总结陈词') {
+    // 只引对方这次自己说的话，不连带他引用的上一段
+    const own = opponent.text.split('\n\n').at(-1) ?? opponent.text;
+    text = `对方辩友刚才表示：“${own.slice(0, 60)}${own.length > 60 ? '…' : ''}”\n\n` + text;
+  }
   return text;
 }
 
