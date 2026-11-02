@@ -356,3 +356,19 @@ test('knowledge canvas: a branch turn stays on the branch topic; branch info is 
   const prep = buildRequest('prepare', { concept: '机会成本', mode: 'canvas' });
   assert.match(prep.messages[0].content, /讨论伙伴/);
 });
+
+test('换我来讲: in socratic the same partner turns into a listening student; only socratic may swap', () => {
+  const plain = buildRequest('discuss', { session: learning, roleId: 'r0' });
+  assert.doesNotMatch(plain.messages[0].content, /换学习者来讲/);
+  const r = buildRequest('discuss', { session: { ...learning, teaching: true }, roleId: 'r0' });
+  assert.match(r.messages[0].content, /换学习者来讲/);
+  assert.match(r.messages[0].content, /不要自己讲解这个概念/);
+  // 学生规则放在伙伴规则后面，后说的算
+  assert.ok(r.messages[0].content.indexOf('换学习者来讲') > r.messages[0].content.indexOf('一起把这个概念想明白的伙伴'));
+  assert.equal(user(r).learnerIsTeaching, true);
+  assert.throws(() => buildRequest('discuss', { session: { ...learning, mode: 'roundtable', teaching: true }, roleId: 'r0' }), /讲解状态无效/);
+  assert.throws(() => buildRequest('discuss', { session: { ...learning, teaching: 'yes' }, roleId: 'r0' }));
+  assert.match(buildRequest('review', { session: learning }).messages[0].content, /讲给伙伴听/);
+  // 旧界面还会发反向讲解的请求：后端继续接受
+  assert.doesNotThrow(() => buildRequest('prepare', { concept: 'x', mode: 'teach' }));
+});

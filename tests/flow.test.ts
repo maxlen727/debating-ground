@@ -404,3 +404,36 @@ test('knowledge canvas (API): a branch request carries only the path and the bra
   await actions.openBranch(first.id, '很'.repeat(41));
   assert.equal(getState().session!.branches!.length, 1);
 });
+
+test('换我来讲 (demo): swap in, learner teaches, swap back with feedback; review sees the teaching turns', async () => {
+  update(s => { s.config.concept = '机会成本'; s.config.mode = 'socratic'; });
+  await actions.prepare();
+  actions.startSession();
+  await actions.toggleTeaching();
+  let s = getState().session!;
+  assert.equal(s.teaching, true);
+  assert.ok(s.entries.some(e => e.kind === 'sys' && e.text.startsWith('换你来讲')));
+  assert.match((s.entries.at(-1) as { text: string }).text, /当学生/);
+  assert.equal(actions.snapshot(s).teaching, true);
+  await actions.send('机会成本就是你为了一件事放弃的最好的另一件事');
+  s = getState().session!;
+  const mine = s.entries.findLast(e => e.kind === 'msg' && e.human)!;
+  assert.ok(mine.kind === 'msg' && mine.action === actions.TEACHING);
+  await actions.toggleTeaching();
+  s = getState().session!;
+  assert.equal(s.teaching, false);
+  assert.match((s.entries.at(-1) as { text: string }).text, /讲得|例子/);
+  assert.equal(actions.snapshot(s).teaching, undefined);
+  assert.ok(actions.snapshot(s, true).messages.some(m => m.action === actions.TEACHING));
+});
+
+test('反向讲解 is folded into socratic: a saved teach choice opens as socratic', async () => {
+  for (const k of Object.keys(store)) delete store[k];
+  store['sibian-v3'] = JSON.stringify({ config: { ...defaultConfig(), mode: 'teach' }, plan: { mode: 'teach', concept: 'x' }, library: [] });
+  resetForTests();
+  assert.equal(getState().config.mode, 'socratic');
+  assert.equal(getState().plan, null);
+  const { MODE_ORDER, MODES } = await import('../shared/modes.ts');
+  assert.ok(!MODE_ORDER.includes('teach'));
+  assert.equal(MODES.teach.name, '反向讲解', 'old cards still show their mode name');
+});

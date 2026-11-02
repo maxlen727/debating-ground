@@ -32,6 +32,7 @@ export function snapshot(s: Session, whole = false): SessionSnapshot {
         : m.kind === 'sys' && m.back && topicOf(m.back) && m.text ? [{ kind: 'reflect', name: '学习者', text: `（从分支「${topicOf(m.back)}」带回）${m.text}`, action: label(m.branch) }] : []),
     turns: s.mode === 'debate' ? s.turns : undefined, cursor: s.mode === 'debate' ? s.cursor : undefined,
     stages: s.mode === 'debate' ? s.stages : undefined, finished: s.finished, context: s.context || undefined,
+    teaching: s.mode === 'socratic' && s.teaching && !whole ? true : undefined,
     branch: here ? { topic: here.topic, from: from && from.kind === 'msg' ? from.text.slice(0, 300) : '', path: chain.slice(0, -1).map(b => b.topic) } : undefined
   };
 }
@@ -195,7 +196,7 @@ room.setOnFinished(async () => {
 function pushLearner(text: string) {
   update(st => {
     const s = st.session!;
-    s.entries.push({ id: uid(), kind: 'msg', who: 'learner', name: '学习者', human: true, text, source: 'human', branch: s.at });
+    s.entries.push({ id: uid(), kind: 'msg', who: 'learner', name: '学习者', human: true, text, source: 'human', branch: s.at, action: s.teaching ? TEACHING : undefined });
     s.learnerTurns++; s.draft = ''; st.ui.hint = null;
   });
 }
@@ -222,11 +223,12 @@ export async function speak(roleId: string, task?: string) {
   const role = s.personas.find(r => r.id === roleId)!;
   const id = uid();
   const at = s.at;   // 生成期间换了分支，回复仍然放回提问的那个分支
+  const student = s.teaching;
   const res = await runAI('discuss', { session: snapshot(s), roleId, task }, `${role.name} 正在思考`, { id, kind: 'msg', who: role.id });
   if (!res || session()?.id !== s.id) return clearLive(id);
   update(st => {
     const ss = st.session!;
-    ss.entries.push({ id, kind: 'msg', who: role.id, name: role.name, text: res.text, source: res.source, model: res.model, terms: res.terms?.length ? res.terms : undefined, branch: at });
+    ss.entries.push({ id, kind: 'msg', who: role.id, name: role.name, text: res.text, source: res.source, model: res.model, terms: res.terms?.length ? res.terms : undefined, branch: at, action: student ? STUDENT : undefined });
     markCovered(ss, res.covered);
   });
   clearLive(id);
@@ -444,6 +446,25 @@ export async function submitReflection(id: string) {
     markCovered(st.session!, res.covered);
   });
   clearLive(id);
+}
+
+/* ---------- 换我来讲 ---------- */
+// 费曼学习法：苏格拉底追问里，学习者可以换过来当老师，伙伴暂时当听讲的学生
+export const TEACHING = '讲给伙伴听';
+export const STUDENT = '当学生';
+export async function toggleTeaching() {
+  const s = session();
+  if (!s || s.mode !== 'socratic' || s.finished || getState().ui.busy) return;
+  const name = s.personas[0].name;
+  const on = !s.teaching;
+  update(st => {
+    const ss = st.session!;
+    ss.teaching = on;
+    ss.entries.push({ id: uid(), kind: 'sys', text: on ? `换你来讲：${name}现在是听讲的学生，把「${ss.concept}」讲给他听。` : `换回来了，${name}接着和你一起想。` });
+  });
+  await speak(s.personas[0].id, on
+    ? '学习者要换他来讲了。用一句话表示你准备好当学生听讲，可以先说一个你作为初学者对这个概念最大的疑惑。'
+    : '学习者讲完了，你换回讨论伙伴。用两三句话说说他刚才的讲解哪里讲清楚了、哪里还可以讲得更准，然后接着讨论。');
 }
 
 /* ---------- 知识画布 ---------- */
