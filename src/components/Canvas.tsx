@@ -1,9 +1,10 @@
 // 知识画布：路径条、分叉处的分支入口、分支开头、带回来的小结、整棵树的导航，以及展开和带回的面板。
 // 只负责展示，操作都在 actions 里。
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { ChatMessage, SystemLine } from '../../shared/types.ts';
 import { bringBack, goToBranch, openBranch } from '../actions.ts';
-import { branchById, branchChain, branchesFrom, childrenOf, talkCount } from '../lib/canvas.ts';
+import { branchById, branchChain, branchesFrom, graphOf, pathEntries, talkCount, type GraphRow } from '../lib/canvas.ts';
+import { flash } from '../lib/light.ts';
 import { update, useApp, type Session } from '../store.ts';
 import { CaretField } from './SmoothCaret.tsx';
 import { Icon, Sheet } from './ui.tsx';
@@ -28,7 +29,7 @@ export function CanvasPath({ s }: { s: Session }) {
           </li>
         ))}
       </ol>
-      <button className="tree-btn" aria-label={`整棵树，共 ${total} 个分支`} onClick={() => openSheet('tree')}><Icon name="branch" size={18} />{total > 0 && <small>{total}</small>}</button>
+      <button className="tree-btn" aria-label={`分支图，共 ${total} 个分支`} onClick={() => openSheet('tree')}><Icon name="branch" size={18} />{total > 0 && <small>{total}</small>}</button>
     </nav>
   );
 }
@@ -74,25 +75,77 @@ export function BackLine({ m, s }: { m: SystemLine; s: Session }) {
   );
 }
 
-// 整棵树：主干和所有分支，点哪里去哪里
-export function TreeSheet({ s }: { s: Session }) {
+// 分支图：像 GitLens 的提交图。每条发言一行，主干和每个分支各占一条彩色轨道，
+// 分叉和带回用曲线连起来；点一行就跳到那个分支的那条发言。
+const ROW = 56, GAP = 20, PAD = 16;
+const lx = (lane: number) => PAD + lane * GAP;
+const ry = (row: number) => ROW / 2 + row * ROW;
+// 像 git 的图：分叉时一出节点就拐进自己的轨道再直着往下走；带回时直着走到那一行前面才拐回去。
+// 隔了很多行的分叉（从很早的一句话展开）也不会斜穿过别的轨道
+const forkPath = (x1: number, y1: number, x2: number, y2: number) => `M${x1} ${y1} C${x1} ${y1 + ROW * 0.42} ${x2} ${y1 + ROW * 0.18} ${x2} ${y1 + ROW * 0.6} L${x2} ${y2}`;
+const mergePath = (x1: number, y1: number, x2: number, y2: number) => `M${x1} ${y1} L${x1} ${y2 - ROW * 0.6} C${x1} ${y2 - ROW * 0.18} ${x2} ${y2 - ROW * 0.42} ${x2} ${y2}`;
+
+export function GraphSheet({ s }: { s: Session }) {
   const { ui } = useApp();
+  const g = graphOf(s);
   const busy = !!ui.busy;
-  const node = (at: string | undefined, label: string, depth: number) => (
-    <li key={at ?? 'trunk'}>
-      <button className={'tree-node' + (s.at === at ? ' here' : '')} style={{ paddingLeft: 12 + depth * 18 }} disabled={busy} aria-current={s.at === at ? 'location' : undefined} onClick={() => goToBranch(at)}>
-        {depth > 0 && <Icon name="branch" size={15} />}<b>{label}</b><small>{talkCount(s, at)} 条{branchById(s, at)?.gist ? ' · 已带回' : ''}</small>
-      </button>
-      {childrenOf(s, at).length > 0 && <ul>{childrenOf(s, at).map(b => node(b.id, b.topic, depth + 1))}</ul>}
-    </li>
-  );
+  const onPath = new Set(pathEntries(s).map(e => e.id));
+  const here = s.at;
+  const firstOf = new Map<string, string>();      // 每个分支的第一行：在那里挂分支名
+  for (const r of g.rows) { const k = r.branch ?? ''; if (!firstOf.has(k)) firstOf.set(k, r.id); }
+  const topic = (id?: string) => id ? branchById(s, id)?.topic ?? '' : '主干';
+  const lastHere = [...g.rows].reverse().find(r => r.branch === here);
+  const listRef = useRef<HTMLOListElement>(null);
+  // 打开时把你现在所在的地方滚到中间
+  // （只滚面板自己，不用 scrollIntoView：它会连后面的页面一起滚）
+  useEffect(() => {
+    const row = listRef.current?.querySelector<HTMLElement>('.g-row.here-last');
+    const sheet = listRef.current?.closest<HTMLElement>('.sheet');
+    if (row && sheet) sheet.scrollTop = row.offsetTop + (listRef.current!.offsetTop) - sheet.clientHeight / 2;
+  }, []);
+  const jump = (row: GraphRow) => {
+    goToBranch(row.branch);
+    // 等页面切过去、列表滚完，再把那条发言滚到中间，让它亮一下
+    setTimeout(() => {
+      const el = document.querySelector(`[data-entry="${row.id}"]`);
+      el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      setTimeout(() => flash(el?.querySelector('.bubble') ?? el, { radius: 190, strength: 0.8 }), 380);
+    }, 620);
+  };
+  const width = lx(g.width - 1) + PAD;
   return (
-    <Sheet title="整棵树" onClose={closeSheet}>
-      <ul className="tree">{node(undefined, '主干', 0)}</ul>
-      <p className="fineprint">{s.branches?.length ? '每个分支里，AI 只看得到主干到分叉点为止的内容和这个分支本身。' : '还没有分支。轻点一句发言，就能从那里展开一个分支单独聊。'}</p>
+    <Sheet title="分支图" className="graph-sheet" onClose={closeSheet}>
+      {!g.rows.length ? <p className="sheet-text muted">还没有发言。</p> : (
+        <div className="graph" style={{ '--gw': width + 'px' } as CSSProperties}>
+          <svg className="graph-lines" width={width} height={g.rows.length * ROW} aria-hidden="true">
+            {g.lanes.map(l => <line key={'l' + (l.branch ?? 't')} className={'lane-' + (l.lane % LANES)} x1={lx(l.lane)} x2={lx(l.lane)} y1={ry(l.fromRow)} y2={ry(l.toRow)} />)}
+            {g.edges.map((e, i) => <path key={i} className={'edge lane-' + ((e.kind === 'fork' ? e.toLane : e.fromLane) % LANES) + (e.kind === 'merge' ? ' merge' : '')} d={(e.kind === 'fork' ? forkPath : mergePath)(lx(e.fromLane), ry(e.fromRow), lx(e.toLane), ry(e.toRow))} />)}
+            {g.rows.map(r => {
+              const x = lx(r.lane), y = ry(r.index), c = 'node lane-' + (r.lane % LANES) + ' ' + r.kind + (onPath.has(r.id) ? '' : ' off');
+              return r.kind === 'back' ? <rect key={r.id} className={c} x={x - 6} y={y - 6} width={12} height={12} rx={2} transform={`rotate(45 ${x} ${y})`} />
+                : <circle key={r.id} className={c} cx={x} cy={y} r={r.kind === 'me' ? 6.5 : 5.5} />;
+            })}
+          </svg>
+          <ol className="graph-rows" ref={listRef}>
+            {g.rows.map(r => (
+              <li key={r.id} className={'g-row' + (r.branch === here ? ' here' : '') + (onPath.has(r.id) ? '' : ' off') + (r.id === lastHere?.id ? ' here-last' : '')}>
+                <button disabled={busy} onClick={() => jump(r)} aria-label={`${r.who}：${clip(r.text, 40)}，在${topic(r.branch)}`}>
+                  <span className="g-head">
+                    {firstOf.get(r.branch ?? '') === r.id && <i className={'g-tag lane-' + (r.lane % LANES)}>{topic(r.branch)}</i>}
+                    <b>{r.who}</b>
+                  </span>
+                  <span className="g-text">{r.text}</span>
+                </button>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+      <p className="fineprint">每个分支里，AI 只看得到主干到分叉点为止的内容和这个分支本身。点一行就跳过去。</p>
     </Sheet>
   );
 }
+const LANES = 6;
 
 // 展开分支：AI 标出的新词一点就开；也可以自己写想弄懂什么
 export function ForkForm({ m }: { m: ChatMessage }) {

@@ -40,3 +40,29 @@ test('a broken parent link never loops forever', () => {
   const loop: Branch[] = [{ id: 'X', parent: 'Y', from: 't1', topic: 'x', created: 1 }, { id: 'Y', parent: 'X', from: 't1', topic: 'y', created: 2 }];
   assert.equal(branchChain({ entries, branches: loop, at: 'X' }).length, 2);
 });
+
+test('graph: trunk on lane 0, a branch on its own lane, fork and merge curves', async () => {
+  const { graphOf } = await import('../src/lib/canvas.ts');
+  // t1 t2 → 从 t2 展开 A（a1 a2）→ A 带回主干（back）→ t3 → 从 t3 展开 B（b1）
+  const list: Entry[] = [msg('t1'), msg('t2'), msg('a1', 'A'), msg('a2', 'A'), { id: 'back', kind: 'sys', text: '弄懂了', back: 'A' }, msg('t3'), msg('b1', 'B')];
+  const bs: Branch[] = [{ id: 'A', from: 't2', topic: '稀缺性', created: 1, gist: '弄懂了' }, { id: 'B', from: 't3', topic: '沉没成本', created: 2 }];
+  const g = graphOf({ entries: list, branches: bs });
+  assert.deepEqual(g.rows.map(r => r.id), ['t1', 't2', 'a1', 'a2', 'back', 't3', 'b1']);
+  assert.deepEqual(g.rows.map(r => r.lane), [0, 0, 1, 1, 0, 0, 1], 'B reuses lane 1 after A is brought back');
+  assert.equal(g.rows[4].kind, 'back');
+  assert.deepEqual(g.edges.find(e => e.kind === 'fork' && e.branch === 'A'), { kind: 'fork', branch: 'A', fromRow: 1, fromLane: 0, toRow: 2, toLane: 1 });
+  assert.deepEqual(g.edges.find(e => e.kind === 'merge'), { kind: 'merge', branch: 'A', fromRow: 3, fromLane: 1, toRow: 4, toLane: 0 });
+  assert.equal(g.width, 2);
+});
+
+test('graph: branches alive at the same time get different lanes; a sub-branch sits beside its parent', async () => {
+  const { graphOf } = await import('../src/lib/canvas.ts');
+  const g = graphOf({ entries, branches });   // A 和 A1、B 交错进行
+  const lane = (id: string) => g.rows.find(r => r.id === id)!.lane;
+  assert.notEqual(lane('a1'), lane('x1'), 'a sub-branch never shares its parent lane');
+  assert.notEqual(lane('a2'), lane('b1'), 'A is still alive when B starts');
+  assert.equal(lane('t4'), 0);
+  const subFork = g.edges.find(e => e.branch === 'A1')!;
+  assert.equal(subFork.fromLane, lane('a1'), 'the sub-branch forks off its parent lane');
+  assert.ok(g.width >= 3);
+});

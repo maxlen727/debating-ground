@@ -8,7 +8,7 @@ import { QUICK, addReflection, aiTakeover, callOn, currentTurn, decidePoint, dro
 import { Empty, ErrorBanner, Icon, Sheet } from '../components/ui.tsx';
 import { CaretField } from '../components/SmoothCaret.tsx';
 import { Reveal } from '../components/Reveal.tsx';
-import { BackLine, BackSheet, BranchChips, CanvasPath, ForkForm, ForkHeader, TreeSheet } from '../components/Canvas.tsx';
+import { BackLine, BackSheet, BranchChips, CanvasPath, ForkForm, ForkHeader, GraphSheet } from '../components/Canvas.tsx';
 import { levelEntries } from '../lib/canvas.ts';
 import { DebateBoard, NextLectern, RosterSheet, StageDivider, seatWho } from '../components/DebateArena.tsx';
 import { useLive } from '../lib/stream.ts';
@@ -160,7 +160,7 @@ export function Session() {
       {room?.host && ui.invite && <InviteSheet s={s} />}
       {ui.sheet === 'points' && <PointsSheet s={s} />}
       {debate && ui.sheet === 'roster' && <RosterSheet s={s} />}
-      {canvas && ui.sheet === 'tree' && <TreeSheet s={s} />}
+      {canvas && ui.sheet === 'tree' && <GraphSheet s={s} />}
       {canvas && ui.sheet === 'back' && <BackSheet s={s} />}
       {ui.sheet === 'finish' && (
         <Sheet title="现在结束比赛？" onClose={() => update(st => { st.ui.sheet = null; })}>
