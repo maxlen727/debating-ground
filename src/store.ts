@@ -53,6 +53,7 @@ export interface Session {
   glossary?: TermCard[];   // 这次讨论里点开看过的术语
   branches?: Branch[];     // 知识画布：从某句发言展开的分支
   at?: string;             // 知识画布：正在看的分支（没有就是主干）
+  teaching?: boolean;      // 苏格拉底追问：学习者“换我来讲”，AI 暂时当听讲的学生
 }
 // 知识画布的一个分支：从 from 这条发言展开（它在 parent 那一层），gist 是学习者带回上一层的一句话
 export interface Branch { id: string; parent?: string; from: string; topic: string; gist?: string; created: number }
@@ -106,6 +107,9 @@ function load(): AppState {
   const base: AppState = { config: defaultConfig(), plan: null, session: null, library: [], ai: { available: false, configured: false, verified: false, baseURL: '', model: '', remoteVerified: false, remoteModel: '', ttsConfigured: false, remoteTtsConfigured: false }, ui: defaultUi() };
   try {
     const saved = JSON.parse(localStorage.getItem(STORE) ?? 'null');
+    // 反向讲解并进了苏格拉底追问（“换我来讲”）：选着它的设置改过来，按它准备的计划作废；进行中的讨论和知识卡片照旧
+    if (saved?.config?.mode === 'teach') saved.config.mode = 'socratic';
+    if (saved?.plan?.mode === 'teach') saved.plan = null;
     if (saved) return { ...base, config: { ...base.config, ...saved.config }, plan: saved.plan ?? null, session: saved.session ?? null, library: Array.isArray(saved.library) ? saved.library : [], ui: { ...base.ui, screen: saved.screen === 'session' && saved.session && !saved.session.finished ? 'session' : 'learn' } };
     // v0.4 的知识卡片结构相同，迁移过来
     const v2 = JSON.parse(localStorage.getItem('sibian-v2') ?? 'null');

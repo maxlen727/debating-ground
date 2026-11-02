@@ -532,3 +532,8 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--b
 .tree-node svg { flex: none; color: var(--brand); }
 .fork-form .chip { display: inline-flex; align-items: center; gap: 4px; color: var(--brand); min-height: 36px; }
 .serif-input { font-family: var(--f-display); line-height: var(--lh-serif); }
+
+/* 换我来讲 */
+.tool.on { background: color-mix(in srgb, var(--brand) 12%, var(--bg)); border-color: color-mix(in srgb, var(--brand) 45%, var(--line)); color: var(--brand); font-weight: 600; }
+.teaching-banner .dot { background: var(--brand); }
+.teaching-banner .link { min-height: 32px; }

@@ -19,6 +19,7 @@ export interface Scenario {
   why: string;                       // 这一场想看什么
   mode: ModeId; concept: string; topic: string; keyPoints: string[];
   roles: SessionSnapshot['roles']; opening: string; context?: string;
+  teaching?: boolean;                // 苏格拉底追问里“换我来讲”：AI 当听讲的学生
   steps: Step[];
   values?: RegExp[];                 // 学习者说过的立场：复盘里不该出现在“需要纠正”里
   errors?: RegExp[];                 // 学习者说错的事实：复盘里应该被纠正
@@ -68,11 +69,11 @@ export const SCENARIOS: Scenario[] = [
     steps: [{ say: '这句我没听懂，能换个说法吗？' }, { say: '还是有点抽象' }, { next: true }, { say: '哦，就是越多越不稀罕？' }]
   },
   {
-    name: '认真回答', why: '学习者答得认真。看 AI 会不会承认说对的部分、给出自己的东西，而不是每轮都追问。',
-    mode: 'teach', concept: '认知失调', topic: '向一个高中生讲清楚什么是认知失调',
+    name: '认真回答', why: '学习者换过来当老师，讲得认真。看 AI 当学生时会不会复述、举例、说具体哪里没懂，而不是每轮都追问。',
+    mode: 'socratic', teaching: true, concept: '认知失调', topic: '心里想的和做的不一样时，人会怎么办？',
     keyPoints: ['想法和行为冲突', '会让人不舒服', '常见的化解方式', '和撒谎的区别'],
-    roles: [{ id: 'r0', name: '小满', title: '学生', persona: '高二学生，爱较真' }],
-    opening: '老师好！我听说“认知失调”这个词好久了，但一直不知道它到底在说什么，能讲讲吗？',
+    roles: [{ id: 'r0', name: '小满', title: '伙伴', persona: '爱较真，说话直' }],
+    opening: '好，我当学生！我听说“认知失调”这个词好久了，但一直不知道它到底在说什么，你从一个例子讲起？',
     steps: [
       { say: '认知失调就是你心里的想法和你做的事对不上，这时候人会觉得别扭。' },
       { say: '比如你知道抽烟有害但还在抽，你就会给自己找理由，说“压力大，抽一根放松”。' },
@@ -170,7 +171,7 @@ async function run(s: Scenario, call: Call) {
   const guests = new Set(s.roles.map(r => r.name));
   const afterGuest = new Set<number>();
   let next = s.roles.length > 1 ? 1 : 0;
-  const snap = (): SessionSnapshot => ({ mode: s.mode, concept: s.concept, topic: s.topic, keyPoints: s.keyPoints, roles: s.roles, messages: [...messages], context: s.context });
+  const snap = (): SessionSnapshot => ({ mode: s.mode, concept: s.concept, topic: s.topic, keyPoints: s.keyPoints, roles: s.roles, messages: [...messages], context: s.context, teaching: s.teaching || undefined });
   const speak = async (task?: string) => {
     const role = s.roles[next % s.roles.length];
     next = (next + 1) % s.roles.length;
@@ -184,7 +185,7 @@ async function run(s: Scenario, call: Call) {
   }
   const review = await call('review', { session: snap() }) as { data: { oneLine: string; misconceptions: { said: string; fix: string }[]; stances?: { said: string; note: string }[] } };
   const metrics = measure(messages, guests, afterGuest);
-  const issues = problems(metrics, s.mode);
+  const issues = problems(metrics, s.teaching ? 'teach' : s.mode);
   const wrong = review.data.misconceptions.map(m => m.said);
   if (s.values?.some(v => wrong.some(w => v.test(w)))) issues.push('复盘把学习者的立场列进了“需要纠正”');
   if (s.errors && !s.errors.some(e => wrong.some(w => e.test(w)))) issues.push('复盘没有纠正学习者说错的概念');
@@ -228,7 +229,7 @@ async function main() {
   }
   let prep = '';
   if (!only.length) { process.stdout.write('跑准备阶段…'); try { prep = await prepareChecks(call); console.log(' 完成'); } catch (e) { prep = '失败：' + (e as Error).message; console.log(' 失败'); } }
-  lines.push(...table, '', `合格线：以提问结尾不超过 ${LIMITS.questionRatio * 100}%（反向讲解 ${RATIO_BY_MODE.teach! * 100}%），连续提问不超过 ${LIMITS.longestQuestionRun} 段，接嘉宾时不问学习者，没有套话，单段不超过 180 字；AI 味：套路开头和“所以”结尾各不超过 30% 的段落，破折号每段平均不超过 0.25 个，“不是……而是”不超过 0.3 处，段落长短变化不低于 0.25；复盘不把立场当误解，说错的概念要纠正。`, '');
+  lines.push(...table, '', `合格线：以提问结尾不超过 ${LIMITS.questionRatio * 100}%（换我来讲时 ${RATIO_BY_MODE.teach! * 100}%），连续提问不超过 ${LIMITS.longestQuestionRun} 段，接嘉宾时不问学习者，没有套话，单段不超过 180 字；AI 味：套路开头和“所以”结尾各不超过 30% 的段落，破折号每段平均不超过 0.25 个，“不是……而是”不超过 0.3 处，段落长短变化不低于 0.25；复盘不把立场当误解，说错的概念要纠正。`, '');
   if (prep) lines.push('## 准备阶段', '', prep, '');
   lines.push(...details);
   const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'eval-out');

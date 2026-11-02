@@ -30,7 +30,7 @@ export default defineConfig({
         ] },
         { text: '使用', items: [
           { text: '一次学习的流程', link: '/guide/learning-flow' },
-          { text: '五种讨论方式', link: '/guide/modes' },
+          { text: '四种讨论方式', link: '/guide/modes' },
           { text: '和同学一起讨论', link: '/guide/multiplayer' },
           { text: '复盘与知识库', link: '/guide/review' }
         ] },

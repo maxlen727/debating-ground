@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { MODES } from '../../shared/modes.ts';
 import { QUICK_MESSAGES } from '../../shared/room.ts';
 import type { ChatMessage, Entry, Reflection } from '../../shared/types.ts';
-import { QUICK, addReflection, aiTakeover, callOn, currentTurn, decidePoint, dropReflection, finish, generateSeat, hint, nextSpeaker, noteTyping, openBranch, openTerm, passTurn, pickSeat, proposePoint, quick, quickMessage, retryAI, send, setReflectionDraft, skipSeat, startRoom, stopTyping, submitReflection, suggestPoint, toggleAiPause, toggleListen, toggleVoice, listenAvailable, voiceAvailable } from '../actions.ts';
+import { QUICK, addReflection, aiTakeover, callOn, currentTurn, decidePoint, dropReflection, finish, generateSeat, hint, nextSpeaker, noteTyping, openBranch, openTerm, toggleTeaching, TEACHING, STUDENT, passTurn, pickSeat, proposePoint, quick, quickMessage, retryAI, send, setReflectionDraft, skipSeat, startRoom, stopTyping, submitReflection, suggestPoint, toggleAiPause, toggleListen, toggleVoice, listenAvailable, voiceAvailable } from '../actions.ts';
 import { Empty, ErrorBanner, Icon, Sheet } from '../components/ui.tsx';
 import { CaretField } from '../components/SmoothCaret.tsx';
 import { Reveal } from '../components/Reveal.tsx';
@@ -401,16 +401,20 @@ function Composer({ s }: { s: S }) {
       {debate && turn && (
         <div className="turn-banner"><span className={'dot team-' + turn.role.team} aria-hidden="true" />轮到 <b>{seatName(turn.role)}</b>{turn.role.type === 'human' ? '（你）' : ''} · {turn.action}{turn.target ? ` → ${targetName(s, turn.target)}` : ''}<span className="muted grow-right">{s.cursor + 1}/{s.turns.length}</span></div>
       )}
+      {s.teaching && (
+        <div className="turn-banner teaching-banner"><span className="dot" aria-hidden="true" />你在讲，<b>{s.personas[0]?.name}</b>当学生</div>
+      )}
       <HintCard />
       <div className="tools scroll-x">
         {humanTurn && <button className="tool" disabled={busy} onClick={hint}><Icon name="bulb" size={16} />给点提示</button>}
         <button className="tool" disabled={busy} onClick={() => addReflection()}><Icon name="note" size={16} />写个小结</button>
+        {s.mode === 'socratic' && <button className={'tool' + (s.teaching ? ' on' : '')} aria-pressed={!!s.teaching} disabled={busy} onClick={toggleTeaching}><Icon name="swap" size={16} />{s.teaching ? '换回来' : '换我来讲'}</button>}
         {!debate && s.personas.length > 1 && <button className="tool" disabled={busy} onClick={nextSpeaker}><Icon name="people" size={16} />请下一位</button>}
         {debate && <button className="tool" disabled={busy} onClick={skipSeat}>跳过本席</button>}
         {s.mode === 'canvas' && s.at && <button className="tool" disabled={busy} onClick={() => update(st => { st.ui.sheet = 'back'; })}><Icon name="turn-back" size={16} />带回{s.branches?.find(b => b.id === s.at)?.parent ? '上一层' : '主干'}</button>}
       </div>
       {humanTurn
-        ? <DraftInput s={s} placeholder={debate ? `${turn?.action ?? '发言'}：我方认为……因为……` : s.mode === 'teach' ? '开始讲解……' : '说说你的想法……'} />
+        ? <DraftInput s={s} placeholder={debate ? `${turn?.action ?? '发言'}：我方认为……因为……` : s.mode === 'teach' || s.teaching ? `讲给${s.personas[0]?.name ?? '他'}听……` : '说说你的想法……'} />
         : <button className="primary block" disabled={busy} onClick={generateSeat}>让 {turn && seatName(turn.role)} 发言</button>}
     </>
   );
@@ -443,7 +447,7 @@ function EntryView({ m, s, showTip, voice }: { m: Entry; s: S; showTip: boolean;
   const target = debate && m.target ? s.seats.find(x => x.id === m.target) : undefined;
   const label = me ? (debate ? seat + ' · 你' : '你')
     : debate ? m.name : peer ? m.name : `${m.name}${persona?.title ? ' · ' + persona.title : ''}`;
-  const meta = [debate ? (m.action ?? '') + (target ? ` → ${seatName(target)}` : '') : '', m.source === 'demo' && !me ? '演示' : m.source === 'api' && !me ? m.model : '', peer && !debate ? '同学' : ''].filter(Boolean).join(' · ');
+  const meta = [debate ? (m.action ?? '') + (target ? ` → ${seatName(target)}` : '') : m.action === TEACHING ? '讲解' : m.action === STUDENT ? '当学生' : '', m.source === 'demo' && !me ? '演示' : m.source === 'api' && !me ? m.model : '', peer && !debate ? '同学' : ''].filter(Boolean).join(' · ');
   const avatarText = debate ? m.who.slice(1) : me ? '我' : m.name.slice(0, 1);
   // 辩论按阵营分左右（正方左、反方右），不按“是不是我”
   const side = debate ? ' side-' + (m.team ?? 'A') + (me ? ' mine' : '') : (me ? ' me' : '') + (peer ? ' peer' : '');
