@@ -1,7 +1,7 @@
 // 学习流程的所有操作：准备 → 讨论 → 小结 → 复盘 → 知识库
 import type { ChatMessage, ExplainKind, PointSuggestion, Previous, Review, SessionSnapshot, Team, TermCard } from '../shared/types.ts';
 import { getState, go, toast, uid, update } from './store.ts';
-import type { Card, Config, Session } from './store.ts';
+import type { Card, Config, Screen, Session } from './store.ts';
 import { runAI } from './lib/ai.ts';
 import { clearLive } from './lib/stream.ts';
 import { playingId, speakText, startVoice, stopVoice } from './lib/voice.ts';
@@ -446,6 +446,24 @@ export async function submitReflection(id: string) {
     markCovered(st.session!, res.covered);
   });
   clearLive(id);
+}
+
+/* ---------- 返回 ---------- */
+// 安卓返回键（以后浏览器的后退也可以用）：先关开着的面板，知识画布里先回上一层分支，再回上一页。
+// 已经在最外层（学习页）时返回 false，由调用方决定是否退出 App
+const PARENT: Partial<Record<Screen, Screen>> = { prepare: 'learn', session: 'learn', review: 'session', card: 'library', join: 'learn', library: 'learn', settings: 'learn' };
+export function goBack(): boolean {
+  const { ui, session: s } = getState();
+  if (ui.term || ui.explain || ui.sheet || ui.invite) {
+    update(st => { st.ui.term = null; st.ui.explain = null; st.ui.sheet = null; st.ui.invite = false; });
+    return true;
+  }
+  if (ui.screen === 'session' && s?.mode === 'canvas' && s.at && !ui.busy) { goToBranch(s.branches?.find(b => b.id === s.at)?.parent); return true; }
+  const to = PARENT[ui.screen];
+  if (!to) return false;
+  // 讨论没开始（或已经结束）时，“复盘”的上一页没有可回的讨论，直接回学习页
+  go(to === 'session' && !s ? 'learn' : to);
+  return true;
 }
 
 /* ---------- 换我来讲 ---------- */

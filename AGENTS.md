@@ -24,6 +24,7 @@
 | `src/styles.css` | 全部样式与设计令牌 | 颜色只用令牌，见“界面规范” |
 | `tests/` | `node:test` 测试 | |
 | `docs/` | 产品文档站（VitePress），截图在 `docs/public/screenshots/` | 用户可见的行为变了，同一个 PR 里更新对应文档页 |
+| `android/`、`capacitor.config.json` | 安卓 App（Capacitor 打包 `dist/`）；App 里的差异在 `src/lib/platform.ts`、`src/lib/native.ts` | 签名密钥只在 CI Secrets 里，永远不进仓库；`android/app/src/main/assets/public` 是生成的，不提交；见 `docs/dev/android.md` |
 
 ## 命令
 
@@ -37,6 +38,7 @@ npm run dev          # 界面热更新 127.0.0.1:5173（需同时运行 server�
 npm run docs:dev     # 文档站热更新
 npm run sync:worker  # 改了 server/ai.ts 或 shared/ 后，同步到 worker/src/vendor/
 npm run eval:prompts # 提示词回归评测：用真实模型和模拟学习者聊几场（见脚本开头的说明）
+npm run android:sync # 构建界面并同步到安卓工程（之后 npx cap open android，或 cd android && ./gradlew assembleDebug）
 cd worker && npm install && npm run dev   # 本地运行后端（先把 .dev.vars.example 复制为 .dev.vars）
 ```
 

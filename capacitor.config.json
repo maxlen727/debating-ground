@@ -1,0 +1,7 @@
+{
+  "appId": "debating.ground.app",
+  "appName": "思辨场",
+  "webDir": "dist",
+  "server": { "androidScheme": "https" },
+  "android": { "adjustMarginsForEdgeToEdge": "auto" }
+}

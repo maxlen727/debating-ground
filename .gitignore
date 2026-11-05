@@ -7,3 +7,7 @@ docs/.vitepress/dist/
 docs/.vitepress/cache/
 .worker-dist/
 eval-out/
+
+# 安卓签名密钥只在 CI 的 Secrets 里，永远不进仓库
+*.keystore
+*.jks

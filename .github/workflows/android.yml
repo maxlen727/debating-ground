@@ -1,0 +1,129 @@
+name: 安卓 App
+
+# PR：构建 debug 包（用调试签名，能直接装），作为构建产物上传，方便试装；不需要任何凭据
+# 合并到 main：构建正式签名的 APK，更新同一个“预览版”Release（标签 preview 跟着 main 走）
+# 打 v* 标签（例如 v0.10.0）：构建正式签名的 APK，发正式 Release
+# 正式签名需要仓库 Secrets：ANDROID_KEYSTORE_BASE64、ANDROID_KEYSTORE_PASSWORD、ANDROID_KEY_ALIAS、ANDROID_KEY_PASSWORD
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: 版本号
+        id: ver
+        run: |
+          base=$(node -p "require('./package.json').version")
+          case "$GITHUB_EVENT_NAME:$GITHUB_REF" in
+            push:refs/tags/v*) name="${GITHUB_REF_NAME#v}"; kind=release ;;
+            push:refs/heads/main|workflow_dispatch:*) name="$base-preview.$GITHUB_RUN_NUMBER"; kind=preview ;;
+            *) name="$base-pr.$GITHUB_RUN_NUMBER"; kind=pr ;;
+          esac
+          # versionCode 必须一次比一次大，手机才会当成更新：用这个工作流的运行序号
+          echo "code=$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "kind=$kind" >> "$GITHUB_OUTPUT"
+          echo "版本 $name（$kind）"
+
+      - run: npm ci
+      - name: 构建界面并同步到安卓工程
+        run: |
+          npm run build
+          npx cap sync android
+
+      # 没配签名密钥时：main 上照样构建（debug 包，作为构建产物），只是不更新预览版 Release；打标签发正式版则必须签名
+      - name: 检查签名密钥
+        id: sign
+        env:
+          HAS_KEY: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        run: |
+          if [ "${{ steps.ver.outputs.kind }}" = pr ]; then echo "use=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if [ "$HAS_KEY" = true ]; then echo "use=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if [ "${{ steps.ver.outputs.kind }}" = release ]; then echo "::error::没有配置签名密钥（仓库 Secrets 里的 ANDROID_KEYSTORE_BASE64 等），不能发正式版。见 docs/dev/android.md。"; exit 1; fi
+          echo "::warning::没有配置签名密钥，这次只构建 debug 包作为构建产物，不更新预览版 Release。见 docs/dev/android.md。"
+          echo "use=false" >> "$GITHUB_OUTPUT"
+
+      - name: 构建 debug 包
+        if: steps.sign.outputs.use != 'true'
+        working-directory: android
+        run: ./gradlew assembleDebug -PversionCode=${{ steps.ver.outputs.code }} -PversionName=${{ steps.ver.outputs.name }}
+
+      - name: 构建正式签名的包
+        if: steps.sign.outputs.use == 'true'
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          export ANDROID_KEYSTORE_FILE="$RUNNER_TEMP/release.jks"
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$ANDROID_KEYSTORE_FILE"
+          ./gradlew assembleRelease -PversionCode=${{ steps.ver.outputs.code }} -PversionName=${{ steps.ver.outputs.name }}
+          rm -f "$ANDROID_KEYSTORE_FILE"
+
+      - name: 整理安装包
+        id: apk
+        run: |
+          src=$(ls android/app/build/outputs/apk/*/*.apk | head -1)
+          out="sibian-${{ steps.ver.outputs.name }}.apk"
+          cp "$src" "$out"
+          echo "file=$out" >> "$GITHUB_OUTPUT"
+          echo "sha256: $(sha256sum "$out" | cut -d' ' -f1)"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.apk.outputs.file }}
+          path: ${{ steps.apk.outputs.file }}
+          retention-days: 14
+
+      # 预览版：同一个 Release，每次合并到 main 都换成最新的安装包，标签 preview 移到这次提交
+      - name: 更新预览版 Release
+        if: steps.ver.outputs.kind == 'preview' && steps.sign.outputs.use == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete preview --cleanup-tag --yes || true
+          {
+            echo "跟着 main 自动更新的预览版，可能不稳定。正式版见带版本号的 Release。"
+            echo
+            echo "- 版本：${{ steps.ver.outputs.name }}"
+            echo "- 提交：$GITHUB_SHA"
+            echo "- 改动：$(git log -1 --format=%s)"
+            echo
+            echo "安装：下载下面的 APK，在手机上打开。第一次安装要允许“安装未知应用”。"
+            echo "SHA-256：$(sha256sum "${{ steps.apk.outputs.file }}" | cut -d' ' -f1)"
+          } > notes.md
+          gh release create preview "${{ steps.apk.outputs.file }}" --prerelease --target "$GITHUB_SHA" \
+            --title "预览版 ${{ steps.ver.outputs.name }}" --notes-file notes.md
+
+      - name: 发正式 Release
+        if: steps.ver.outputs.kind == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "${{ steps.apk.outputs.file }}" --verify-tag \
+            --title "思辨场 ${{ steps.ver.outputs.name }}" --generate-notes
