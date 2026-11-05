@@ -437,3 +437,42 @@ test('反向讲解 is folded into socratic: a saved teach choice opens as socrat
   assert.ok(!MODE_ORDER.includes('teach'));
   assert.equal(MODES.teach.name, '反向讲解', 'old cards still show their mode name');
 });
+
+test('back (Android back button): close the sheet, then leave the branch, then go up a page, then exit', async () => {
+  update(s => { s.config.concept = '机会成本'; s.config.mode = 'canvas'; });
+  await actions.prepare();
+  actions.startSession();
+  await actions.send('少玩了一天');
+  const said = getState().session!.entries.findLast(e => e.kind === 'msg' && !e.human)!;
+  await actions.openBranch(said.id, '稀缺性');
+  update(s => { s.ui.sheet = 'tree'; });
+  assert.equal(actions.goBack(), true);
+  assert.equal(getState().ui.sheet, null, 'first the sheet closes');
+  assert.ok(getState().session!.at);
+  assert.equal(actions.goBack(), true);
+  assert.equal(getState().session!.at, undefined, 'then the branch goes back to the trunk');
+  assert.equal(getState().ui.screen, 'session');
+  assert.equal(actions.goBack(), true);
+  assert.equal(getState().ui.screen, 'learn');
+  assert.equal(actions.goBack(), false, 'on the outermost page the app may exit');
+  update(s => { s.ui.screen = 'card'; });
+  actions.goBack();
+  assert.equal(getState().ui.screen, 'library');
+});
+
+test('in the Android app, invite links point at the public web app and the local server is not offered', async () => {
+  const { inviteLink } = await import('../src/lib/room.ts');
+  const { isNativeApp, PUBLIC_APP_URL } = await import('../src/lib/platform.ts');
+  const link = { backend: 'https://api.example.workers.dev', roomId: 'r1', invite: 'c1' };
+  assert.equal(isNativeApp(), false);
+  (globalThis as Record<string, unknown>).location = { origin: 'https://localhost', pathname: '/' };
+  (globalThis as Record<string, unknown>).Capacitor = { isNativePlatform: () => true };
+  try {
+    assert.equal(isNativeApp(), true);
+    assert.ok(inviteLink(link).startsWith(PUBLIC_APP_URL + '#join='));
+    assert.ok(!inviteLink(link).includes('localhost'));
+  } finally {
+    delete (globalThis as Record<string, unknown>).Capacitor;
+    delete (globalThis as Record<string, unknown>).location;
+  }
+});

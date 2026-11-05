@@ -132,3 +132,11 @@ test('worker/ stays self-contained so the Deploy to Cloudflare button can build 
   const keys = readFileSync(join(workerDir, '.dev.vars.example'), 'utf8').split('\n').filter(Boolean).map(l => l.split('=')[0]);
   assert.deepEqual(keys, ['API_KEY', 'API_BASE_URL', 'MODEL', 'ACCESS_PASSWORD']);
 });
+
+test('the default deployment accepts the Android app (origin https://localhost) as well as the web app', async () => {
+  const { readFileSync } = await import('node:fs');
+  const toml = readFileSync(new URL('../worker/wrangler.toml', import.meta.url), 'utf8');
+  const origins = toml.match(/^ALLOWED_ORIGINS\s*=\s*"([^"]*)"/m)![1].split(',').map(s => s.trim());
+  assert.ok(origins.includes('https://maxlen727.github.io'));
+  assert.ok(origins.includes('https://localhost'));
+});

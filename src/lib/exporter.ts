@@ -3,8 +3,15 @@ import { MODES, STATUS_LABEL } from '../../shared/modes.ts';
 import type { Entry, Review, TermCard } from '../../shared/types.ts';
 import type { Card, Session } from '../store.ts';
 import { childrenOf, levelEntries } from './canvas.ts';
+import { isNativeApp } from './platform.ts';
+import { toast } from '../store.ts';
 
 function download(name: string, text: string) {
+  // App 的 WebView 不支持下载文件：复制到剪贴板，粘贴到笔记里
+  if (isNativeApp()) {
+    navigator.clipboard.writeText(text).then(() => toast('已复制到剪贴板，可以粘贴到笔记或聊天里。'), () => toast('没能复制，请稍后再试。'));
+    return;
+  }
   const a = document.createElement('a');
   const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown;charset=utf-8' }));
   a.href = url; a.download = name; a.click();

@@ -26,7 +26,8 @@ export default defineConfig({
       '/guide/': [
         { text: '开始', items: [
           { text: '思辨场是什么', link: '/guide/what-is' },
-          { text: '快速开始', link: '/guide/getting-started' }
+          { text: '快速开始', link: '/guide/getting-started' },
+          { text: '安卓 App', link: '/guide/android' }
         ] },
         { text: '使用', items: [
           { text: '一次学习的流程', link: '/guide/learning-flow' },
@@ -50,6 +51,7 @@ export default defineConfig({
         { text: '开发', items: [
           { text: '开发指南', link: '/dev/' },
           { text: '架构', link: '/dev/architecture' },
+          { text: '安卓 App 与自动发版', link: '/dev/android' },
           { text: '协作与 Agent 规范', link: '/dev/collaboration' }
         ] }
       ]
