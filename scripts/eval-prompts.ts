@@ -27,6 +27,7 @@ export interface Scenario {
   steps: Step[];
   values?: RegExp[];                 // 学习者说过的立场：复盘里不该出现在“需要纠正”里
   errors?: RegExp[];                 // 学习者说错的事实：复盘里应该被纠正
+  answers?: (RegExp | null)[];       // 学习者第 i 次发言是在直接提问时：AI 紧接着的回复里应该出现的答案（null 表示这一句不是提问）
 }
 
 const LEARNER = '学习者';
@@ -71,6 +72,16 @@ export const SCENARIOS: Scenario[] = [
     roles: [{ id: 'r0', name: '周衡', title: '经济学', persona: '喜欢用生活例子' }, { id: 'r1', name: '沈知', title: '心理学', persona: '关心人的感受' }],
     opening: '我先举个例子：饿的时候第一碗饭特别香，到第三碗就没那么想吃了。这就是经济学说的“边际效用”在变小。',
     steps: [{ say: '这句我没听懂，能换个说法吗？' }, { say: '还是有点抽象' }, { next: true }, { say: '哦，就是越多越不稀罕？' }]
+  },
+  {
+    // #39：“真想知道一件事、直接问它时，它还在憋着”。直接问就该直接答，再顺着往下聊
+    name: '求知', why: '学习者直接问问题，想知道答案。AI 应该先完整、准确地回答，再接着聊，而不是反问回去让他自己猜。',
+    mode: 'socratic', concept: '边际效用', topic: '为什么第三碗饭没有第一碗香？',
+    keyPoints: ['每多一份的满足', '边际效用递减', '和总效用的区别', '用于解释选择'],
+    roles: [{ id: 'r0', name: '苏珩', title: '追问者', persona: '说话直，爱用吃饭睡觉打比方' }],
+    opening: '先想个画面：饿的时候第一碗饭特别香，到第三碗就没那么想吃了。你觉得这里面变的是什么？',
+    steps: [{ say: '我没学过，边际效用到底是什么意思？' }, { say: '那它和总效用有什么区别？' }, { say: '为什么会越来越少，有原因吗？' }, { say: '哦，那商家知道这个有什么用？' }],
+    answers: [/(多|新|再|每)(吃|一|消费|得到|出来|来|添|增)|额外|增加|(这|那|多)一份/, /总效用/, /(满足|需要|需求|饱|习惯|适应|新鲜)/, /(定价|打折|第二份|半价|买一送|套餐|促销|捆绑)/]
   },
   {
     name: '认真回答', why: '学习者换过来当老师，讲得认真。看 AI 当学生时会不会复述、举例、说具体哪里没懂，而不是每轮都追问。',
@@ -219,6 +230,14 @@ async function run(s: Scenario, call: Call) {
   const wrong = review.data.misconceptions.map(m => m.said);
   if (s.values?.some(v => wrong.some(w => v.test(w)))) issues.push({ key: 'stanceAsError', text: '复盘把学习者的立场列进了“需要纠正”' });
   if (s.errors && !s.errors.some(e => wrong.some(w => e.test(w)))) issues.push({ key: 'missedError', text: '复盘没有纠正学习者说错的概念' });
+  // 直接提问有没有被直接回答：看紧跟着那一问的 AI 回复里有没有答案
+  const dodged = (s.answers ?? []).flatMap((re, i) => {
+    if (!re) return [];
+    const k = messages.findIndex((m, j) => m.name === LEARNER && messages.slice(0, j + 1).filter(x => x.name === LEARNER).length === i + 1);
+    const reply = messages.slice(k + 1).find(m => guests.has(m.name));
+    return reply && re.test(reply.text) ? [] : [i + 1];
+  });
+  if (dodged.length) issues.push({ key: 'dodged', text: `第 ${dodged.join('、')} 次直接提问没有得到回答` });
   return { messages, guests, metrics, issues, review: review.data };
 }
 

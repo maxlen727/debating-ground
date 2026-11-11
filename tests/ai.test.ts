@@ -253,7 +253,7 @@ test('discussion partners: no mandatory question, no sentence-by-sentence correc
 });
 
 test('pace: after another guest, after several questions, and after a very short reply', () => {
-  assert.deepEqual(paceOf(roundtable), { questionsInARow: 1, afterGuest: false, shortReply: true });
+  assert.deepEqual(paceOf(roundtable), { questionsInARow: 1, afterGuest: false, directQuestion: false, shortReply: true });
   assert.match(sys(roundtable), /回答得很短/);
   assert.doesNotMatch(sys(roundtable), /不要提问/);
 
@@ -268,7 +268,7 @@ test('pace: after another guest, after several questions, and after a very short
     { kind: 'msg' as const, name: '林知远', text: '那复习的价值怎么算，你怎么看' }, { kind: 'msg' as const, name: '学习者', text: '可能要看考试对我有多重要，比如期末考试就很重要。' }
   ] };
   assert.equal(paceOf(asked).questionsInARow, 2);
-  assert.match(sys(asked), /这一轮不要提问/);
+  assert.match(sys(asked), /这一轮不要以问题结尾/);
   assert.doesNotMatch(sys(asked), /回答得很短/);
 });
 
@@ -371,4 +371,32 @@ test('换我来讲: in socratic the same partner turns into a listening student;
   assert.match(buildRequest('review', { session: learning }).messages[0].content, /讲给伙伴听/);
   // 旧界面还会发反向讲解的请求：后端继续接受
   assert.doesNotThrow(() => buildRequest('prepare', { concept: 'x', mode: 'teach' }));
+});
+
+test('direct questions get direct answers (#39): no holding back the answer, a turn cue when the learner asks', () => {
+  const socratic = buildRequest('discuss', { session: learning, roleId: 'r0' }).messages[0].content;
+  assert.doesNotMatch(socratic, /不要一口气把完整答案讲完/, 'the socratic partner no longer withholds answers');
+  assert.match(socratic, /直接问你的时候，就痛快地告诉他/);
+  assert.match(socratic, /直接问你一个问题.*先完整、准确地回答它/, 'every discussion partner answers direct questions first');
+  const asking = (text: string) => ({ ...learning, messages: [...learning.messages, { kind: 'msg' as const, name: '学习者', text }] });
+  for (const q of ['边际效用到底是什么意思？', '为什么会越来越少', '它和总效用有什么区别']) {
+    assert.equal(paceOf(asking(q)).directQuestion, true, q);
+    assert.match(buildRequest('discuss', { session: asking(q), roleId: 'r0' }).messages[0].content, /先把它答清楚.*不要用一个问题去回答他的问题/);
+  }
+  // “能换个说法吗”是请求不是求知；很短的直接提问不当成“回答得很短”
+  assert.equal(paceOf(asking('能换个说法吗？')).directQuestion, false);
+  assert.equal(paceOf(asking('为什么？')).shortReply, false);
+  // 回答很短：用一个例子说一句，直接说例子，不用“打个比方”这类开头（评测里“没听懂”场景 5/5 次都这样开头）
+  assert.match(buildRequest('discuss', { session: asking('嗯'), roleId: 'r0' }).messages[0].content, /直接说那个例子，不要用“打个比方”/);
+});
+
+test('换我来讲: after two questions in a row the student says what it understood instead of asking again', () => {
+  const asked = { ...learning, teaching: true as const, messages: [
+    { kind: 'msg' as const, name: '苏珩', text: '那它和撒谎有什么不一样？' }, { kind: 'msg' as const, name: '学习者', text: '撒谎是骗别人，认知失调是自己心里别扭。' },
+    { kind: 'msg' as const, name: '苏珩', text: '那别扭了以后一般会怎么办？' }, { kind: 'msg' as const, name: '学习者', text: '一般会找个理由说服自己，让心里舒服一点。' }
+  ] };
+  const p = buildRequest('discuss', { session: asked, roleId: 'r0' }).messages[0].content;
+  assert.match(p, /用陈述句说说你现在是怎么理解的/);
+  assert.doesNotMatch(p, /讲点知识/, 'a student does not lecture');
+  assert.doesNotMatch(p, /先把它答清楚/, 'the teacher asking is not a cue for the student to explain the concept');
 });
