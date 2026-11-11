@@ -476,3 +476,21 @@ test('in the Android app, invite links point at the public web app and the local
     delete (globalThis as Record<string, unknown>).location;
   }
 });
+
+test('one-sentence start (#39): write a concept and go straight into the discussion; the prepare page is optional', async () => {
+  update(s => { s.config.concept = '机会成本'; s.config.mode = 'socratic'; s.ui.screen = 'learn'; });
+  await actions.prepare(null, undefined, 'start');
+  assert.equal(getState().ui.screen, 'session');
+  assert.ok(getState().session, 'the discussion started with the prepared topic and points');
+  assert.equal(getState().session!.topic, getState().plan!.topic);
+  // 想先看看：停在准备页
+  update(s => { s.ui.screen = 'learn'; });
+  await actions.prepare();
+  assert.equal(getState().ui.screen, 'prepare');
+  // 准备出来的东西有问题：停在准备页并说明原因，而不是进一场缺东西的讨论
+  update(s => { s.config.mode = 'debate'; s.ui.screen = 'learn'; for (const t of ['A', 'B'] as const) s.config.seats[t] = s.config.seats[t].map(x => ({ ...x, type: 'ai' })); });
+  const before = getState().session?.id;
+  await actions.prepare(null, undefined, 'start');
+  assert.equal(getState().ui.screen, 'prepare');
+  assert.equal(getState().session?.id, before, 'no new session without a seat for the learner');
+});

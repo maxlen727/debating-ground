@@ -13,7 +13,11 @@ const DEPTH: Record<Screen, number> = { learn: 0, library: 0, settings: 0, join:
 const TABS: Screen[] = ['learn', 'session', 'library', 'settings'];
 
 export type Nav = 'forward' | 'back' | 'left' | 'right' | 'expand' | 'collapse' | 'open' | 'close' | 'swap';
+// 有的导航方向从页面层级看不出来：从学习页“一句话开始”直接进讨论，是往里走，不是切标签
+let forced: Nav | null = null;
+export const forceNav = (kind: Nav) => { forced = kind; };
 export function navKind(from: View, to: View): Nav {
+  if (forced) { const k = forced; forced = null; return k; }
   if (from.screen !== to.screen) {
     // 知识库的卡片点开时长成整页，返回时缩回列表里原来的位置
     if (from.screen === 'library' && to.screen === 'card') return 'expand';
@@ -52,7 +56,7 @@ export const holdingRenders = () => capturing;
 export function transition(from: View, to: View, commit: () => void) {
   const toTop = from.screen !== to.screen;
   const apply = () => { commit(); if (toTop) globalThis.scrollTo?.({ top: 0 }); };
-  if (!canAnimate()) return apply();
+  if (!canAnimate()) { forced = null; return apply(); }
   const kind = navKind(from, to);
   const root = document.documentElement;
   root.dataset.nav = kind;

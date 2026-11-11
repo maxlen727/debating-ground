@@ -1,6 +1,7 @@
 // 学习流程的所有操作：准备 → 讨论 → 小结 → 复盘 → 知识库
 import type { ChatMessage, ExplainKind, PointSuggestion, Previous, Review, SessionSnapshot, Team, TermCard } from '../shared/types.ts';
 import { getState, go, toast, uid, update } from './store.ts';
+import { forceNav } from './lib/motion.ts';
 import type { Card, Config, Screen, Session } from './store.ts';
 import { runAI } from './lib/ai.ts';
 import { clearLive } from './lib/stream.ts';
@@ -40,7 +41,8 @@ const markCovered = (s: Session, list: number[] = []) => { for (const i of list)
 export const currentTurn = (s: Session | null) => s && s.mode === 'debate' && !s.finished ? s.turns[s.cursor] ?? null : null;
 
 /* ---------- 准备 ---------- */
-export async function prepare(previous: Previous | null = null, knownContext?: string) {
+// then：'start' 是“一句话开始”，准备好直接进讨论（#39：门槛太高）；'review' 先停在准备页看看、改改题目和角色
+export async function prepare(previous: Previous | null = null, knownContext?: string, then: 'review' | 'start' = 'review') {
   const { config, ui, plan } = getState();
   const concept = config.concept.trim();
   if (!concept) return toast('先写下你想弄懂的概念。');
@@ -60,8 +62,14 @@ export async function prepare(previous: Previous | null = null, knownContext?: s
     };
     applyDebaters(s.config, d.debaters);
     s.ui.context = null;
-    s.ui.screen = 'prepare';
+    if (then === 'review') s.ui.screen = 'prepare';
   });
+  if (then !== 'start') return;
+  // 准备出来的东西有问题（比如辩论里没有“我”的席位）：停在准备页，说清楚哪里要改
+  const problem = planProblem();
+  if (problem) { toast(problem); return go('prepare'); }
+  forceNav('forward');
+  startSession();
 }
 const personasOf = (roles: { name: string; title: string; persona: string }[]) =>
   roles.map((r, i) => ({ id: 'r' + i, tone: TONES[i % 3], name: r.name, title: r.title, persona: r.persona }));
