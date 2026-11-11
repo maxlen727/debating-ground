@@ -253,7 +253,7 @@ test('discussion partners: no mandatory question, no sentence-by-sentence correc
 });
 
 test('pace: after another guest, after several questions, and after a very short reply', () => {
-  assert.deepEqual(paceOf(roundtable), { questionsInARow: 1, afterGuest: false, directQuestion: false, shortReply: true });
+  assert.deepEqual(paceOf(roundtable), { questionsInARow: 1, afterGuest: false, directQuestion: false, shortReply: true, shortAgain: false });
   assert.match(sys(roundtable), /回答得很短/);
   assert.doesNotMatch(sys(roundtable), /不要提问/);
 
@@ -386,7 +386,13 @@ test('direct questions get direct answers (#39): no holding back the answer, a t
   // “能换个说法吗”是请求不是求知；很短的直接提问不当成“回答得很短”
   assert.equal(paceOf(asking('能换个说法吗？')).directQuestion, false);
   assert.equal(paceOf(asking('为什么？')).shortReply, false);
-  assert.match(buildRequest('discuss', { session: asking('嗯'), roleId: 'r0' }).messages[0].content, /这一轮也说短一点/);
+  // 第一次回答很短：AI 这一轮也说短；连着几次都很短：不再要求，不然每段一样短
+  const first = { ...learning, messages: [{ kind: 'msg' as const, name: '苏珩', text: '你觉得代价是什么？' }, { kind: 'msg' as const, name: '学习者', text: '少玩了一天，本来可以出去和朋友打球的。' }, { kind: 'msg' as const, name: '苏珩', text: '还有呢？时间也是。' }, { kind: 'msg' as const, name: '学习者', text: '嗯' }] };
+  assert.equal(paceOf(first).shortAgain, false);
+  assert.match(buildRequest('discuss', { session: first, roleId: 'r0' }).messages[0].content, /这一轮也说短一点/);
+  const again = { ...first, messages: [...first.messages, { kind: 'msg' as const, name: '苏珩', text: '比如吃饭。' }, { kind: 'msg' as const, name: '学习者', text: '哦' }] };
+  assert.equal(paceOf(again).shortAgain, true);
+  assert.doesNotMatch(buildRequest('discuss', { session: again, roleId: 'r0' }).messages[0].content, /这一轮也说短一点/);
 });
 
 test('换我来讲: after two questions in a row the student says what it understood instead of asking again', () => {
