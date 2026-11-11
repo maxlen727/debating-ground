@@ -106,16 +106,12 @@ export function paceOf(s: SessionSnapshot) {
   const fromLearner = !!learnerLast && last === learnerLast;
   // 学习者想知道答案：“X 是什么”“为什么”“有什么区别”这类直接提问（不含“能换个说法吗”这种请求）
   const directQuestion = fromLearner && DIRECT.test(learnerLast.text.trim()) && !/能不能|能换|可以换|再说一遍/.test(learnerLast.text);
-  // 学习者上一次是不是也回答得很短：连着都很短时不再要求 AI 也说短（否则每段都一样短，反而不像真人）
-  const learnerSaid = msgs.filter(m => !guests.has(m.name));
   const isShort = (t: string) => Array.from(t.trim()).length < 16;
-  const shortAgain = learnerSaid.length >= 2 && isShort(learnerSaid.at(-2)!.text);
   return {
     questionsInARow,
     afterGuest: !!last && guests.has(last.name),
     directQuestion,
-    shortReply: fromLearner && !directQuestion && isShort(learnerLast.text),
-    shortAgain
+    shortReply: fromLearner && !directQuestion && isShort(learnerLast.text)
   };
 }
 function paceRule(s: SessionSnapshot): string {
