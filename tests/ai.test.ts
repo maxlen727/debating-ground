@@ -390,6 +390,7 @@ test('direct questions get direct answers (#39): no holding back the answer, a t
   const first = { ...learning, messages: [{ kind: 'msg' as const, name: '苏珩', text: '你觉得代价是什么？' }, { kind: 'msg' as const, name: '学习者', text: '少玩了一天，本来可以出去和朋友打球的。' }, { kind: 'msg' as const, name: '苏珩', text: '还有呢？时间也是。' }, { kind: 'msg' as const, name: '学习者', text: '嗯' }] };
   assert.equal(paceOf(first).shortAgain, false);
   assert.match(buildRequest('discuss', { session: first, roleId: 'r0' }).messages[0].content, /这一轮也说短一点/);
+  assert.match(buildRequest('discuss', { session: first, roleId: 'r0' }).messages[0].content, /直接说那个例子，不要用“打个比方”/);
   const again = { ...first, messages: [...first.messages, { kind: 'msg' as const, name: '苏珩', text: '比如吃饭。' }, { kind: 'msg' as const, name: '学习者', text: '哦' }] };
   assert.equal(paceOf(again).shortAgain, true);
   assert.doesNotMatch(buildRequest('discuss', { session: again, roleId: 'r0' }).messages[0].content, /这一轮也说短一点/);
