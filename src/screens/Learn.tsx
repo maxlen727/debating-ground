@@ -42,7 +42,7 @@ export function Learn() {
             <CaretField fieldRef={conceptRef}>
               <input id="concept" ref={conceptRef} value={config.concept} maxLength={80} placeholder="写下一个概念，比如：机会成本" disabled={busy}
                 onChange={e => update(s => { s.config.concept = e.target.value; s.ui.context = null; })}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) prepare(); }} />
+                onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) void prepare(null, undefined, 'start'); }} />
             </CaretField>
           </label>
           <div className="chips scroll-x" role="list">
@@ -82,7 +82,9 @@ export function Learn() {
       <div className="dock">
         <ErrorBanner />
         <BusyStrip />
-        <button className="primary block" disabled={busy || !config.concept.trim() || (!!ui.context && !ui.context.text.trim())} onClick={() => prepare()}>{ui.context ? '按这个经过准备讨论' : '准备讨论'}</button>
+        {/* 一句话开始：写下概念就进讨论；想先看看题目、要点和角色（或者邀请同学），走准备页 */}
+        <button className="primary block" disabled={busy || !config.concept.trim() || (!!ui.context && !ui.context.text.trim())} onClick={() => prepare(null, undefined, 'start')}>{ui.context ? '按这个经过开始讨论' : '开始讨论'}</button>
+        <button className="link quiet-link" disabled={busy || !config.concept.trim() || (!!ui.context && !ui.context.text.trim())} onClick={() => prepare()}>先看看题目和角色{config.mode === 'roundtable' || config.mode === 'debate' ? '，或邀请同学' : ''}</button>
       </div>
     </div>
   );

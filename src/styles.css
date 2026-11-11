@@ -104,6 +104,8 @@ code { font-size: .9em; background: var(--bg); padding: 1px 5px; border-radius: 
 .small { min-height: 36px; padding: 0 12px; font-size: 14px; border-radius: 10px; }
 .block { width: 100%; }
 .link { color: var(--accent); font-size: 13px; font-weight: 600; padding: 4px 6px; }
+/* 主按钮下面的次要选择：不抢主按钮的风头，但要好点 */
+.dock .quiet-link { align-self: center; min-height: 44px; padding-inline: 12px; color: var(--muted); font-weight: 500; }
 .icon-btn { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; color: var(--ink); }
 .icon-btn:hover:not(:disabled) { background: var(--bg); }
 .icon-btn.small { width: 32px; height: 32px; border-radius: 9px; color: var(--muted); }
