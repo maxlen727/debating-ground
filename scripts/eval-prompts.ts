@@ -4,6 +4,10 @@
 //   直接连服务商：SIBIAN_API_BASE=https://api.deepseek.com/v1 SIBIAN_API_KEY=… SIBIAN_MODEL=deepseek-chat npm run eval:prompts
 //   经自己部署的后端：SIBIAN_BACKEND=https://….workers.dev SIBIAN_PASSWORD=… npm run eval:prompts
 //   只跑某几场：npm run eval:prompts -- 短回答 价值立场
+//   每场跑几次（默认 3）：npm run eval:prompts -- --runs=5
+//
+// 模型每次回答都不一样，同一套提示词跑一次可能全过、再跑一次又有几项没过（#50）。
+// 所以每场跑几次：指标取中位数，某个问题要在多数几次里都出现才算数，表里写出出现了几次。
 //
 // 报告写到 eval-out/（不提交），终端里打印汇总表。
 import fs from 'node:fs';
@@ -126,21 +130,47 @@ export function measure(messages: Msg[], guests: Set<string>, afterGuestTurns: S
 export const LIMITS = { questionRatio: 0.6, longestQuestionRun: 2, askedAfterGuest: 0, stock: 0, tooLong: 0, templateOpen: 0.3, dashes: 0.25, notBut: 0.3, lengthCV: 0.25, soEnding: 0.3 };
 // 反向讲解里，学生的疑问就是推动学习者讲解的方式，比例可以高一些（但仍不能连着问）
 export const RATIO_BY_MODE: Partial<Record<ModeId, number>> = { teach: 0.75 };
-export function problems(m: Metrics, mode?: ModeId): string[] {
-  const out: string[] = [];
-  if (m.questionRatio > (mode && RATIO_BY_MODE[mode] || LIMITS.questionRatio)) out.push(`${Math.round(m.questionRatio * 100)}% 的发言以提问结尾`);
-  if (m.longestQuestionRun > LIMITS.longestQuestionRun) out.push(`连续 ${m.longestQuestionRun} 段都以提问结尾`);
-  if (m.askedAfterGuest > LIMITS.askedAfterGuest) out.push(`接其他嘉宾的话时仍向学习者提问 ${m.askedAfterGuest} 次`);
-  if (m.stock.length) out.push(`套话：${m.stock.join('、')}`);
-  if (m.tooLong > LIMITS.tooLong) out.push(`${m.tooLong} 段超过 180 字`);
-  // AI 味（按每段算，避免场景长短不同时没法比）
+// 每个问题带一个 key（不含具体数字），几次运行之间才能比较“是不是同一个问题”
+export interface Problem { key: string; text: string }
+export function problemList(m: Metrics, mode?: ModeId): Problem[] {
+  const out: Problem[] = [];
+  const add = (key: string, bad: boolean, text: () => string) => { if (bad) out.push({ key, text: text() }); };
+  // AI 味按每段算，避免场景长短不同时没法比
   const per = (n: number) => m.aiTurns ? n / m.aiTurns : 0;
-  if (per(m.templateOpen) > LIMITS.templateOpen) out.push(`${m.templateOpen} 段用套路开头`);
-  if (per(m.dashes) > LIMITS.dashes) out.push(`破折号 ${m.dashes} 个`);
-  if (per(m.notBut) > LIMITS.notBut) out.push(`“不是……而是”式对仗 ${m.notBut} 处`);
-  if (per(m.soEnding) > LIMITS.soEnding) out.push(`${m.soEnding} 段结尾用“所以”总结`);
-  if (m.aiTurns >= 4 && m.lengthCV < LIMITS.lengthCV) out.push(`段落长短太平均（变化 ${m.lengthCV}）`);
+  add('ratio', m.questionRatio > (mode && RATIO_BY_MODE[mode] || LIMITS.questionRatio), () => `${Math.round(m.questionRatio * 100)}% 的发言以提问结尾`);
+  add('run', m.longestQuestionRun > LIMITS.longestQuestionRun, () => `连续 ${m.longestQuestionRun} 段都以提问结尾`);
+  add('afterGuest', m.askedAfterGuest > LIMITS.askedAfterGuest, () => `接其他嘉宾的话时仍向学习者提问 ${m.askedAfterGuest} 次`);
+  add('stock', m.stock.length > 0, () => `套话：${m.stock.join('、')}`);
+  add('tooLong', m.tooLong > LIMITS.tooLong, () => `${m.tooLong} 段超过 180 字`);
+  add('template', per(m.templateOpen) > LIMITS.templateOpen, () => `${m.templateOpen} 段用套路开头`);
+  add('dashes', per(m.dashes) > LIMITS.dashes, () => `破折号 ${m.dashes} 个`);
+  add('notBut', per(m.notBut) > LIMITS.notBut, () => `“不是……而是”式对仗 ${m.notBut} 处`);
+  add('so', per(m.soEnding) > LIMITS.soEnding, () => `${m.soEnding} 段结尾用“所以”总结`);
+  add('cv', m.aiTurns >= 4 && m.lengthCV < LIMITS.lengthCV, () => `段落长短太平均（变化 ${m.lengthCV}）`);
   return out;
+}
+export const problems = (m: Metrics, mode?: ModeId) => problemList(m, mode).map(p => p.text);
+
+// 同一场跑了几次：数值指标取中位数；一个问题要在多数几次里出现才算数（写出出现了几次），偶尔一次的列为“偶发”
+const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); const k = s.length >> 1; return s.length % 2 ? s[k] : (s[k - 1] + s[k]) / 2; };
+export function combine(runs: { metrics: Metrics; issues: Problem[] }[]) {
+  const n = runs.length;
+  const pick = (f: (m: Metrics) => number) => median(runs.map(r => f(r.metrics)));
+  const metrics: Metrics = {
+    aiTurns: pick(m => m.aiTurns), questions: pick(m => m.questions), questionRatio: pick(m => m.questionRatio),
+    longestQuestionRun: pick(m => m.longestQuestionRun), askedAfterGuest: pick(m => m.askedAfterGuest),
+    stock: [...new Set(runs.flatMap(r => r.metrics.stock))], avgLength: Math.round(pick(m => m.avgLength)), tooLong: pick(m => m.tooLong),
+    templateOpen: pick(m => m.templateOpen), dashes: pick(m => m.dashes), notBut: pick(m => m.notBut),
+    lengthCV: Math.round(pick(m => m.lengthCV) * 100) / 100, soEnding: pick(m => m.soEnding)
+  };
+  const byKey = new Map<string, Problem[]>();
+  for (const r of runs) for (const p of r.issues) byKey.set(p.key, [...byKey.get(p.key) ?? [], p]);
+  const issues: string[] = [], flaky: string[] = [];
+  for (const list of byKey.values()) {
+    const label = `${list[0].text}（${list.length}/${n} 次）`;
+    (list.length * 2 > n ? issues : flaky).push(label);
+  }
+  return { metrics, issues, flaky };
 }
 
 /* ---------- 调用模型 ---------- */
@@ -185,10 +215,10 @@ async function run(s: Scenario, call: Call) {
   }
   const review = await call('review', { session: snap() }) as { data: { oneLine: string; misconceptions: { said: string; fix: string }[]; stances?: { said: string; note: string }[] } };
   const metrics = measure(messages, guests, afterGuest);
-  const issues = problems(metrics, s.teaching ? 'teach' : s.mode);
+  const issues = problemList(metrics, s.teaching ? 'teach' : s.mode);
   const wrong = review.data.misconceptions.map(m => m.said);
-  if (s.values?.some(v => wrong.some(w => v.test(w)))) issues.push('复盘把学习者的立场列进了“需要纠正”');
-  if (s.errors && !s.errors.some(e => wrong.some(w => e.test(w)))) issues.push('复盘没有纠正学习者说错的概念');
+  if (s.values?.some(v => wrong.some(w => v.test(w)))) issues.push({ key: 'stanceAsError', text: '复盘把学习者的立场列进了“需要纠正”' });
+  if (s.errors && !s.errors.some(e => wrong.some(w => e.test(w)))) issues.push({ key: 'missedError', text: '复盘没有纠正学习者说错的概念' });
   return { messages, guests, metrics, issues, review: review.data };
 }
 
@@ -207,29 +237,34 @@ async function main() {
     console.log('需要一个真实模型。任选一种：\n  SIBIAN_API_BASE=… SIBIAN_API_KEY=… SIBIAN_MODEL=… npm run eval:prompts\n  SIBIAN_BACKEND=https://你的后端 SIBIAN_PASSWORD=访问口令 npm run eval:prompts');
     process.exitCode = 1; return;
   }
-  const only = process.argv.slice(2);
+  const args = process.argv.slice(2);
+  const runs = Math.max(1, Number(args.find(a => a.startsWith('--runs='))?.slice(7)) || 3);
+  const only = args.filter(a => !a.startsWith('--'));
   const list = SCENARIOS.filter(s => !only.length || only.includes(s.name));
   const model = process.env.SIBIAN_MODEL || '自己部署的后端';
-  const lines = [`# 提示词评测 · ${new Date().toLocaleString('zh-CN')}`, '', `模型：${model}`, ''];
-  const table = ['| 场景 | AI 发言 | 以提问结尾 | 最长连续提问 | 接嘉宾时问学习者 | 套话 | 套路开头 / 所以结尾 | 破折号 / 对仗 | 平均字数（长短变化） | 问题 |', '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |'];
+  const lines = [`# 提示词评测 · ${new Date().toLocaleString('zh-CN')}`, '', `模型：${model}；每场跑 ${runs} 次，数值是中位数`, ''];
+  const table = ['| 场景 | AI 发言 | 以提问结尾 | 最长连续提问 | 接嘉宾时问学习者 | 套话 | 套路开头 / 所以结尾 | 破折号 / 对仗 | 平均字数（长短变化） | 问题 | 偶发 |', '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |'];
   const details: string[] = [];
   for (const s of list) {
-    process.stdout.write(`跑「${s.name}」…`);
-    try {
-      const r = await run(s, call);
-      const m = r.metrics;
-      table.push(`| ${s.name} | ${m.aiTurns} | ${m.questions}（${Math.round(m.questionRatio * 100)}%） | ${m.longestQuestionRun} | ${m.askedAfterGuest} | ${m.stock.join('、') || '无'} | ${m.templateOpen} / ${m.soEnding} | ${m.dashes} / ${m.notBut} | ${m.avgLength}（${m.lengthCV}） | ${r.issues.join('；') || '✓'} |`);
-      details.push(`## ${s.name}\n\n${s.why}\n\n` + r.messages.map(x => `**${x.name}${r.guests.has(x.name) ? '' : '（模拟）'}**：${x.text}`).join('\n\n')
-        + `\n\n**复盘**：${r.review.oneLine}\n\n需要纠正：${r.review.misconceptions.map(x => `${x.said} → ${x.fix}`).join('；') || '无'}\n\n立场：${r.review.stances?.map(x => `${x.said}（${x.note}）`).join('；') || '无'}`);
-      console.log(r.issues.length ? ` 有 ${r.issues.length} 个问题` : ' ✓');
-    } catch (e) {
-      table.push(`| ${s.name} | – | – | – | – | – | – | – | – | 失败：${(e as Error).message} |`);
-      console.log(' 失败：' + (e as Error).message);
+    process.stdout.write(`跑「${s.name}」${runs} 次…`);
+    // 几次同时跑：各自独立的对话，互不影响
+    const results = await Promise.allSettled(Array.from({ length: runs }, () => run(s, call)));
+    const ok = results.flatMap(r => r.status === 'fulfilled' ? [r.value] : []);
+    const failed = results.flatMap(r => r.status === 'rejected' ? [(r.reason as Error).message] : []);
+    if (!ok.length) {
+      table.push(`| ${s.name} | – | – | – | – | – | – | – | – | 失败：${failed[0]} | |`);
+      console.log(' 失败：' + failed[0]); continue;
     }
+    const { metrics: m, issues, flaky } = combine(ok);
+    if (failed.length) flaky.push(`${failed.length} 次请求失败：${failed[0]}`);
+    table.push(`| ${s.name} | ${m.aiTurns} | ${m.questions}（${Math.round(m.questionRatio * 100)}%） | ${m.longestQuestionRun} | ${m.askedAfterGuest} | ${m.stock.join('、') || '无'} | ${m.templateOpen} / ${m.soEnding} | ${m.dashes} / ${m.notBut} | ${m.avgLength}（${m.lengthCV}） | ${issues.join('；') || '✓'} | ${flaky.join('；') || '–'} |`);
+    ok.forEach((r, i) => details.push(`## ${s.name}（第 ${i + 1} 次）\n\n${s.why}\n\n` + r.messages.map(x => `**${x.name}${r.guests.has(x.name) ? '' : '（模拟）'}**：${x.text}`).join('\n\n')
+      + `\n\n**复盘**：${r.review.oneLine}\n\n需要纠正：${r.review.misconceptions.map(x => `${x.said} → ${x.fix}`).join('；') || '无'}\n\n立场：${r.review.stances?.map(x => `${x.said}（${x.note}）`).join('；') || '无'}\n\n这一次的问题：${r.issues.map(p => p.text).join('；') || '无'}`));
+    console.log(issues.length ? ` 有 ${issues.length} 个问题` : flaky.length ? ` ✓（偶发 ${flaky.length} 项）` : ' ✓');
   }
   let prep = '';
   if (!only.length) { process.stdout.write('跑准备阶段…'); try { prep = await prepareChecks(call); console.log(' 完成'); } catch (e) { prep = '失败：' + (e as Error).message; console.log(' 失败'); } }
-  lines.push(...table, '', `合格线：以提问结尾不超过 ${LIMITS.questionRatio * 100}%（换我来讲时 ${RATIO_BY_MODE.teach! * 100}%），连续提问不超过 ${LIMITS.longestQuestionRun} 段，接嘉宾时不问学习者，没有套话，单段不超过 180 字；AI 味：套路开头和“所以”结尾各不超过 30% 的段落，破折号每段平均不超过 0.25 个，“不是……而是”不超过 0.3 处，段落长短变化不低于 0.25；复盘不把立场当误解，说错的概念要纠正。`, '');
+  lines.push(...table, '', `合格线：以提问结尾不超过 ${LIMITS.questionRatio * 100}%（换我来讲时 ${RATIO_BY_MODE.teach! * 100}%），连续提问不超过 ${LIMITS.longestQuestionRun} 段，接嘉宾时不问学习者，没有套话，单段不超过 180 字；AI 味：套路开头和“所以”结尾各不超过 30% 的段落，破折号每段平均不超过 0.25 个，“不是……而是”不超过 0.3 处，段落长短变化不低于 0.25；复盘不把立场当误解，说错的概念要纠正。一个问题要在多数几次里都出现才算数，只出现在少数几次的列为“偶发”。`, '');
   if (prep) lines.push('## 准备阶段', '', prep, '');
   lines.push(...details);
   const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'eval-out');

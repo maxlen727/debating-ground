@@ -46,3 +46,19 @@ test('every scenario builds valid prompts', () => {
     assert.ok(buildRequest('review', { session }).messages.length === 2, s.name);
   }
 });
+
+test('repeated runs: medians, and an issue only counts when most runs show it (#50)', async () => {
+  const { combine, problemList } = await import('../scripts/eval-prompts.ts');
+  const guests = new Set(['苏珩']);
+  const say = (texts: string[]) => texts.flatMap((t, i) => [{ kind: 'msg' as const, name: '学习者', text: 'x' + i }, { kind: 'msg' as const, name: '苏珩', text: t }]);
+  const calm = say(['我觉得是放弃的那个选择。', '对，这就是关键，时间也算在里面。', '没错，所以要比较的是最好的那个。', '嗯。']);
+  const grill = say(['那你怎么看？', '为什么？', '还有呢？', '真的吗？']);
+  const runOf = (msgs: typeof calm) => { const metrics = measure(msgs, guests); return { metrics, issues: problemList(metrics) }; };
+  const once = combine([runOf(calm), runOf(calm), runOf(grill)]);
+  assert.equal(once.metrics.longestQuestionRun, 0, 'the median ignores one bad run');
+  assert.deepEqual(once.issues, []);
+  assert.ok(once.flaky.some(f => f.includes('1/3 次')), 'a one-off issue is still reported, as flaky');
+  const twice = combine([runOf(grill), runOf(calm), runOf(grill)]);
+  assert.ok(twice.issues.some(i => /以提问结尾（2\/3 次）/.test(i)), 'an issue in most runs counts');
+  assert.ok(problemList(runOf(grill).metrics).every(p => p.key && p.text));
+});
