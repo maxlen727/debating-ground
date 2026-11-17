@@ -1,7 +1,6 @@
 package debating.ground.app.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
@@ -27,6 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import debating.ground.app.ui.screens.DiscussScreen
 import debating.ground.app.ui.screens.LearnScreen
 import debating.ground.app.ui.screens.LibraryScreen
@@ -39,7 +39,9 @@ import debating.ground.app.ui.theme.color
 fun AppScaffold() {
     var tab by rememberSaveable { mutableStateOf(Tab.Learn) }
     backTarget(tab)?.let { target -> BackHandler { tab = target } }
-    BoxWithConstraints(Modifier.fillMaxSize().background(LocalTokens.current.page.color())) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // 整个窗口底下铺一层背景氛围，页面和导航都是透明的，让它透出来
+        Atmosphere()
         val style = navStyleFor(maxWidth.value.toInt(), maxHeight.value.toInt())
         if (style == NavStyle.Rail) {
             Row(Modifier.fillMaxSize()) {
@@ -47,13 +49,13 @@ fun AppScaffold() {
                 // 内容铺满导航右边的整块区域，不留两侧空白（和网页版宽屏时一样）。
                 // 左侧导航自己避开系统栏；内容这边避开状态栏、底部手势条和横屏时的刘海
                 Box(
-                    Modifier.fillMaxSize().background(LocalTokens.current.surface.color())
+                    Modifier.fillMaxSize()
                         .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical + WindowInsetsSides.End)),
                 ) { Page(tab) }
             }
         } else {
             Scaffold(
-                containerColor = LocalTokens.current.surface.color(),
+                containerColor = Color.Transparent,
                 bottomBar = { BottomBar(tab) { tab = it } },
             ) { padding -> Box(Modifier.fillMaxSize().padding(padding)) { Page(tab) } }
         }
@@ -71,7 +73,7 @@ private fun Page(tab: Tab) = when (tab) {
 @Composable
 private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit) {
     val t = LocalTokens.current
-    NavigationBar(containerColor = t.surface.color()) {
+    NavigationBar(containerColor = Color.Transparent) {
         Tab.entries.forEach { tab ->
             NavigationBarItem(
                 selected = tab == current,
@@ -93,7 +95,7 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit) {
 @Composable
 private fun Rail(current: Tab, onSelect: (Tab) -> Unit) {
     val t = LocalTokens.current
-    NavigationRail(containerColor = t.page.color()) {
+    NavigationRail(containerColor = Color.Transparent) {
         Tab.entries.forEach { tab ->
             NavigationRailItem(
                 selected = tab == current,

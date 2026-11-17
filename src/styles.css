@@ -47,7 +47,7 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; }
-body { background: var(--page); color: var(--ink); font: 16px/1.6 var(--f-body); -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; }
+body { background: var(--surface); color: var(--ink); font: 16px/1.6 var(--f-body); -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; }
 button, input, textarea, select { font: inherit; color: inherit; }
 button { cursor: pointer; border: 0; background: none; padding: 0; }
 button:disabled { cursor: default; opacity: .45; }
@@ -68,10 +68,27 @@ code { font-size: .9em; background: var(--bg); padding: 1px 5px; border-radius: 
 .scroll-x { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .scroll-x::-webkit-scrollbar { display: none; }
 
+/* ---------- 背景氛围 ---------- */
+/* 几团很大、边缘渐隐的色块，像隔着磨砂玻璃看到的光，加一层很淡的噪点。原生版的 ui/Atmosphere.kt 是同一套参数。
+   不做实时模糊：径向渐变渐隐到透明，看起来就是模糊过的；颜色只取令牌，深色模式跟着变。
+   每团色块各自极慢地漂（一两分钟一个来回），只动 transform，交给 GPU 合成，不触发重排；减少动画时静止。 */
+.atmosphere { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.atmosphere i { position: absolute; left: var(--x); top: var(--y); width: calc(var(--r) * 200vmax); height: calc(var(--r) * 200vmax); margin: calc(var(--r) * -100vmax) 0 0 calc(var(--r) * -100vmax); border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--c) calc(var(--a) * 100%), transparent), color-mix(in srgb, var(--c) calc(var(--a) * 40%), transparent) 50%, transparent);
+  animation: drift var(--t) ease-in-out infinite alternate; will-change: transform; }
+.atmosphere i:nth-child(1) { --x: 78%; --y: 12%; --r: .75; --c: var(--accent-soft); --a: .85; --t: 97s; --dx: -4vmax; --dy: 3vmax; }   /* 右上：暖 */
+.atmosphere i:nth-child(2) { --x: 10%; --y: 42%; --r: .70; --c: var(--lit); --a: .70; --t: 113s; --dx: 5vmax; --dy: -3vmax; }          /* 左中：绿 */
+.atmosphere i:nth-child(3) { --x: 85%; --y: 70%; --r: .65; --c: var(--c-bg); --a: .55; --t: 83s; --dx: -3vmax; --dy: -4vmax; }        /* 右下：冷 */
+.atmosphere i:nth-child(4) { --x: 30%; --y: 95%; --r: .60; --c: var(--b-bg); --a: .50; --t: 127s; --dx: 4vmax; --dy: -2vmax; }        /* 底部：暖 */
+/* 噪点：近看有一点纸面的颗粒，远看看不出，也顺带消掉渐变上的色带 */
+.atmosphere::after { content: ""; position: absolute; inset: 0; opacity: .055;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 1.6 -.3'/%3E%3C/filter%3E%3Crect width='128' height='128' filter='url(%23n)'/%3E%3C/svg%3E"); }
+@keyframes drift { to { transform: translate(var(--dx), var(--dy)); } }
+@media (prefers-reduced-motion: reduce) { .atmosphere i { animation: none; } }
+
 /* ---------- App 外壳 ---------- */
-.app { position: relative; max-width: 520px; margin: 0 auto; min-height: 100dvh; background: var(--surface); padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px)); }
+.app { position: relative; max-width: 520px; margin: 0 auto; min-height: 100dvh; background: transparent; padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px)); }
 .app.immersive { padding-bottom: 0; }
-@media (min-width: 560px) { .app { border-inline: 1px solid var(--line); box-shadow: 0 0 60px rgb(0 0 0 / 6%); } }
 .screen { display: flex; flex-direction: column; min-height: calc(100dvh - var(--tab-h) - env(safe-area-inset-bottom, 0px)); }
 .immersive .screen { min-height: 100dvh; }
 
@@ -691,14 +708,14 @@ body::after {
 /* 左侧导航栏：宽屏，或者横着拿的手机 */
 @media (min-width: 840px), (orientation: landscape) and (max-height: 500px) {
   :root { --rail: 84px; }
-  .app { max-width: none; padding-bottom: 0; padding-left: var(--rail); background: var(--page); }
+  .app { max-width: none; padding-bottom: 0; padding-left: var(--rail); background: transparent; }
   .app.immersive { padding-left: 0; }
-  .screen { width: 100%; max-width: var(--page-w); margin-inline: auto; background: var(--surface); }
+  .screen { width: 100%; max-width: var(--page-w); margin-inline: auto; }
   .tabbar {
     left: 0; top: 0; bottom: 0; transform: none; width: var(--rail); max-width: none; height: auto;
     grid-template-columns: 1fr; grid-auto-rows: 68px; align-content: start; gap: 6px;
     padding: calc(24px + env(safe-area-inset-top, 0px)) 8px calc(12px + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
-    border-top: 0; border-right: 1px solid var(--line);
+    border-top: 0;
   }
   .tabbar button { font-size: 12px; }
   .tabbar button.active { background: color-mix(in srgb, var(--brand) 9%, transparent); }
@@ -721,8 +738,7 @@ body::after {
   :root { --page-w: 1080px; }
   .session { --page-w: 860px; }
   .prepare, .settings, .join { --page-w: 760px; }
-  .app:not(.immersive) .screen { border-inline: 1px solid var(--line); min-height: 100dvh; }
-  .immersive .screen { border-inline: 1px solid var(--line); }
+  .app:not(.immersive) .screen { min-height: 100dvh; }
   /* 学习页：左边写概念，右边选讨论方式 */
   .learn .stack.pad { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); column-gap: 40px; align-items: start; align-content: start; flex: 0 0 auto; }
   .learn .stack.pad > * { grid-column: 1 / -1; }

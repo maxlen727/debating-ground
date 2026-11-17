@@ -26,6 +26,7 @@ cd native
 
 - **颜色令牌**：`ui/theme/Tokens.kt` 和 `src/styles.css` 的浅色、深色令牌逐项比对（`TokensTest`）。网页版新增令牌，原生版也要加。
 - **图标**：`ui/Icons.kt` 用和 `src/components/ui.tsx` 相同的 SVG 路径（`IconPathsTest`）。
+- **背景氛围**：`ui/Atmosphere.kt` 的色块位置、半径、颜色、浓度、漂移周期和距离，和 `styles.css` 的“背景氛围”一节逐项比对（`AtmosphereTest`）。系统关掉动画时不漂；截图测试里也固定成静止画面。
 - **主导航**：四个标签和网页版一样。窄屏用底部导航；宽度 ≥ 840dp 或横屏高度 ≤ 500dp 用左侧导航（`NavigationTest`）。
 
 字体分工、字号阶梯、只用系统字体这些规则，和 AGENTS.md 的界面规范相同，写在 `ui/theme/Theme.kt`。
