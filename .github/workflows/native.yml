@@ -1,0 +1,51 @@
+name: 原生安卓版
+
+# 原生版（native/，Kotlin + Compose）还在开发中（#70）：只构建和测试，不发布，不影响现有 App（android.yml）的发布。
+# PR 和 main 上都会构建 debug 包（包名带 .dev，能和正式版同时装）、跑单元测试和截图测试，结果作为构建产物上传。
+# 原生版的测试会读网页版的样式和图标，确认两边没有走样，所以那两个文件变了也要跑。
+on:
+  pull_request:
+    paths: ['native/**', 'src/styles.css', 'src/components/ui.tsx', '.github/workflows/native.yml']
+  push:
+    branches: [main]
+    paths: ['native/**', 'src/styles.css', 'src/components/ui.tsx', '.github/workflows/native.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: native-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: native
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: 构建 debug 包、跑单元测试和截图测试
+        run: ./gradlew assembleDebug testDebugUnitTest --console=plain
+
+      - name: 上传 debug 包
+        uses: actions/upload-artifact@v7
+        with:
+          name: sibian-native-debug
+          path: native/app/build/outputs/apk/debug/*.apk
+          retention-days: 14
+
+      # 截图测试失败时也上传，方便看出了什么问题
+      - name: 上传截图和测试报告
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sibian-native-screenshots
+          path: |
+            native/app/build/screenshots/
+            native/app/build/reports/tests/
+          retention-days: 14

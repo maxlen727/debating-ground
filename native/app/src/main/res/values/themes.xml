@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 窗口底色在 Compose 画出第一帧之前显示：和网页版的 surface 令牌一致，深色模式见 values-night -->
+    <style name="Theme.Sibian" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window</item>
+    </style>
+    <color name="window">#FBFAF5</color>
+</resources>
