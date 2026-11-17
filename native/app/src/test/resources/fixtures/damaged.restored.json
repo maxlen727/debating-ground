@@ -1,0 +1,99 @@
+{
+  "config": {
+    "concept": "边际效用",
+    "mode": "socratic",
+    "aiMode": "demo",
+    "remote": {
+      "url": "",
+      "password": ""
+    },
+    "name": "",
+    "counts": {
+      "A": 2,
+      "B": 2
+    },
+    "seats": {
+      "A": [
+        {
+          "type": "human",
+          "bg": ""
+        },
+        {
+          "type": "ai",
+          "bg": "经济学研究者，习惯用数据和模型说话。"
+        }
+      ],
+      "B": [
+        {
+          "type": "ai",
+          "bg": "中学老师，关注概念在日常生活里怎么被误用。"
+        },
+        {
+          "type": "ai",
+          "bg": "创业者，从真实的经营取舍出发。"
+        }
+      ]
+    },
+    "stages": [
+      {
+        "name": "开篇立论",
+        "kind": "opening",
+        "rounds": 1
+      },
+      {
+        "name": "交叉质询",
+        "kind": "cross",
+        "rounds": 1
+      },
+      {
+        "name": "自由辩论",
+        "kind": "free",
+        "rounds": 2
+      },
+      {
+        "name": "总结陈词",
+        "kind": "closing",
+        "rounds": 1
+      }
+    ],
+    "turnSeconds": 0,
+    "voiceName": "x4_xiaoyan"
+  },
+  "plan": null,
+  "session": null,
+  "library": [
+    {
+      "id": "c1",
+      "concept": "机会成本",
+      "oneLine": "放弃的最好选择",
+      "points": [
+        {
+          "label": "a",
+          "status": "mastered",
+          "note": ""
+        }
+      ],
+      "quiz": [
+        {
+          "q": "有选项",
+          "options": [
+            "甲",
+            "乙"
+          ],
+          "answer": 0,
+          "why": ""
+        }
+      ],
+      "topic": "",
+      "sessionId": "",
+      "mode": "socratic",
+      "created": 1763366400000,
+      "level": 0,
+      "due": 0,
+      "source": "demo",
+      "misconceptions": [],
+      "reviews": []
+    }
+  ],
+  "screen": "learn"
+}

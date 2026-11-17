@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -53,8 +54,12 @@ tasks.withType<Test>().configureEach {
     // 登记成输入：网页版的这两个文件改了，测试要重跑，不能当成“已是最新”跳过
     inputs.file(rootProject.file("../src/styles.css"))
     inputs.file(rootProject.file("../src/components/ui.tsx"))
+    inputs.file(rootProject.file("../shared/modes.ts"))
     systemProperty("web.styles", rootProject.file("../src/styles.css").absolutePath)
     systemProperty("web.icons", rootProject.file("../src/components/ui.tsx").absolutePath)
+    systemProperty("web.modes", rootProject.file("../shared/modes.ts").absolutePath)
+    // 跨实现的标准答案（scripts/native-fixtures.ts 生成）：网页版的存档逻辑或导出改了，测试要重跑
+    inputs.dir(file("src/test/resources/fixtures"))
     // 截图存这里，CI 作为构建产物上传，审查时可以直接看
     systemProperty("screenshots.dir", layout.buildDirectory.dir("screenshots").get().asFile.absolutePath)
 }
@@ -68,6 +73,7 @@ dependencies {
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
     implementation(libs.compose.ui.tooling.preview)
+    implementation(libs.kotlinx.serialization.json)
     debugImplementation(libs.compose.ui.tooling)
 
     testImplementation(libs.junit)
