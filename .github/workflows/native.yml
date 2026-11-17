@@ -29,6 +29,10 @@ jobs:
           java-version: 21
       - uses: gradle/actions/setup-gradle@v6
 
+      # ktlint 管 Kotlin 写法，Android Lint 管安卓相关的问题（严格模式：警告也算失败）
+      - name: 代码检查
+        run: ./gradlew ktlintCheck lintDebug --console=plain
+
       - name: 构建 debug 包、跑单元测试和截图测试
         run: ./gradlew assembleDebug testDebugUnitTest --console=plain
 
@@ -47,5 +51,5 @@ jobs:
           name: sibian-native-screenshots
           path: |
             native/app/build/screenshots/
-            native/app/build/reports/tests/
+            native/app/build/reports/
           retention-days: 14

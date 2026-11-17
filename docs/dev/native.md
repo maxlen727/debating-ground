@@ -15,6 +15,7 @@
 cd native
 ./gradlew assembleDebug          # debug 包在 app/build/outputs/apk/debug/
 ./gradlew testDebugUnitTest      # 单元测试和截图测试
+./gradlew ktlintCheck lintDebug  # 代码检查（ktlintFormat 自动整理写法）
 ```
 
 命令行构建时，用 `ANDROID_HOME` 环境变量或 `native/local.properties`（`sdk.dir=…`，不进仓库）告诉 Gradle SDK 在哪里。
@@ -28,6 +29,12 @@ cd native
 - **主导航**：四个标签和网页版一样。窄屏用底部导航；宽度 ≥ 840dp 或横屏高度 ≤ 500dp 用左侧导航（`NavigationTest`）。
 
 字体分工、字号阶梯、只用系统字体这些规则，和 AGENTS.md 的界面规范相同，写在 `ui/theme/Theme.kt`。
+
+## 代码检查
+
+- **ktlint**：管 Kotlin 写法，用 Kotlin 官方编码规范，和 Android Studio 的默认格式一致，设置在 `native/.editorconfig`。它直接调 ktlint 的命令行版本，不用第三方 Gradle 插件，因为那些插件和 AGP 9 自带的 Kotlin 支持不一定兼容。`./gradlew ktlintFormat` 能自动改好大部分问题。
+- **Android Lint**：AGP 自带，开了严格模式，警告也算失败。“有新版本可用”这类要联网的检查关掉了，否则同一份代码今天能过、明天可能就过不了；版本升级交给 dependabot。
+- 确属故意的写法，单独关掉那一处检查并写明原因，例如 `ui/Icons.kt` 里那行很长的图标路径。
 
 ## 没有模拟器时怎么看界面
 
@@ -49,4 +56,4 @@ CI 会把截图作为构建产物上传，审查界面改动时直接下载来�
 
 ## CI（`.github/workflows/native.yml`）
 
-`native/`、`src/styles.css`、`src/components/ui.tsx` 有改动时运行：构建 debug 包、跑单元测试和截图测试，上传 debug 包和截图（保留 14 天）。不签名、不发 Release。
+`native/`、`src/styles.css`、`src/components/ui.tsx` 有改动时运行：代码检查（ktlint、Android Lint），构建 debug 包，跑单元测试和截图测试，上传 debug 包、截图和检查报告（保留 14 天）。不签名、不发 Release。

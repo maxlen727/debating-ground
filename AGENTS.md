@@ -43,7 +43,7 @@ npm run docs:dev     # 文档站热更新
 npm run sync:worker  # 改了 server/ai.ts 或 shared/ 后，同步到 worker/src/vendor/
 npm run eval:prompts # 提示词回归评测：用真实模型和模拟学习者聊几场（见脚本开头的说明）
 npm run android:sync # 构建界面并同步到安卓工程（之后 npx cap open android，或 cd android && ./gradlew assembleDebug）
-cd native && ./gradlew assembleDebug testDebugUnitTest   # 原生安卓版：构建、单元测试和截图测试（截图在 app/build/screenshots/）
+cd native && ./gradlew ktlintCheck lintDebug assembleDebug testDebugUnitTest   # 原生安卓版：代码检查、构建、单元测试和截图测试（截图在 app/build/screenshots/）；./gradlew ktlintFormat 自动整理写法
 cd worker && npm install && npm run dev   # 本地运行后端（先把 .dev.vars.example 复制为 .dev.vars）
 ```
 

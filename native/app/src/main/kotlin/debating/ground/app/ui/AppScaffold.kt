@@ -3,15 +3,15 @@ package debating.ground.app.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -74,12 +74,16 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit) {
     NavigationBar(containerColor = t.surface.color()) {
         Tab.entries.forEach { tab ->
             NavigationBarItem(
-                selected = tab == current, onClick = { onSelect(tab) },
+                selected = tab == current,
+                onClick = { onSelect(tab) },
                 icon = { Icon(lineIcon(tab.name, tab.icon), contentDescription = null) },
                 label = { Text(tab.label, style = TextStyles.label) },
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = t.brand.color(), selectedTextColor = t.brand.color(), indicatorColor = t.lit.color(),
-                    unselectedIconColor = t.muted.color(), unselectedTextColor = t.muted.color(),
+                    selectedIconColor = t.brand.color(),
+                    selectedTextColor = t.brand.color(),
+                    indicatorColor = t.lit.color(),
+                    unselectedIconColor = t.muted.color(),
+                    unselectedTextColor = t.muted.color(),
                 ),
             )
         }
@@ -92,12 +96,16 @@ private fun Rail(current: Tab, onSelect: (Tab) -> Unit) {
     NavigationRail(containerColor = t.page.color()) {
         Tab.entries.forEach { tab ->
             NavigationRailItem(
-                selected = tab == current, onClick = { onSelect(tab) },
+                selected = tab == current,
+                onClick = { onSelect(tab) },
                 icon = { Icon(lineIcon(tab.name, tab.icon), contentDescription = null) },
                 label = { Text(tab.label, style = TextStyles.label) },
                 colors = NavigationRailItemDefaults.colors(
-                    selectedIconColor = t.brand.color(), selectedTextColor = t.brand.color(), indicatorColor = t.lit.color(),
-                    unselectedIconColor = t.muted.color(), unselectedTextColor = t.muted.color(),
+                    selectedIconColor = t.brand.color(),
+                    selectedTextColor = t.brand.color(),
+                    indicatorColor = t.lit.color(),
+                    unselectedIconColor = t.muted.color(),
+                    unselectedTextColor = t.muted.color(),
                 ),
             )
         }

@@ -27,6 +27,17 @@ updates:
     ignore:
       - dependency-name: '*'
         update-types: ['version-update:semver-major']
+  # 原生安卓版（Kotlin + Compose）。Android Lint 里“有新版本可用”的检查关掉了，版本升级靠这里
+  - package-ecosystem: gradle
+    directory: /native
+    schedule:
+      interval: monthly
+    groups:
+      androidx-and-kotlin:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
   - package-ecosystem: github-actions
     directory: /
     schedule:

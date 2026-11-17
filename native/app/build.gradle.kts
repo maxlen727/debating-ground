@@ -33,6 +33,14 @@ android {
         targetCompatibility = JavaVersion.VERSION_21
     }
     buildFeatures { compose = true }
+    // Android Lint 开严格模式：警告也算失败，CI 里和单元测试一起跑（./gradlew lintDebug）
+    lint {
+        abortOnError = true
+        warningsAsErrors = true
+        checkDependencies = true
+        // “有新版本可用”这类检查要联网、会随时间变化，放在 CI 里会让同一份代码今天过明天不过；版本升级交给 dependabot
+        disable += setOf("GradleDependency", "NewerVersionAvailable", "AndroidGradlePluginVersion")
+    }
     testOptions {
         unitTests.isReturnDefaultValues = true
         // Robolectric 渲染界面要用到资源
@@ -47,7 +55,6 @@ tasks.withType<Test>().configureEach {
     // 截图存这里，CI 作为构建产物上传，审查时可以直接看
     systemProperty("screenshots.dir", layout.buildDirectory.dir("screenshots").get().asFile.absolutePath)
 }
-
 
 dependencies {
     implementation(libs.androidx.core.ktx)
@@ -65,4 +72,26 @@ dependencies {
     testImplementation(platform(libs.compose.bom))
     testImplementation(libs.compose.ui.test.junit4)
     debugImplementation(libs.compose.ui.test.manifest)
+}
+
+// Kotlin 写法检查（ktlint，官方 Kotlin 风格加 Compose 的命名习惯，见 native/.editorconfig）
+// ./gradlew ktlintCheck 检查，./gradlew ktlintFormat 自动改
+val ktlint: Configuration by configurations.creating
+dependencies { ktlint(libs.ktlint.cli) }
+val ktlintSources = listOf("src/**/*.kt", "*.kts", "../*.kts")
+tasks.register<JavaExec>("ktlintCheck") {
+    group = "verification"
+    description = "检查 Kotlin 写法"
+    classpath = ktlint
+    mainClass.set("com.pinterest.ktlint.Main")
+    args = listOf("--relative") + ktlintSources
+}
+tasks.register<JavaExec>("ktlintFormat") {
+    group = "formatting"
+    description = "按 ktlint 自动整理 Kotlin 写法"
+    classpath = ktlint
+    mainClass.set("com.pinterest.ktlint.Main")
+    // ktlint 需要访问 JDK 内部 API 才能改文件
+    jvmArgs("--add-opens=java.base/java.lang=ALL-UNNAMED")
+    args = listOf("-F") + ktlintSources
 }
