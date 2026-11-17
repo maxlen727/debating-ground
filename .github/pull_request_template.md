@@ -10,6 +10,7 @@ Closes #
 
 - [ ] `npm run check` 通过
 - [ ] `npm run lint` 通过
+- [ ] `npm run format:check` 通过
 - [ ] `npm test` 通过
 - [ ] `npm run build` 通过
 - [ ] 界面改动：在手机宽度、浅色和深色下检查过（截图附在下面）

@@ -7,49 +7,105 @@ import type { Card, Config, Plan, Session } from '../store.ts';
 
 type Loose = Record<string, unknown>;
 const isObj = (v: unknown): v is Loose => !!v && typeof v === 'object' && !Array.isArray(v);
-const str = (v: unknown, fallback = '') => typeof v === 'string' ? v : fallback;
-const num = (v: unknown, fallback = 0) => typeof v === 'number' && Number.isFinite(v) ? v : fallback;
-const list = (v: unknown): unknown[] => Array.isArray(v) ? v : [];
+const str = (v: unknown, fallback = '') => (typeof v === 'string' ? v : fallback);
+const num = (v: unknown, fallback = 0) =>
+  typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const strings = (v: unknown) => list(v).filter((x): x is string => typeof x === 'string');
 const isMode = (v: unknown): v is ModeId => typeof v === 'string' && v in MODES;
 
 export function restoreLibrary(v: unknown): Card[] {
-  return list(v).filter(isObj).filter(c => typeof c.id === 'string' && c.id).map(c => ({
-    ...c,
-    concept: str(c.concept), topic: str(c.topic), oneLine: str(c.oneLine), sessionId: str(c.sessionId),
-    mode: isMode(c.mode) ? c.mode : 'socratic',
-    created: num(c.created, Date.now()), level: num(c.level), due: num(c.due),
-    source: c.source === 'api' ? 'api' : 'demo',   // 卡片来自复盘，只有这两种来源
-    points: list(c.points).filter(isObj), misconceptions: list(c.misconceptions).filter(isObj),
-    quiz: list(c.quiz).filter(isObj).filter(q => Array.isArray(q.options)),
-    reviews: list(c.reviews).filter(isObj)
-  }) as unknown as Card);
+  return list(v)
+    .filter(isObj)
+    .filter(c => typeof c.id === 'string' && c.id)
+    .map(
+      c =>
+        ({
+          ...c,
+          concept: str(c.concept),
+          topic: str(c.topic),
+          oneLine: str(c.oneLine),
+          sessionId: str(c.sessionId),
+          mode: isMode(c.mode) ? c.mode : 'socratic',
+          created: num(c.created, Date.now()),
+          level: num(c.level),
+          due: num(c.due),
+          source: c.source === 'api' ? 'api' : 'demo', // 卡片来自复盘，只有这两种来源
+          points: list(c.points).filter(isObj),
+          misconceptions: list(c.misconceptions).filter(isObj),
+          quiz: list(c.quiz)
+            .filter(isObj)
+            .filter(q => Array.isArray(q.options)),
+          reviews: list(c.reviews).filter(isObj),
+        }) as unknown as Card,
+    );
 }
 
 export function restorePlan(v: unknown): Plan | null {
-  if (!isObj(v) || !isMode(v.mode) || typeof v.concept !== 'string' || typeof v.topic !== 'string') return null;
+  if (!isObj(v) || !isMode(v.mode) || typeof v.concept !== 'string' || typeof v.topic !== 'string')
+    return null;
   if (!Array.isArray(v.keyPoints) || !Array.isArray(v.personas)) return null;
-  const personas = v.personas.filter(isObj).filter(p => typeof p.id === 'string' && typeof p.name === 'string');
+  const personas = v.personas
+    .filter(isObj)
+    .filter(p => typeof p.id === 'string' && typeof p.name === 'string');
   // 讨论类模式至少要有一个角色，否则开始讨论时没有人开场
   if (v.mode !== 'debate' && !personas.length) return null;
-  return { ...v, keyPoints: strings(v.keyPoints), personas, opening: str(v.opening), source: v.source === 'api' ? 'api' : 'demo', previous: isObj(v.previous) ? v.previous : null } as unknown as Plan;
+  return {
+    ...v,
+    keyPoints: strings(v.keyPoints),
+    personas,
+    opening: str(v.opening),
+    source: v.source === 'api' ? 'api' : 'demo',
+    previous: isObj(v.previous) ? v.previous : null,
+  } as unknown as Plan;
 }
 
 export function restoreSession(v: unknown): Session | null {
-  if (!isObj(v) || typeof v.id !== 'string' || !isMode(v.mode) || typeof v.concept !== 'string' || typeof v.topic !== 'string') return null;
+  if (
+    !isObj(v) ||
+    typeof v.id !== 'string' ||
+    !isMode(v.mode) ||
+    typeof v.concept !== 'string' ||
+    typeof v.topic !== 'string'
+  )
+    return null;
   if (!Array.isArray(v.entries) || !Array.isArray(v.keyPoints)) return null;
-  const entries = v.entries.filter(isObj).filter(e => typeof e.id === 'string' && (e.kind === 'msg' || e.kind === 'sys' || e.kind === 'reflect') && typeof e.text === 'string');
-  const personas = list(v.personas).filter(isObj).filter(p => typeof p.id === 'string' && typeof p.name === 'string');
-  const turns = list(v.turns).filter(isObj).filter(t => isObj(t.role));
+  const entries = v.entries
+    .filter(isObj)
+    .filter(
+      e =>
+        typeof e.id === 'string' &&
+        (e.kind === 'msg' || e.kind === 'sys' || e.kind === 'reflect') &&
+        typeof e.text === 'string',
+    );
+  const personas = list(v.personas)
+    .filter(isObj)
+    .filter(p => typeof p.id === 'string' && typeof p.name === 'string');
+  const turns = list(v.turns)
+    .filter(isObj)
+    .filter(t => isObj(t.role));
   // 单人讨论没有角色、辩论没有赛程，都没法继续（多人房间的状态以后端为准，重连后会补上）
-  if (!isObj(v.room) && !v.finished && (v.mode === 'debate' ? !turns.length : !personas.length)) return null;
+  if (!isObj(v.room) && !v.finished && (v.mode === 'debate' ? !turns.length : !personas.length))
+    return null;
   const out = {
-    ...v, entries, personas, turns, keyPoints: strings(v.keyPoints),
+    ...v,
+    entries,
+    personas,
+    turns,
+    keyPoints: strings(v.keyPoints),
     covered: list(v.covered).filter((n): n is number => typeof n === 'number'),
-    seats: list(v.seats).filter(isObj), stages: list(v.stages).filter(isObj),
-    created: num(v.created, Date.now()), learnerTurns: num(v.learnerTurns), nextRole: num(v.nextRole), demoStep: num(v.demoStep), cursor: num(v.cursor),
-    finished: v.finished === true, draft: str(v.draft), previous: isObj(v.previous) ? v.previous : null, review: isObj(v.review) && Array.isArray(v.review.points) ? v.review : null,
-    ...(Array.isArray(v.branches) ? { branches: v.branches.filter(isObj) } : {})
+    seats: list(v.seats).filter(isObj),
+    stages: list(v.stages).filter(isObj),
+    created: num(v.created, Date.now()),
+    learnerTurns: num(v.learnerTurns),
+    nextRole: num(v.nextRole),
+    demoStep: num(v.demoStep),
+    cursor: num(v.cursor),
+    finished: v.finished === true,
+    draft: str(v.draft),
+    previous: isObj(v.previous) ? v.previous : null,
+    review: isObj(v.review) && Array.isArray(v.review.points) ? v.review : null,
+    ...(Array.isArray(v.branches) ? { branches: v.branches.filter(isObj) } : {}),
   } as Loose;
   if (!isObj(out.room)) delete out.room;
   if (!Array.isArray(out.branches)) delete out.branches;
@@ -59,18 +115,45 @@ export function restoreSession(v: unknown): Session | null {
 // 设置逐项检查：某一项的形状不对就用默认值，其余照旧
 export function restoreConfig(v: unknown, base: Config): Config {
   if (!isObj(v)) return base;
-  const seatsOk = (s: unknown) => Array.isArray(s) && s.length > 0 && s.every(x => isObj(x) && typeof x.type === 'string' && typeof x.bg === 'string');
-  const seats = isObj(v.seats) && seatsOk(v.seats.A) && seatsOk(v.seats.B) ? v.seats as Config['seats'] : base.seats;
-  const counts = isObj(v.counts) && [v.counts.A, v.counts.B].every(n => typeof n === 'number' && n >= 1 && n <= 4) ? v.counts as Config['counts'] : base.counts;
-  const stages = Array.isArray(v.stages) && v.stages.length > 0 && v.stages.every(s => isObj(s) && typeof s.name === 'string' && typeof s.kind === 'string' && typeof s.rounds === 'number')
-    ? v.stages as Config['stages'] : base.stages;
-  const remote = isObj(v.remote) && typeof v.remote.url === 'string' && typeof v.remote.password === 'string' ? { url: v.remote.url, password: v.remote.password } : base.remote;
+  const seatsOk = (s: unknown) =>
+    Array.isArray(s) &&
+    s.length > 0 &&
+    s.every(x => isObj(x) && typeof x.type === 'string' && typeof x.bg === 'string');
+  const seats =
+    isObj(v.seats) && seatsOk(v.seats.A) && seatsOk(v.seats.B)
+      ? (v.seats as Config['seats'])
+      : base.seats;
+  const counts =
+    isObj(v.counts) &&
+    [v.counts.A, v.counts.B].every(n => typeof n === 'number' && n >= 1 && n <= 4)
+      ? (v.counts as Config['counts'])
+      : base.counts;
+  const stages =
+    Array.isArray(v.stages) &&
+    v.stages.length > 0 &&
+    v.stages.every(
+      s =>
+        isObj(s) &&
+        typeof s.name === 'string' &&
+        typeof s.kind === 'string' &&
+        typeof s.rounds === 'number',
+    )
+      ? (v.stages as Config['stages'])
+      : base.stages;
+  const remote =
+    isObj(v.remote) && typeof v.remote.url === 'string' && typeof v.remote.password === 'string'
+      ? { url: v.remote.url, password: v.remote.password }
+      : base.remote;
   return {
     concept: str(v.concept, base.concept),
     mode: isMode(v.mode) ? v.mode : base.mode,
     aiMode: v.aiMode === 'api' || v.aiMode === 'remote' ? v.aiMode : 'demo',
-    remote, name: str(v.name), counts, seats, stages,
+    remote,
+    name: str(v.name),
+    counts,
+    seats,
+    stages,
     turnSeconds: ([0, 30, 60, 90, 120] as const).find(n => n === v.turnSeconds) ?? base.turnSeconds,
-    voiceName: str(v.voiceName, base.voiceName)
+    voiceName: str(v.voiceName, base.voiceName),
   };
 }

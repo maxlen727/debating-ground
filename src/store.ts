@@ -1,13 +1,29 @@
 // 全局状态：一个可订阅的对象，持久化到 localStorage。
 // update(fn) 在副本上修改再整体替换，组件用 useApp() 订阅。
 import { useSyncExternalStore } from 'react';
-import type { Entry, ModeId, Persona, Previous, Reflection, Review, Seat, SeatConfig, Source, Stage, Team, TermCard, Turn, ExplainKind } from '../shared/types.ts';
+import type {
+  Entry,
+  ModeId,
+  Persona,
+  Previous,
+  Reflection,
+  Review,
+  Seat,
+  SeatConfig,
+  Source,
+  Stage,
+  Team,
+  TermCard,
+  Turn,
+  ExplainKind,
+} from '../shared/types.ts';
 import type { PointProposal, RoomMember, RoomStatus, Speaker } from '../shared/room.ts';
 import { DEFAULT_VOICE } from '../shared/speech.ts';
 import { holdingRenders, transition, type View } from './lib/motion.ts';
 import { restoreConfig, restoreLibrary, restorePlan, restoreSession } from './lib/restore.ts';
 
-export type Screen = 'learn' | 'prepare' | 'session' | 'review' | 'library' | 'card' | 'settings' | 'join';
+export type Screen =
+  'learn' | 'prepare' | 'session' | 'review' | 'library' | 'card' | 'settings' | 'join';
 
 export interface Config {
   concept: string;
@@ -16,117 +32,240 @@ export interface Config {
   aiMode: 'demo' | 'api' | 'remote';
   // 自己部署的后端：地址和访问口令保存在这台设备的浏览器里（不是 AI 服务商的密钥）
   remote: { url: string; password: string };
-  name: string;          // 多人讨论里显示的名字
+  name: string; // 多人讨论里显示的名字
   counts: Record<Team, number>;
   seats: Record<Team, SeatConfig[]>;
   stages: Stage[];
-  turnSeconds: 0 | 30 | 60 | 90 | 120;   // 多人房间里每次发言的提示时限，0 表示不计时
-  voiceName: string;                     // 讯飞发音人 ID
+  turnSeconds: 0 | 30 | 60 | 90 | 120; // 多人房间里每次发言的提示时限，0 表示不计时
+  voiceName: string; // 讯飞发音人 ID
 }
 export interface Plan {
-  mode: ModeId; concept: string; topic: string; keyPoints: string[]; opening: string;
-  personas: Persona[]; source: Source; model?: string; previous: Previous | null;
-  context?: string;   // 学习者交代的背景（具体事件类的话题）
-  debaters?: Record<Team, string[]>;   // 辩论：按论题生成的辩手背景，增加席位时从这里取
-  rolesFor?: string;  // 角色是按哪道题设定的；学习者改了题目后用来提示“角色还是旧的”
+  mode: ModeId;
+  concept: string;
+  topic: string;
+  keyPoints: string[];
+  opening: string;
+  personas: Persona[];
+  source: Source;
+  model?: string;
+  previous: Previous | null;
+  context?: string; // 学习者交代的背景（具体事件类的话题）
+  debaters?: Record<Team, string[]>; // 辩论：按论题生成的辩手背景，增加席位时从这里取
+  rolesFor?: string; // 角色是按哪道题设定的；学习者改了题目后用来提示“角色还是旧的”
 }
-export interface DebateSeat extends Seat { name: string }
+export interface DebateSeat extends Seat {
+  name: string;
+}
 // 多人讨论房间。房间状态以后端为准，这里是最近一次收到的副本。
 // token 是这位成员在这个房间里的凭据（房间结束后失效），不是 AI 服务商的密钥，也不会进入导出文件或知识库。
 export interface RoomLink {
-  backend: string; roomId: string; token: string; invite: string;   // invite 只有房主保存，用来再次分享
-  memberId: string; host: boolean;
-  status: RoomStatus; members: RoomMember[]; speaker: Speaker; aiBusy: string | null; error: string; expiresAt: number;
-  turnSeconds: number; turnDeadline: number; voiceAvailable?: boolean; listenAvailable?: boolean; aiPaused?: boolean;   // turnDeadline 已换算成这台设备的时钟，0 表示不计时
-  connected: boolean; closed: string;                                // closed：房间不可用的原因，不再重连
-  reflections: (Reflection & { after: string })[];                   // 小结只留在自己的设备上
+  backend: string;
+  roomId: string;
+  token: string;
+  invite: string; // invite 只有房主保存，用来再次分享
+  memberId: string;
+  host: boolean;
+  status: RoomStatus;
+  members: RoomMember[];
+  speaker: Speaker;
+  aiBusy: string | null;
+  error: string;
+  expiresAt: number;
+  turnSeconds: number;
+  turnDeadline: number;
+  voiceAvailable?: boolean;
+  listenAvailable?: boolean;
+  aiPaused?: boolean; // turnDeadline 已换算成这台设备的时钟，0 表示不计时
+  connected: boolean;
+  closed: string; // closed：房间不可用的原因，不再重连
+  reflections: (Reflection & { after: string })[]; // 小结只留在自己的设备上
 }
 export interface Session {
-  id: string; created: number; mode: ModeId; concept: string; topic: string; keyPoints: string[];
-  covered: number[]; entries: Entry[]; learnerTurns: number; nextRole: number; demoStep: number;
-  finished: boolean; draft: string; previous: Previous | null;
-  context?: string;          // 学习者交代的背景，随讨论带给每个提示词
-  awaitingReview?: boolean;  // 辩论赛程走完、还没进入复盘：先让学习者读完最后的总结陈词
-  proposedPoints?: PointProposal[];   // 待确认的新要点；多人房间里以后端为准
+  id: string;
+  created: number;
+  mode: ModeId;
+  concept: string;
+  topic: string;
+  keyPoints: string[];
+  covered: number[];
+  entries: Entry[];
+  learnerTurns: number;
+  nextRole: number;
+  demoStep: number;
+  finished: boolean;
+  draft: string;
+  previous: Previous | null;
+  context?: string; // 学习者交代的背景，随讨论带给每个提示词
+  awaitingReview?: boolean; // 辩论赛程走完、还没进入复盘：先让学习者读完最后的总结陈词
+  proposedPoints?: PointProposal[]; // 待确认的新要点；多人房间里以后端为准
   personas: Persona[];
-  seats: DebateSeat[]; stages: Stage[]; turns: Turn[]; cursor: number;
+  seats: DebateSeat[];
+  stages: Stage[];
+  turns: Turn[];
+  cursor: number;
   review: (Review & { source: Source; model?: string }) | null;
   room?: RoomLink;
-  glossary?: TermCard[];   // 这次讨论里点开看过的术语
-  branches?: Branch[];     // 知识画布：从某句发言展开的分支
-  at?: string;             // 知识画布：正在看的分支（没有就是主干）
-  teaching?: boolean;      // 苏格拉底追问：学习者“换我来讲”，AI 暂时当听讲的学生
+  glossary?: TermCard[]; // 这次讨论里点开看过的术语
+  branches?: Branch[]; // 知识画布：从某句发言展开的分支
+  at?: string; // 知识画布：正在看的分支（没有就是主干）
+  teaching?: boolean; // 苏格拉底追问：学习者“换我来讲”，AI 暂时当听讲的学生
 }
 // 知识画布的一个分支：从 from 这条发言展开（它在 parent 那一层），gist 是学习者带回上一层的一句话
-export interface Branch { id: string; parent?: string; from: string; topic: string; gist?: string; created: number }
+export interface Branch {
+  id: string;
+  parent?: string;
+  from: string;
+  topic: string;
+  gist?: string;
+  created: number;
+}
 export interface Card extends Review {
-  id: string; sessionId: string; concept: string; topic: string; mode: ModeId; created: number;
-  source: Source; model?: string; level: number; due: number; reviews: { at: number; remembered: boolean }[];
-  terms?: TermCard[];      // 讨论中遇到并点开看过的术语
-  context?: string;        // 讨论时交代的背景，再讨论一次时沿用
+  id: string;
+  sessionId: string;
+  concept: string;
+  topic: string;
+  mode: ModeId;
+  created: number;
+  source: Source;
+  model?: string;
+  level: number;
+  due: number;
+  reviews: { at: number; remembered: boolean }[];
+  terms?: TermCard[]; // 讨论中遇到并点开看过的术语
+  context?: string; // 讨论时交代的背景，再讨论一次时沿用
 }
 export interface AiStatus {
-  available: boolean; configured: boolean; verified: boolean; baseURL: string; model: string;  // 本机服务
-  remoteVerified: boolean; remoteModel: string;                                             // 自己部署的后端
-  ttsConfigured?: boolean; remoteTtsConfigured?: boolean;                                   // 讯飞朗读：本机服务 / 自己部署的后端
-  sttConfigured?: boolean; remoteSttConfigured?: boolean;                                   // 讯飞语音输入
+  available: boolean;
+  configured: boolean;
+  verified: boolean;
+  baseURL: string;
+  model: string; // 本机服务
+  remoteVerified: boolean;
+  remoteModel: string; // 自己部署的后端
+  ttsConfigured?: boolean;
+  remoteTtsConfigured?: boolean; // 讯飞朗读：本机服务 / 自己部署的后端
+  sttConfigured?: boolean;
+  remoteSttConfigured?: boolean; // 讯飞语音输入
 }
 export interface Ui {
   screen: Screen;
-  busy: string | null;           // 正在进行的 AI 请求说明
+  busy: string | null; // 正在进行的 AI 请求说明
   error: string;
   toast: string;
   hint: string | null;
   explain: { kind: ExplainKind; label: string; quote: string; text: string } | null;
-  sheet: string | null;          // 打开操作面板的消息 id
+  sheet: string | null; // 打开操作面板的消息 id
   openCard: string | null;
   quiz: Record<string, Record<number, number>>;
-  join: { backend: string; roomId: string; invite: string } | null;   // 打开邀请链接后，等待填写名字
-  invite: boolean;               // 显示邀请链接面板
-  term: (TermCard & { messageId: string }) | null;   // 打开的术语卡片；definition 为空表示正在查
-  context: { ask: string; text: string } | null;     // 准备时 AI 请学习者交代背景
+  join: { backend: string; roomId: string; invite: string } | null; // 打开邀请链接后，等待填写名字
+  invite: boolean; // 显示邀请链接面板
+  term: (TermCard & { messageId: string }) | null; // 打开的术语卡片；definition 为空表示正在查
+  context: { ask: string; text: string } | null; // 准备时 AI 请学习者交代背景
 }
-export interface AppState { config: Config; plan: Plan | null; session: Session | null; library: Card[]; ai: AiStatus; ui: Ui }
+export interface AppState {
+  config: Config;
+  plan: Plan | null;
+  session: Session | null;
+  library: Card[];
+  ai: AiStatus;
+  ui: Ui;
+}
 
 const STORE = 'sibian-v3';
 
 export const defaultConfig = (): Config => ({
-  concept: '机会成本', mode: 'socratic', aiMode: 'demo', remote: { url: '', password: '' }, name: '',
+  concept: '机会成本',
+  mode: 'socratic',
+  aiMode: 'demo',
+  remote: { url: '', password: '' },
+  name: '',
   counts: { A: 2, B: 2 },
   seats: {
-    A: [{ type: 'human', bg: '' }, { type: 'ai', bg: '经济学研究者，习惯用数据和模型说话。' }],
-    B: [{ type: 'ai', bg: '中学老师，关注概念在日常生活里怎么被误用。' }, { type: 'ai', bg: '创业者，从真实的经营取舍出发。' }]
+    A: [
+      { type: 'human', bg: '' },
+      { type: 'ai', bg: '经济学研究者，习惯用数据和模型说话。' },
+    ],
+    B: [
+      { type: 'ai', bg: '中学老师，关注概念在日常生活里怎么被误用。' },
+      { type: 'ai', bg: '创业者，从真实的经营取舍出发。' },
+    ],
   },
   stages: [
-    { name: '开篇立论', kind: 'opening', rounds: 1 }, { name: '交叉质询', kind: 'cross', rounds: 1 },
-    { name: '自由辩论', kind: 'free', rounds: 2 }, { name: '总结陈词', kind: 'closing', rounds: 1 }
+    { name: '开篇立论', kind: 'opening', rounds: 1 },
+    { name: '交叉质询', kind: 'cross', rounds: 1 },
+    { name: '自由辩论', kind: 'free', rounds: 2 },
+    { name: '总结陈词', kind: 'closing', rounds: 1 },
   ],
-  turnSeconds: 0, voiceName: DEFAULT_VOICE
+  turnSeconds: 0,
+  voiceName: DEFAULT_VOICE,
 });
-const defaultUi = (): Ui => ({ screen: 'learn', busy: null, error: '', toast: '', hint: null, explain: null, sheet: null, openCard: null, quiz: {}, join: null, invite: false, term: null, context: null });
+const defaultUi = (): Ui => ({
+  screen: 'learn',
+  busy: null,
+  error: '',
+  toast: '',
+  hint: null,
+  explain: null,
+  sheet: null,
+  openCard: null,
+  quiz: {},
+  join: null,
+  invite: false,
+  term: null,
+  context: null,
+});
 
-const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+const isObj = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === 'object' && !Array.isArray(v);
 
 function load(): AppState {
-  const base: AppState = { config: defaultConfig(), plan: null, session: null, library: [], ai: { available: false, configured: false, verified: false, baseURL: '', model: '', remoteVerified: false, remoteModel: '', ttsConfigured: false, remoteTtsConfigured: false }, ui: defaultUi() };
+  const base: AppState = {
+    config: defaultConfig(),
+    plan: null,
+    session: null,
+    library: [],
+    ai: {
+      available: false,
+      configured: false,
+      verified: false,
+      baseURL: '',
+      model: '',
+      remoteVerified: false,
+      remoteModel: '',
+      ttsConfigured: false,
+      remoteTtsConfigured: false,
+    },
+    ui: defaultUi(),
+  };
   try {
     const raw: unknown = JSON.parse(localStorage.getItem(STORE) ?? 'null');
     const saved = isObj(raw) ? raw : null;
     // 反向讲解并进了苏格拉底追问（“换我来讲”）：选着它的设置改过来，按它准备的计划作废；进行中的讨论和知识卡片照旧
-    if (saved && isObj(saved.config) && saved.config.mode === 'teach') saved.config.mode = 'socratic';
+    if (saved && isObj(saved.config) && saved.config.mode === 'teach')
+      saved.config.mode = 'socratic';
     if (saved && isObj(saved.plan) && saved.plan.mode === 'teach') saved.plan = null;
     if (saved) {
       // 存档可能缺字段或写坏了：先按结构检查，坏掉的那一块作废，不让界面一打开就崩溃
       const session = restoreSession(saved.session);
       return {
-        ...base, config: restoreConfig(saved.config, base.config), plan: restorePlan(saved.plan), session, library: restoreLibrary(saved.library),
-        ui: { ...base.ui, screen: saved.screen === 'session' && session && !session.finished ? 'session' : 'learn' }
+        ...base,
+        config: restoreConfig(saved.config, base.config),
+        plan: restorePlan(saved.plan),
+        session,
+        library: restoreLibrary(saved.library),
+        ui: {
+          ...base.ui,
+          screen: saved.screen === 'session' && session && !session.finished ? 'session' : 'learn',
+        },
       };
     }
     // v0.4 的知识卡片结构相同，迁移过来
     const v2: unknown = JSON.parse(localStorage.getItem('sibian-v2') ?? 'null');
-    if (isObj(v2) && Array.isArray(v2.library)) return { ...base, library: restoreLibrary(v2.library) };
-  } catch { /* 读取失败就从头开始 */ }
+    if (isObj(v2) && Array.isArray(v2.library))
+      return { ...base, library: restoreLibrary(v2.library) };
+  } catch {
+    /* 读取失败就从头开始 */
+  }
   return base;
 }
 
@@ -135,32 +274,61 @@ const listeners = new Set<() => void>();
 let saveFailed = false;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 function persist() {
-  clearTimeout(saveTimer); saveTimer = undefined;
+  clearTimeout(saveTimer);
+  saveTimer = undefined;
   try {
-    localStorage.setItem(STORE, JSON.stringify({ config: state.config, plan: state.plan, session: state.session, library: state.library, screen: state.ui.screen }));
+    localStorage.setItem(
+      STORE,
+      JSON.stringify({
+        config: state.config,
+        plan: state.plan,
+        session: state.session,
+        library: state.library,
+        screen: state.ui.screen,
+      }),
+    );
     saveFailed = false;
   } catch {
-    if (!saveFailed) { saveFailed = true; queueMicrotask(() => toast('浏览器未能保存记录，请导出本次内容。')); }
+    if (!saveFailed) {
+      saveFailed = true;
+      queueMicrotask(() => toast('浏览器未能保存记录，请导出本次内容。'));
+    }
   }
 }
 // 打字时不必每个字都落盘：停下来 400 毫秒再存；页面被切走或关掉之前补存一次，不丢草稿
 const TYPING_SAVE_DELAY = 400;
-const flush = () => { if (saveTimer !== undefined) persist(); };
+const flush = () => {
+  if (saveTimer !== undefined) persist();
+};
 if (typeof addEventListener === 'function') {
   addEventListener('pagehide', flush);
-  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
+  if (typeof document !== 'undefined')
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') flush();
+    });
 }
 
 export const getState = () => state;
 // 界面上“在哪一页、开着哪个面板”：它变了，就用连贯动效切换
 const viewOf = (s: AppState): View => ({
   screen: s.ui.screen,
-  overlay: s.ui.sheet ?? (s.ui.term ? 'term:' + s.ui.term.term : s.ui.explain ? 'explain' : s.ui.invite ? 'invite' : null)
+  overlay:
+    s.ui.sheet ??
+    (s.ui.term
+      ? 'term:' + s.ui.term.term
+      : s.ui.explain
+        ? 'explain'
+        : s.ui.invite
+          ? 'invite'
+          : null),
 });
 // 界面读的是 rendered，不是最新的 state：页面过渡拍下旧画面之前，界面一直显示旧状态，
 // 哪怕前面还有一次没画完的更新（比如点开卡片时先记下卡片 id，再换页）
 let rendered: AppState = state;
-const notify = () => { rendered = state; listeners.forEach(l => l()); };
+const notify = () => {
+  rendered = state;
+  listeners.forEach(l => l());
+};
 export function update(fn: (draft: AppState) => void) {
   const before = viewOf(state);
   const next = structuredClone(state);
@@ -168,7 +336,8 @@ export function update(fn: (draft: AppState) => void) {
   state = next;
   persist();
   const after = viewOf(next);
-  if (before.screen !== after.screen || before.overlay !== after.overlay) transition(before, after, notify);
+  if (before.screen !== after.screen || before.overlay !== after.overlay)
+    transition(before, after, notify);
   else if (!holdingRenders()) notify();
 }
 // 输入框每敲一个字调用一次：只改草稿、题目这类文字，不换页面、不动知识库。
@@ -183,24 +352,44 @@ export function typing(fn: (draft: Omit<AppState, 'library'>) => void) {
 }
 export function useApp(): AppState {
   // 第三个参数给服务端渲染用（测试里把页面渲染成 HTML 检查），和浏览器里读的是同一份
-  return useSyncExternalStore(cb => { listeners.add(cb); return () => listeners.delete(cb); }, () => rendered, () => rendered);
+  return useSyncExternalStore(
+    cb => {
+      listeners.add(cb);
+      return () => listeners.delete(cb);
+    },
+    () => rendered,
+    () => rendered,
+  );
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 export function toast(text: string) {
-  update(s => { s.ui.toast = text; });
+  update(s => {
+    s.ui.toast = text;
+  });
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => update(s => { s.ui.toast = ''; }), 3000);
+  toastTimer = setTimeout(
+    () =>
+      update(s => {
+        s.ui.toast = '';
+      }),
+    3000,
+  );
 }
 // 换页时回到顶部由 transition 在新的一帧里做
 export function go(screen: Screen) {
-  update(s => { s.ui.screen = screen; s.ui.sheet = null; s.ui.explain = null; });
+  update(s => {
+    s.ui.screen = screen;
+    s.ui.sheet = null;
+    s.ui.explain = null;
+  });
 }
 export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 // 测试用：重置为初始状态
 export function resetForTests(next?: Partial<AppState>) {
-  clearTimeout(saveTimer); saveTimer = undefined;
+  clearTimeout(saveTimer);
+  saveTimer = undefined;
   state = { ...load(), ...next };
   notify();
 }

@@ -4,5 +4,7 @@ import { goBack } from '../actions.ts';
 
 export function initNative() {
   // 返回键：先关面板，再回上一层；已经在最外层才退出 App
-  void App.addListener('backButton', () => { if (!goBack()) void App.exitApp(); });
+  void App.addListener('backButton', () => {
+    if (!goBack()) void App.exitApp();
+  });
 }
