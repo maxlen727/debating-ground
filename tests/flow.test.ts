@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 const store: Record<string, string> = {};
 (globalThis as Record<string, unknown>).localStorage = { getItem: (k: string) => store[k] ?? null, setItem: (k: string, v: string) => { store[k] = v; } };
 
-const { getState, update, resetForTests, defaultConfig } = await import('../src/store.ts');
+const { getState, update, typing, resetForTests, defaultConfig } = await import('../src/store.ts');
 const actions = await import('../src/actions.ts');
 const { setDemoDelay } = await import('../src/lib/ai.ts');
 const { schedule, INTERVALS, DAY } = await import('../src/lib/srs.ts');
@@ -493,4 +493,22 @@ test('one-sentence start (#39): write a concept and go straight into the discuss
   await actions.prepare(null, undefined, 'start');
   assert.equal(getState().ui.screen, 'prepare');
   assert.equal(getState().session?.id, before, 'no new session without a seat for the learner');
+});
+
+test('typing a draft does not copy the knowledge base or write storage on every keystroke', async () => {
+  learningPlan(); actions.startSession();
+  update(s => { s.library.push({ id: 'c1' } as never); });
+  const library = getState().library, saved = store['sibian-v3'];
+  typing(s => { s.session!.draft = '机会'; });
+  typing(s => { s.session!.draft = '机会成本'; });
+  assert.equal(getState().session!.draft, '机会成本');
+  assert.equal(getState().library, library, 'the knowledge base is shared, not cloned');
+  assert.equal(store['sibian-v3'], saved, 'nothing is written while typing');
+  // 停下来以后补存
+  await new Promise(r => setTimeout(r, 450));
+  assert.match(store['sibian-v3'], /"draft":"机会成本"/);
+  // 之后的任何 update 都会立刻存，不会被排着队的旧草稿覆盖
+  typing(s => { s.session!.draft = '机会成本是'; });
+  update(s => { s.ui.hint = null; });
+  assert.match(store['sibian-v3'], /"draft":"机会成本是"/);
 });

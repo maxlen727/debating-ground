@@ -122,14 +122,22 @@ function load(): AppState {
 let state: AppState = load();
 const listeners = new Set<() => void>();
 let saveFailed = false;
-
+let saveTimer: ReturnType<typeof setTimeout> | undefined;
 function persist() {
+  clearTimeout(saveTimer); saveTimer = undefined;
   try {
     localStorage.setItem(STORE, JSON.stringify({ config: state.config, plan: state.plan, session: state.session, library: state.library, screen: state.ui.screen }));
     saveFailed = false;
   } catch {
     if (!saveFailed) { saveFailed = true; queueMicrotask(() => toast('浏览器未能保存记录，请导出本次内容。')); }
   }
+}
+// 打字时不必每个字都落盘：停下来 400 毫秒再存；页面被切走或关掉之前补存一次，不丢草稿
+const TYPING_SAVE_DELAY = 400;
+const flush = () => { if (saveTimer !== undefined) persist(); };
+if (typeof addEventListener === 'function') {
+  addEventListener('pagehide', flush);
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
 }
 
 export const getState = () => state;
@@ -152,6 +160,16 @@ export function update(fn: (draft: AppState) => void) {
   if (before.screen !== after.screen || before.overlay !== after.overlay) transition(before, after, notify);
   else if (!holdingRenders()) notify();
 }
+// 输入框每敲一个字调用一次：只改草稿、题目这类文字，不换页面、不动知识库。
+// 知识库可能很大，这里不复制它，也不立刻写入 localStorage（update 每次都会做这两件事，打字时会卡）
+export function typing(fn: (draft: Omit<AppState, 'library'>) => void) {
+  const { library, ...rest } = state;
+  const next = structuredClone(rest);
+  fn(next);
+  state = { ...next, library };
+  if (saveTimer === undefined) saveTimer = setTimeout(persist, TYPING_SAVE_DELAY);
+  if (!holdingRenders()) notify();
+}
 export function useApp(): AppState {
   return useSyncExternalStore(cb => { listeners.add(cb); return () => listeners.delete(cb); }, () => rendered);
 }
@@ -170,6 +188,7 @@ export const uid = () => Date.now().toString(36) + Math.random().toString(36).sl
 
 // 测试用：重置为初始状态
 export function resetForTests(next?: Partial<AppState>) {
+  clearTimeout(saveTimer); saveTimer = undefined;
   state = { ...load(), ...next };
   notify();
 }

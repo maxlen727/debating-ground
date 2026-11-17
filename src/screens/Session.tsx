@@ -18,7 +18,7 @@ import { exportSession } from '../lib/exporter.ts';
 import { inviteLink, isPeer, mySeat, mySpeakingTurn, seatOwner, speakerLabel } from '../lib/room.ts';
 import { usePlaying } from '../lib/voice.ts';
 import { listeningSince, useListening } from '../lib/listen.ts';
-import { go, toast, update, useApp, type Session as S } from '../store.ts';
+import { go, toast, typing, update, useApp, type Session as S } from '../store.ts';
 
 // 光：要点刚被点亮时从那个小标签发光，新发言落下时从它身上发一点光，照亮周围的按钮和气泡
 function useLightCues(s: S | null) {
@@ -406,7 +406,7 @@ function DraftInput({ s, placeholder }: { s: S; placeholder: string }) {
       <CaretField fieldRef={ref} className="grow">
         {/* 听写时文字由识别结果填写，先不让手动改，免得被下一次结果覆盖 */}
         <textarea id="draft" ref={ref} rows={1} value={s.draft} maxLength={s.room ? 2000 : 4000} aria-label="你的发言" placeholder={listening ? '正在听，说完点一下麦克风' : placeholder} readOnly={!!listening}
-          onChange={e => { update(st => { st.session!.draft = e.target.value; }); noteTyping(); }}
+          onChange={e => { typing(st => { st.session!.draft = e.target.value; }); noteTyping(); }}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && window.matchMedia('(pointer: fine)').matches) { e.preventDefault(); submit(); } }} />
       </CaretField>
       {mic && <MicButton phase={listening} />}
