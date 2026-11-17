@@ -50,6 +50,9 @@ android {
 
 // 单元测试要读网页版的样式和图标，确认原生版的令牌没有走样
 tasks.withType<Test>().configureEach {
+    // 登记成输入：网页版的这两个文件改了，测试要重跑，不能当成“已是最新”跳过
+    inputs.file(rootProject.file("../src/styles.css"))
+    inputs.file(rootProject.file("../src/components/ui.tsx"))
     systemProperty("web.styles", rootProject.file("../src/styles.css").absolutePath)
     systemProperty("web.icons", rootProject.file("../src/components/ui.tsx").absolutePath)
     // 截图存这里，CI 作为构建产物上传，审查时可以直接看

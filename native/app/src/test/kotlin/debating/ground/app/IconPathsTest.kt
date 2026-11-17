@@ -8,7 +8,8 @@ import java.io.File
 // 图标和网页版用同一组线条路径（src/components/ui.tsx 的 PATHS）
 class IconPathsTest {
     private val web: Map<String, String> =
-        Regex("""^\s+(\w+): '([^']+)',?$""", RegexOption.MULTILINE)
+        // 名字和路径可能被格式化工具分在两行（路径太长时）
+        Regex("""^\s+(\w+):\s*'([^']+)',?$""", RegexOption.MULTILINE)
             .findAll(File(System.getProperty("web.icons")!!).readText())
             .associate { it.groupValues[1] to it.groupValues[2] }
 
