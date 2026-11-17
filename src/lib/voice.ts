@@ -8,18 +8,31 @@ import { toast } from '../store.ts';
 
 let playing: string | null = null;
 let buffer = new Map<number, string>();
-let next = 0, lastSeq = -1, waitTimer: ReturnType<typeof setTimeout> | undefined;
+let next = 0,
+  lastSeq = -1,
+  waitTimer: ReturnType<typeof setTimeout> | undefined;
 let player: HTMLAudioElement | null = null;
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach(l => l());
 
-export const usePlaying = () => useSyncExternalStore(l => { listeners.add(l); return () => listeners.delete(l); }, () => playing, () => null);
+export const usePlaying = () =>
+  useSyncExternalStore(
+    l => {
+      listeners.add(l);
+      return () => listeners.delete(l);
+    },
+    () => playing,
+    () => null,
+  );
 export const playingId = () => playing;
 
 export function stopVoice() {
   clearTimeout(waitTimer);
   player?.pause();
-  playing = null; buffer = new Map(); next = 0; lastSeq = -1;
+  playing = null;
+  buffer = new Map();
+  next = 0;
+  lastSeq = -1;
   emit();
 }
 
@@ -28,12 +41,23 @@ export function startVoice(id: string) {
   stopVoice();
   player ??= typeof Audio === 'function' ? new Audio() : null;
   playing = id;
-  waitTimer = setTimeout(() => { if (playing === id && !buffer.size && next === 0) { toast('朗读没有响应，请稍后再试。'); stopVoice(); } }, 30_000);
+  waitTimer = setTimeout(() => {
+    if (playing === id && !buffer.size && next === 0) {
+      toast('朗读没有响应，请稍后再试。');
+      stopVoice();
+    }
+  }, 30_000);
   emit();
 }
 
 // 收到一段音频；不是正在等的那一条就丢掉（用户已经停了或换了一条）
-export function pushAudio(id: string, seq: number, last: boolean, audio: string, mime = 'audio/mpeg') {
+export function pushAudio(
+  id: string,
+  seq: number,
+  last: boolean,
+  audio: string,
+  mime = 'audio/mpeg',
+) {
   if (id !== playing || seq < next) return;
   clearTimeout(waitTimer);
   buffer.set(seq, `data:${mime};base64,${audio}`);
@@ -51,15 +75,33 @@ export function voiceFailed() {
 }
 
 function pump() {
-  if (!player || !playing || !player.paused && !player.ended && player.src) return;
+  if (!player || !playing || (!player.paused && !player.ended && player.src)) return;
   const src = buffer.get(next);
-  if (!src) { if (lastSeq >= 0 && next > lastSeq) stopVoice(); return; }
+  if (!src) {
+    if (lastSeq >= 0 && next > lastSeq) stopVoice();
+    return;
+  }
   buffer.delete(next);
   const id = playing;
   player.src = src;
-  player.onended = () => { if (playing === id) { next++; pump(); } };
-  player.onerror = () => { if (playing === id) { toast('这段音频播放失败，请再点一次朗读。'); stopVoice(); } };
-  player.play().catch(() => { if (playing === id) { toast('浏览器拦住了播放，请再点一次朗读。'); stopVoice(); } });
+  player.onended = () => {
+    if (playing === id) {
+      next++;
+      pump();
+    }
+  };
+  player.onerror = () => {
+    if (playing === id) {
+      toast('这段音频播放失败，请再点一次朗读。');
+      stopVoice();
+    }
+  };
+  player.play().catch(() => {
+    if (playing === id) {
+      toast('浏览器拦住了播放，请再点一次朗读。');
+      stopVoice();
+    }
+  });
 }
 
 // 单人讨论：分段请求后端合成；播当前段时就去取下一段
@@ -70,7 +112,11 @@ export async function speakText(id: string, text: string, voice: string, target:
   try {
     for (const [seq, part] of parts.entries()) {
       if (playing !== id) return;
-      const r = await apiRequest<{ audio: string; mime: string }>('/api/tts', { method: 'POST', body: JSON.stringify({ text: part, voice }) }, target);
+      const r = await apiRequest<{ audio: string; mime: string }>(
+        '/api/tts',
+        { method: 'POST', body: JSON.stringify({ text: part, voice }) },
+        target,
+      );
       pushAudio(id, seq, seq === parts.length - 1, r.audio, r.mime);
     }
   } catch (e) {

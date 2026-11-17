@@ -11,4 +11,10 @@ trackOrigins();
 trackLights();
 // 安卓 App：接管返回键（浏览器里不加载这段）
 if (isNativeApp()) void import('./lib/native.ts').then(m => m.initNative());
-createRoot(document.getElementById('root')!).render(<StrictMode><ErrorBoundary><App /></ErrorBoundary></StrictMode>);
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  </StrictMode>,
+);

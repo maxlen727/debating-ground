@@ -12,15 +12,29 @@ type Frame = { code: number; message?: string; data?: { audio?: string; status?:
 function fakeSocket(script: (req: Record<string, unknown>) => (Frame | 'close')[]) {
   const seen: { url: string; request?: Record<string, unknown> } = { url: '' };
   class Fake {
-    onopen: (() => void) | null = null; onmessage: ((e: { data: string }) => void) | null = null;
-    onerror: (() => void) | null = null; onclose: ((e: { code: number }) => void) | null = null;
+    onopen: (() => void) | null = null;
+    onmessage: ((e: { data: string }) => void) | null = null;
+    onerror: (() => void) | null = null;
+    onclose: ((e: { code: number }) => void) | null = null;
     closed = false;
-    constructor(url: string) { seen.url = url; setTimeout(() => this.onopen?.(), 0); }
+    constructor(url: string) {
+      seen.url = url;
+      setTimeout(() => this.onopen?.(), 0);
+    }
     send(raw: string) {
       seen.request = JSON.parse(raw);
-      for (const f of script(seen.request!)) setTimeout(() => f === 'close' ? this.onclose?.({ code: 1006 }) : this.onmessage?.({ data: JSON.stringify(f) }), 0);
+      for (const f of script(seen.request!))
+        setTimeout(
+          () =>
+            f === 'close'
+              ? this.onclose?.({ code: 1006 })
+              : this.onmessage?.({ data: JSON.stringify(f) }),
+          0,
+        );
     }
-    close() { this.closed = true; }
+    close() {
+      this.closed = true;
+    }
   }
   return { WebSocketImpl: Fake as unknown as typeof WebSocket, seen };
 }
@@ -30,7 +44,7 @@ test('signs the request like iFlytek expects and decodes each chunk before joini
   // 两个分片各自带补位符：直接拼 base64 会得到坏的 MP3
   const { WebSocketImpl, seen } = fakeSocket(() => [
     { code: 0, data: { audio: b64([1, 2, 3, 4]), status: 1 } },
-    { code: 0, data: { audio: b64([5]), status: 2 } }
+    { code: 0, data: { audio: b64([5]), status: 2 } },
   ]);
   const date = new Date('2026-11-01T08:00:00Z');
   const r = await synthesizeXfyun('你好。', 'x4_yezi', env, { WebSocketImpl, now: () => date });
@@ -41,11 +55,20 @@ test('signs the request like iFlytek expects and decodes each chunk before joini
   assert.equal(url.host, 'tts-api.xfyun.cn');
   assert.equal(url.searchParams.get('date'), date.toUTCString());
   const auth = Buffer.from(url.searchParams.get('authorization')!, 'base64').toString();
-  const sig = createHmac('sha256', env.XFYUN_API_SECRET).update(`host: tts-api.xfyun.cn\ndate: ${date.toUTCString()}\nGET /v2/tts HTTP/1.1`).digest('base64');
-  assert.equal(auth, `api_key="key-123", algorithm="hmac-sha256", headers="host date request-line", signature="${sig}"`);
+  const sig = createHmac('sha256', env.XFYUN_API_SECRET)
+    .update(`host: tts-api.xfyun.cn\ndate: ${date.toUTCString()}\nGET /v2/tts HTTP/1.1`)
+    .digest('base64');
+  assert.equal(
+    auth,
+    `api_key="key-123", algorithm="hmac-sha256", headers="host date request-line", signature="${sig}"`,
+  );
   assert.ok(!seen.url.includes(env.XFYUN_API_SECRET), 'the secret itself never leaves the backend');
 
-  const req = seen.request as { common: { app_id: string }; business: { vcn: string; aue: string }; data: { text: string; status: number } };
+  const req = seen.request as {
+    common: { app_id: string };
+    business: { vcn: string; aue: string };
+    data: { text: string; status: number };
+  };
   assert.equal(req.common.app_id, 'app');
   assert.equal(req.business.vcn, 'x4_yezi');
   assert.equal(Buffer.from(req.data.text, 'base64').toString(), '你好。');
@@ -55,11 +78,23 @@ test('errors are explained without leaking keys', async () => {
   await assert.rejects(synthesizeXfyun('你好', '', {}), /还没有配置/);
   await assert.rejects(synthesizeXfyun('   ', '', env), /没有可以朗读/);
   const bad = fakeSocket(() => [{ code: 11200, message: 'licc limit' }]);
-  await assert.rejects(synthesizeXfyun('你好', '', env, { WebSocketImpl: bad.WebSocketImpl }), (e: Error) => /11200/.test(e.message) && !e.message.includes('secret-456') && !e.message.includes('key-123'));
+  await assert.rejects(
+    synthesizeXfyun('你好', '', env, { WebSocketImpl: bad.WebSocketImpl }),
+    (e: Error) =>
+      /11200/.test(e.message) &&
+      !e.message.includes('secret-456') &&
+      !e.message.includes('key-123'),
+  );
   const cut = fakeSocket(() => [{ code: 0, data: { audio: b64([1]), status: 1 } }, 'close']);
-  await assert.rejects(synthesizeXfyun('你好', '', env, { WebSocketImpl: cut.WebSocketImpl }), /连接中断/);
+  await assert.rejects(
+    synthesizeXfyun('你好', '', env, { WebSocketImpl: cut.WebSocketImpl }),
+    /连接中断/,
+  );
   const silent = fakeSocket(() => []);
-  await assert.rejects(synthesizeXfyun('你好', '', env, { WebSocketImpl: silent.WebSocketImpl, timeoutMs: 20 }), /超时/);
+  await assert.rejects(
+    synthesizeXfyun('你好', '', env, { WebSocketImpl: silent.WebSocketImpl, timeoutMs: 20 }),
+    /超时/,
+  );
   // 不合法的音色换成默认的
   const v = fakeSocket(() => [{ code: 0, data: { audio: b64([1]), status: 2 } }]);
   await synthesizeXfyun('你好', 'x"; drop', env, { WebSocketImpl: v.WebSocketImpl });
@@ -71,7 +106,10 @@ test('speech is split at sentence ends into short segments', () => {
   const parts = splitForSpeech(text);
   assert.ok(parts.length > 1);
   assert.ok(parts.every(p => Array.from(p).length <= 300));
-  assert.ok(parts.slice(0, -1).every(p => p.endsWith('。')), 'breaks at sentence ends');
+  assert.ok(
+    parts.slice(0, -1).every(p => p.endsWith('。')),
+    'breaks at sentence ends',
+  );
   assert.equal(parts.join(''), text);
   assert.deepEqual(splitForSpeech('  短句  '), ['短句']);
   assert.deepEqual(splitForSpeech(''), []);

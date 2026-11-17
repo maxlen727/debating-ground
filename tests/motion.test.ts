@@ -3,7 +3,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { navKind, transition } from '../src/lib/motion.ts';
 
-const v = (screen: Parameters<typeof navKind>[0]['screen'], overlay: string | null = null) => ({ screen, overlay });
+const v = (screen: Parameters<typeof navKind>[0]['screen'], overlay: string | null = null) => ({
+  screen,
+  overlay,
+});
 
 test('going deeper is forward, coming back is back', () => {
   assert.equal(navKind(v('learn'), v('prepare')), 'forward');
@@ -29,7 +32,9 @@ test('sheets open, close and swap on the same screen', () => {
 
 test('without View Transitions the change is applied at once', () => {
   let done = 0;
-  transition(v('learn'), v('prepare'), () => { done++; });
+  transition(v('learn'), v('prepare'), () => {
+    done++;
+  });
   assert.equal(done, 1);
 });
 

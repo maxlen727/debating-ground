@@ -16,7 +16,10 @@ export function seatWho(s: Session, seat: DebateSeat): { short: string; long: st
   const room = s.room;
   if (room) {
     const owner = seatOwner(s, seat.id);
-    if (owner) return owner.id === room.memberId ? { short: '我', long: '你' } : { short: owner.name.slice(0, 1), long: owner.name };
+    if (owner)
+      return owner.id === room.memberId
+        ? { short: '我', long: '你' }
+        : { short: owner.name.slice(0, 1), long: owner.name };
     return seat.type === 'ai' ? { short: 'AI', long: 'AI' } : { short: '空', long: '等同学入座' };
   }
   return seat.type === 'human' ? { short: '我', long: '你' } : { short: 'AI', long: 'AI' };
@@ -30,36 +33,84 @@ export function DebateBoard({ s }: { s: Session }) {
   // 轮到下一位时，他的席位牌亮一下，光带上阵营色
   useEffect(() => {
     if (over || !turn) return;
-    const t = setTimeout(() => flash(document.querySelector('.seat-tok.on'), { color: turn.role.team === 'A' ? 'var(--a-fg)' : 'var(--b-fg)', radius: 150, strength: 0.8 }), 200);
+    const t = setTimeout(
+      () =>
+        flash(document.querySelector('.seat-tok.on'), {
+          color: turn.role.team === 'A' ? 'var(--a-fg)' : 'var(--b-fg)',
+          radius: 150,
+          strength: 0.8,
+        }),
+      200,
+    );
     return () => clearTimeout(t);
     // 只在轮到下一位时亮一下：turn 每次状态更新都是新对象，放进依赖会让它每打一个字就闪一次
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.cursor, over]);
-  const groups = s.stages.map((_, i) => s.turns.map((t, k) => ({ t, k })).filter(x => x.t.stage === i)).filter(g => g.length);
+  const groups = s.stages
+    .map((_, i) => s.turns.map((t, k) => ({ t, k })).filter(x => x.t.stage === i))
+    .filter(g => g.length);
   const side = (team: 'A' | 'B') => (
     <div className={'board-side side-' + team}>
-      <span className="board-name">{SIDE[team]}<small>{STANCE[team]}</small></span>
+      <span className="board-name">
+        {SIDE[team]}
+        <small>{STANCE[team]}</small>
+      </span>
       <div className="seat-toks">
-        {s.seats.filter(x => x.team === team).map(seat => {
-          const who = seatWho(s, seat);
-          const on = !over && turn?.role.id === seat.id;
-          return <span key={seat.id} className={'seat-tok' + (on ? ' on' : '') + (who.short === '我' ? ' mine' : '')} title={`${seatName(seat)} · ${who.long}`}>{who.short}<i>{seat.index + 1}</i></span>;
-        })}
+        {s.seats
+          .filter(x => x.team === team)
+          .map(seat => {
+            const who = seatWho(s, seat);
+            const on = !over && turn?.role.id === seat.id;
+            return (
+              <span
+                key={seat.id}
+                className={'seat-tok' + (on ? ' on' : '') + (who.short === '我' ? ' mine' : '')}
+                title={`${seatName(seat)} · ${who.long}`}
+              >
+                {who.short}
+                <i>{seat.index + 1}</i>
+              </span>
+            );
+          })}
       </div>
     </div>
   );
   return (
-    <button className="board" aria-label={over ? '比赛结束，查看双方阵容' : `${stage?.name ?? ''}，第 ${s.cursor + 1} 次发言，共 ${s.turns.length} 次。查看双方阵容`} onClick={() => update(st => { st.ui.sheet = 'roster'; })}>
+    <button
+      className="board"
+      aria-label={
+        over
+          ? '比赛结束，查看双方阵容'
+          : `${stage?.name ?? ''}，第 ${s.cursor + 1} 次发言，共 ${s.turns.length} 次。查看双方阵容`
+      }
+      onClick={() =>
+        update(st => {
+          st.ui.sheet = 'roster';
+        })
+      }
+    >
       {side('A')}
       <div className="board-mid">
         <b>{over ? '比赛结束' : stage?.name}</b>
-        <small>{over ? `共 ${s.turns.length} 次发言` : `${s.cursor + 1} / ${s.turns.length}`}</small>
+        <small>
+          {over ? `共 ${s.turns.length} 次发言` : `${s.cursor + 1} / ${s.turns.length}`}
+        </small>
       </div>
       {side('B')}
       <span className="track" aria-hidden="true">
         {groups.map((g, i) => (
           <span key={i} className="track-stage">
-            {g.map(({ t, k }) => <i key={k} className={'side-' + t.role.team + (k < s.cursor || over ? ' done' : '') + (k === s.cursor && !over ? ' now' : '')} />)}
+            {g.map(({ t, k }) => (
+              <i
+                key={k}
+                className={
+                  'side-' +
+                  t.role.team +
+                  (k < s.cursor || over ? ' done' : '') +
+                  (k === s.cursor && !over ? ' now' : '')
+                }
+              />
+            ))}
           </span>
         ))}
       </span>
@@ -68,7 +119,11 @@ export function DebateBoard({ s }: { s: Session }) {
 }
 
 // 环节之间的分隔线
-export const StageDivider = ({ name }: { name: string }) => <div className="stage-div" role="separator"><span>{name}</span></div>;
+export const StageDivider = ({ name }: { name: string }) => (
+  <div className="stage-div" role="separator">
+    <span>{name}</span>
+  </div>
+);
 
 // 下一位的空讲台：站在哪一侧、谁来说、做什么
 export function NextLectern({ s, waiting }: { s: Session; waiting: string }) {
@@ -78,8 +133,13 @@ export function NextLectern({ s, waiting }: { s: Session; waiting: string }) {
   const target = t.target ? s.seats.find(x => x.id === t.target) : undefined;
   return (
     <div className={'lectern-next side-' + seat.team}>
-      <span className="lectern-who">{seatName(seat)} · {seatWho(s, seat).long}</span>
-      <span className="lectern-act">{t.action}{target ? ` → ${seatName(target)}` : ''} · {waiting}</span>
+      <span className="lectern-who">
+        {seatName(seat)} · {seatWho(s, seat).long}
+      </span>
+      <span className="lectern-act">
+        {t.action}
+        {target ? ` → ${seatName(target)}` : ''} · {waiting}
+      </span>
     </div>
   );
 }
@@ -87,17 +147,31 @@ export function NextLectern({ s, waiting }: { s: Session; waiting: string }) {
 // 双方阵容：每个席位由谁担任、认知背景是什么
 export function RosterSheet({ s }: { s: Session }) {
   return (
-    <Sheet title="双方阵容" onClose={() => update(st => { st.ui.sheet = null; })}>
+    <Sheet
+      title="双方阵容"
+      onClose={() =>
+        update(st => {
+          st.ui.sheet = null;
+        })
+      }
+    >
       <div className="roster">
         {(['A', 'B'] as const).map(team => (
           <section key={team} className={'roster-side side-' + team}>
-            <h3>{SIDE[team]} · {STANCE[team]}</h3>
-            {s.seats.filter(x => x.team === team).map(seat => (
-              <div key={seat.id} className="roster-seat">
-                <b>{seatName(seat)}<small> · {seatWho(s, seat).long}</small></b>
-                {seat.type !== 'human' && seat.bg && <p>{seat.bg}</p>}
-              </div>
-            ))}
+            <h3>
+              {SIDE[team]} · {STANCE[team]}
+            </h3>
+            {s.seats
+              .filter(x => x.team === team)
+              .map(seat => (
+                <div key={seat.id} className="roster-seat">
+                  <b>
+                    {seatName(seat)}
+                    <small> · {seatWho(s, seat).long}</small>
+                  </b>
+                  {seat.type !== 'human' && seat.bg && <p>{seat.bg}</p>}
+                </div>
+              ))}
           </section>
         ))}
       </div>

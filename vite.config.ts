@@ -13,14 +13,16 @@ export default defineConfig({
         target: 'ws://127.0.0.1:4173',
         ws: true,
         changeOrigin: true,
-        configure: proxy => proxy.on('proxyReqWs', req => req.setHeader('origin', 'http://127.0.0.1:4173'))
+        configure: proxy =>
+          proxy.on('proxyReqWs', req => req.setHeader('origin', 'http://127.0.0.1:4173')),
       },
       '/api': {
         target: 'http://127.0.0.1:4173',
         changeOrigin: true,
-        configure: proxy => proxy.on('proxyReq', req => req.setHeader('origin', 'http://127.0.0.1:4173'))
-      }
-    }
+        configure: proxy =>
+          proxy.on('proxyReq', req => req.setHeader('origin', 'http://127.0.0.1:4173')),
+      },
+    },
   },
-  build: { outDir: 'dist', target: 'es2020' }
+  build: { outDir: 'dist', target: 'es2020' },
 });

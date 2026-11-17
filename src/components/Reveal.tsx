@@ -4,24 +4,45 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { doneRevealing, revealed, setRevealed } from '../lib/stream.ts';
 
-const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-const FADE = 18;  // 最新的这么多个字单独淡入
+const reducedMotion = () =>
+  typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+const FADE = 18; // 最新的这么多个字单独淡入
 
-export function Reveal({ id, text, live, final }: { id: string; text: string; live: boolean; final?: ReactNode }) {
+export function Reveal({
+  id,
+  text,
+  live,
+  final,
+}: {
+  id: string;
+  text: string;
+  live: boolean;
+  final?: ReactNode;
+}) {
   const [, frame] = useState(0);
-  const target = useRef(text); target.current = text;
-  const still = useRef(live); still.current = live;
+  const target = useRef(text);
+  target.current = text;
+  const still = useRef(live);
+  still.current = live;
   const skip = reducedMotion() || (!live && revealed(id) === undefined);
 
   useEffect(() => {
     if (skip) return;
     if (revealed(id) === undefined) setRevealed(id, 0);
-    let raf = 0, last = performance.now();
+    let raf = 0,
+      last = performance.now();
     const tick = (now: number) => {
-      const dt = Math.min(0.1, (now - last) / 1000); last = now;
-      const n = revealed(id) ?? 0, len = target.current.length, backlog = len - n;
+      const dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      const n = revealed(id) ?? 0,
+        len = target.current.length,
+        backlog = len - n;
       if (backlog <= 0) {
-        if (!still.current) { doneRevealing(id); frame(x => x + 1); return; }
+        if (!still.current) {
+          doneRevealing(id);
+          frame(x => x + 1);
+          return;
+        }
       } else {
         // 积压少时慢慢写，积压多时加速追上，避免最后一口气吐出一大段
         const speed = Math.max(24, backlog * 4.5);
@@ -40,7 +61,11 @@ export function Reveal({ id, text, live, final }: { id: string; text: string; li
   return (
     <>
       {text.slice(0, cut)}
-      {Array.from(text.slice(cut, n), (ch, i) => <span key={cut + i} className="ink">{ch}</span>)}
+      {Array.from(text.slice(cut, n), (ch, i) => (
+        <span key={cut + i} className="ink">
+          {ch}
+        </span>
+      ))}
       <i className="stream-caret" aria-hidden="true" />
     </>
   );
