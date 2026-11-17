@@ -13,6 +13,7 @@ npm run server       # 本机服务 http://127.0.0.1:4173
 npm run dev          # 界面热更新 http://127.0.0.1:5173（/api 自动转发给本机服务）
 npm run check        # 类型检查
 npm run lint         # 代码检查（ESLint）
+npm run format       # 自动整理格式（Prettier），format:check 只检查
 npm test             # 测试
 npm run build        # 构建界面到 dist/
 npm start            # 用构建好的 dist/ 启动
@@ -49,7 +50,7 @@ SIBIAN_BACKEND=https://….workers.dev SIBIAN_PASSWORD=访问口令 npm run eval
 
 开发界面时开两个终端，一个 `npm run server`，一个 `npm run dev`。
 
-**提交前必须通过 `npm run check && npm run lint && npm test && npm run build`。**
+**提交前必须通过 `npm run check && npm run lint && npm run format:check && npm test && npm run build`。**
 
 代码检查只开“正确性”规则，抓类型检查抓不到的 bug：没处理的 Promise、React Hook 漏写依赖、`switch` 漏掉分支、把对象当字符串拼接等，不管代码格式。规则和放宽的理由写在 `eslint.config.js` 里。
 

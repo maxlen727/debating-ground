@@ -1,0 +1,13 @@
+# 生成的文件不重排：Worker 的副本由 npm run sync:worker 从源文件复制
+worker/src/vendor/
+dist/
+.worker-dist/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+eval-out/
+node_modules/
+package-lock.json
+worker/package-lock.json
+# 安卓工程各有自己的格式规则（原生版用 ktlint）
+android/
+native/
