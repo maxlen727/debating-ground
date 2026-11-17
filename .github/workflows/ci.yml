@@ -25,3 +25,6 @@ jobs:
         run: npm test
       - name: 构建
         run: npm run build
+      # 文档站只在合并后才构建发布；在 PR 里先构建一次，坏链接和语法错误不用等到合并才发现
+      - name: 构建文档站
+        run: npm run docs:build
