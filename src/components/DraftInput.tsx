@@ -15,7 +15,7 @@ export function HintCard() {
   if (!ui.hint && !streaming) return null;
   return (
     <div className="hint-card"><Icon name="bulb" size={18} />
-      <p>{streaming ? <Reveal id="hint" text={live!.text} live /> : <Reveal id="hint" text={ui.hint!} live={false} />}</p>
+      <p>{streaming ? <Reveal id="hint" text={live.text} live /> : <Reveal id="hint" text={ui.hint!} live={false} />}</p>
       <button className="icon-btn small" aria-label="关闭提示" onClick={() => update(st => { st.ui.hint = null; })}><Icon name="close" size={16} /></button>
     </div>
   );
@@ -27,7 +27,7 @@ export function DraftInput({ s, placeholder }: { s: S; placeholder: string }) {
   const listening = useListening();
   const mic = listenAvailable();
   useEffect(() => stopTyping, []);
-  const submit = () => { if (listening) return; stopTyping(); send(s.draft); };
+  const submit = () => { if (listening) return; stopTyping(); void send(s.draft); };
   return (
     <div className="input-row">
       <CaretField fieldRef={ref} className="grow">

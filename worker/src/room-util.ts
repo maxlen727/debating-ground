@@ -29,6 +29,8 @@ export function str(v: unknown, max: number, label: string, required = true): st
   return v.trim();
 }
 export function cleanName(v: unknown): string {
+  // 去掉控制字符：名字会显示给房间里的每个人，不能夹带换行、响铃之类的字符
+  // eslint-disable-next-line no-control-regex
   const name = typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f]/g, '').trim() : '';
   if (!name || name.length > ROOM_LIMITS.nameLength) throw new ApiError(`请填写 1 到 ${ROOM_LIMITS.nameLength} 个字的名字。`);
   return name;

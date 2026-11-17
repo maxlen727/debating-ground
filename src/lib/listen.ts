@@ -52,7 +52,7 @@ async function openMic(onFrame: (b64frame: string) => void): Promise<() => void>
   try { stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); }
   catch (e) {
     const name = (e as Error).name;
-    throw new Error(name === 'NotAllowedError' || name === 'SecurityError' ? '没有麦克风权限。请在浏览器或系统设置里允许思辨场使用麦克风。' : name === 'NotFoundError' ? '没有找到麦克风。' : '打不开麦克风。');
+    throw new Error(name === 'NotAllowedError' || name === 'SecurityError' ? '没有麦克风权限。请在浏览器或系统设置里允许思辨场使用麦克风。' : name === 'NotFoundError' ? '没有找到麦克风。' : '打不开麦克风。', { cause: e });
   }
   const ctx = new AudioContext();
   const feed = downsampler(ctx.sampleRate, f => onFrame(b64(f)));
@@ -83,7 +83,7 @@ function openSocket(route: 'local' | 'remote', handle: (e: ListenEvent) => void)
   const ws = new WebSocket(base.replace(/^http/, 'ws'));
   const pending: string[] = [];
   ws.onopen = () => { for (const m of pending.splice(0)) ws.send(m); };
-  ws.onmessage = e => { try { handle(JSON.parse(String(e.data))); } catch { /* 忽略 */ } };
+  ws.onmessage = e => { try { handle(JSON.parse(typeof e.data === 'string' ? e.data : '') as ListenEvent); } catch { /* 忽略 */ } };
   ws.onerror = () => handle({ type: 'error', message: route === 'remote' ? '连不上你的后端的语音输入。请确认后端已更新到最新版本。' : '连不上本机服务的语音输入。' });
   ws.onclose = () => { if (phase) handle({ type: 'error', message: '语音输入的连接断开了。' }); };
   return {

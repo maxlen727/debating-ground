@@ -79,16 +79,16 @@ test('a host invites a classmate, they chat with an AI guest, and each gets a pe
   await tick(); await tick();
   let s = getState().session!;
   assert.ok(s.room, 'a room session');
-  assert.equal(s.room!.host, true);
-  assert.equal(s.room!.status, 'lobby');
+  assert.equal(s.room.host, true);
+  assert.equal(s.room.status, 'lobby');
   assert.equal(getState().ui.invite, true, 'the invite sheet opens');
   assert.ok(!JSON.stringify(s.room).includes('team-pass'), 'the access password is not part of the room');
 
   // 邀请链接能被解析回来，里面没有访问口令
-  const url = inviteLink(s.room!, 'https://maxlen727.github.io/debating-ground/app/');
+  const url = inviteLink(s.room, 'https://maxlen727.github.io/debating-ground/app/');
   assert.ok(!url.includes('team-pass'));
   const parsed = parseInvite(new URL(url).hash)!;
-  assert.deepEqual(parsed, { backend: 'https://api.example.workers.dev', roomId: s.room!.roomId, invite: s.room!.invite });
+  assert.deepEqual(parsed, { backend: 'https://api.example.workers.dev', roomId: s.room.roomId, invite: s.room.invite });
   assert.equal(parseInvite('#join=bad'), null);
 
   const mate = classmate();

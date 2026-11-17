@@ -105,13 +105,16 @@ export const defaultConfig = (): Config => ({
 });
 const defaultUi = (): Ui => ({ screen: 'learn', busy: null, error: '', toast: '', hint: null, explain: null, sheet: null, openCard: null, quiz: {}, join: null, invite: false, term: null, context: null });
 
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+
 function load(): AppState {
   const base: AppState = { config: defaultConfig(), plan: null, session: null, library: [], ai: { available: false, configured: false, verified: false, baseURL: '', model: '', remoteVerified: false, remoteModel: '', ttsConfigured: false, remoteTtsConfigured: false }, ui: defaultUi() };
   try {
-    const saved = JSON.parse(localStorage.getItem(STORE) ?? 'null');
+    const raw: unknown = JSON.parse(localStorage.getItem(STORE) ?? 'null');
+    const saved = isObj(raw) ? raw : null;
     // 反向讲解并进了苏格拉底追问（“换我来讲”）：选着它的设置改过来，按它准备的计划作废；进行中的讨论和知识卡片照旧
-    if (saved?.config?.mode === 'teach') saved.config.mode = 'socratic';
-    if (saved?.plan?.mode === 'teach') saved.plan = null;
+    if (saved && isObj(saved.config) && saved.config.mode === 'teach') saved.config.mode = 'socratic';
+    if (saved && isObj(saved.plan) && saved.plan.mode === 'teach') saved.plan = null;
     if (saved) {
       // 存档可能缺字段或写坏了：先按结构检查，坏掉的那一块作废，不让界面一打开就崩溃
       const session = restoreSession(saved.session);
@@ -121,8 +124,8 @@ function load(): AppState {
       };
     }
     // v0.4 的知识卡片结构相同，迁移过来
-    const v2 = JSON.parse(localStorage.getItem('sibian-v2') ?? 'null');
-    if (v2 && Array.isArray(v2.library)) return { ...base, library: restoreLibrary(v2.library) };
+    const v2: unknown = JSON.parse(localStorage.getItem('sibian-v2') ?? 'null');
+    if (isObj(v2) && Array.isArray(v2.library)) return { ...base, library: restoreLibrary(v2.library) };
   } catch { /* 读取失败就从头开始 */ }
   return base;
 }

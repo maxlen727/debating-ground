@@ -32,6 +32,8 @@ export function DebateBoard({ s }: { s: Session }) {
     if (over || !turn) return;
     const t = setTimeout(() => flash(document.querySelector('.seat-tok.on'), { color: turn.role.team === 'A' ? 'var(--a-fg)' : 'var(--b-fg)', radius: 150, strength: 0.8 }), 200);
     return () => clearTimeout(t);
+    // 只在轮到下一位时亮一下：turn 每次状态更新都是新对象，放进依赖会让它每打一个字就闪一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.cursor, over]);
   const groups = s.stages.map((_, i) => s.turns.map((t, k) => ({ t, k })).filter(x => x.t.stage === i)).filter(g => g.length);
   const side = (team: 'A' | 'B') => (

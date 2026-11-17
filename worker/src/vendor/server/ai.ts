@@ -14,16 +14,18 @@ type Output = 'text' | 'cover' | 'prepare' | 'review' | 'term' | 'point';
 // exclude：讨论的概念和要点，不当作“陌生术语”标出或解释，留给讨论去弄懂
 export interface BuiltRequest { messages: ChatMessage[]; output: Output; n?: number; mode?: ModeId; exclude?: string[]; term?: string; asked?: boolean }
 
+// 不是字符串的输入（对象、数字）一律当作没填，不把它转成“[object Object]”
+const asText = (v: unknown) => typeof v === 'string' ? v : '';
 export function normalizeConfig(input: { baseURL?: unknown; apiKey?: unknown; model?: unknown }): ApiConfig {
   let url: URL;
-  try { url = new URL(String(input.baseURL ?? '').trim()); } catch { throw new ApiError('请填写完整的 API 地址。'); }
+  try { url = new URL(asText(input.baseURL).trim()); } catch { throw new ApiError('请填写完整的 API 地址。'); }
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
   if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && local)) || url.username || url.password || url.search || url.hash)
     throw new ApiError('API 地址需使用 HTTPS；仅本机接口可用 HTTP。地址不能包含账号、密钥或查询参数。');
   let pathname = url.pathname.replace(/\/+$/, '');
   if (!pathname.endsWith('/chat/completions')) pathname += '/chat/completions';
   url.pathname = pathname;
-  const apiKey = String(input.apiKey ?? '').trim(), model = String(input.model ?? '').trim();
+  const apiKey = asText(input.apiKey).trim(), model = asText(input.model).trim();
   if (!apiKey || apiKey.length > 4096 || /[\r\n\0]/.test(apiKey)) throw new ApiError('请填写有效的 API Key。');
   if (!model || model.length > 200 || /[\r\n\0]/.test(model)) throw new ApiError('请填写服务商提供的模型名称。');
   return { endpoint: url.href, apiKey, model };
@@ -173,7 +175,7 @@ export function buildRequest(purpose: Purpose | 'test', payload: unknown = {}): 
     const mode = typeof modeId === 'string' ? RULES[modeId] : undefined;
     if (!mode) throw new ApiError('不支持的讨论方式。');
     const prev = isObj(p.previous) ? {
-      lastSummary: String(p.previous.oneLine ?? '').slice(0, 200),
+      lastSummary: asText(p.previous.oneLine).slice(0, 200),
       weakPoints: Array.isArray(p.previous.weak) ? p.previous.weak.slice(0, 6).map(x => String(x).slice(0, 60)) : []
     } : null;
     const context = typeof p.context === 'string' ? p.context.trim().slice(0, 600) : '';
@@ -300,10 +302,10 @@ export function extractJSON(raw: string): Record<string, unknown> {
   if (fence) tries.push(fence[1]);
   const a = raw.indexOf('{'), b = raw.lastIndexOf('}');
   if (a >= 0 && b > a) tries.push(raw.slice(a, b + 1));
-  for (const t of tries) { try { const v = JSON.parse(t); if (isObj(v)) return v; } catch { /* 继续尝试 */ } }
+  for (const t of tries) { try { const v: unknown = JSON.parse(t); if (isObj(v)) return v; } catch { /* 继续尝试 */ } }
   throw new ApiError('模型没有按要求返回结构化结果，请重试，或换一个更擅长遵循格式的模型。', 502);
 }
-const short = (v: unknown, max: number) => String(v ?? '').trim().slice(0, max);
+const short = (v: unknown, max: number) => (typeof v === 'string' || typeof v === 'number' ? String(v) : '').trim().slice(0, max);
 // 两句转述是不是同一个说法：去掉标点后看相邻两字的重合程度（模型转述时措辞会略有不同）
 export function sameClaim(a: string, b: string): boolean {
   const pairs = (s: string) => { const t = Array.from(s.replace(/[\s\p{P}]/gu, '')); const out = new Set<string>(); for (let i = 0; i < t.length - 1; i++) out.add(t[i] + t[i + 1]); return out; };
@@ -430,21 +432,21 @@ export async function complete(config: ApiConfig, messages: ChatMessage[], { fet
         const payload = line.slice(5).trim();
         if (!payload || payload === '[DONE]') continue;
         let event: { choices?: FinishChoice[]; error?: { message?: unknown } };
-        try { event = JSON.parse(payload); } catch { continue; }
+        try { event = JSON.parse(payload) as typeof event; } catch { continue; }
         if (event.error) throw new ApiError('服务商在生成过程中报错，本次内容未采用，请重试。', 502);
         const choice = event.choices?.[0];
         if (typeof choice?.delta?.content === 'string') out += choice.delta.content;
         if (choice?.finish_reason) finish = choice.finish_reason;
         if (out.length > 20000) { await reader.cancel(); throw new ApiError('生成内容过长，本次未采用。', 502); }
         const v = visibleText(out, config.apiKey);
-        if (v !== shown) { shown = v; onText!(v); }
+        if (v !== shown) { shown = v; onText(v); }
       }
     }
     if (controller.signal.aborted) throw new ApiError('请求已中断。', 499);
     if (!streaming) {
       raw += decoder.decode();
       let data: { choices?: FinishChoice[] };
-      try { data = JSON.parse(raw); } catch { throw new ApiError('接口没有返回有效 JSON，请确认支持 Chat Completions 协议。', 502); }
+      try { data = JSON.parse(raw) as typeof data; } catch { throw new ApiError('接口没有返回有效 JSON，请确认支持 Chat Completions 协议。', 502); }
       const choice = data.choices?.[0];
       out = typeof choice?.message?.content === 'string' ? choice.message.content : '';
       finish = choice?.finish_reason;

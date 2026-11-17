@@ -12,7 +12,7 @@ function setup(reply = '连接成功。') {
     calls.push({ url, init });
     return new Response(JSON.stringify({ choices: [{ message: { content: reply }, finish_reason: 'stop' }] }));
   }) as typeof fetch, 1000);
-  const call = (path: string, { method = 'GET', password = 'open-sesame', origin = PAGES as string | null, body, e = env }: { method?: string; password?: string | null; origin?: string | null; body?: unknown; e?: Env } = {}) => {
+  const call = (path: string, { method = 'GET', password = 'open-sesame', origin = PAGES, body, e = env }: { method?: string; password?: string | null; origin?: string | null; body?: unknown; e?: Env } = {}) => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (password) headers.Authorization = 'Bearer ' + password;
     if (origin) headers.Origin = origin;
@@ -67,7 +67,7 @@ test('generate reuses the shared prompts, never follows redirects, and never ech
 });
 
 test('a provider redirect is refused instead of followed', async () => {
-  const handler = createHandler((async () => new Response(null, { status: 307, headers: { Location: 'https://elsewhere.example' } })) as typeof fetch, 1000);
+  const handler = createHandler((async () => new Response(null, { status: 307, headers: { Location: 'https://elsewhere.example' } })), 1000);
   const res = await handler.fetch(new Request('https://api.example.workers.dev/api/test', { method: 'POST', headers: { Authorization: 'Bearer open-sesame', Origin: PAGES } }), env);
   assert.equal(res.status, 502);
   assert.match((await res.json()).error, /重定向/);
@@ -103,7 +103,7 @@ test('rooms: creating needs the access password, joining goes straight to the ro
 });
 
 test('the worker streams generation as server-sent events', async () => {
-  const handler = createHandler((async () => new Response(`data: ${JSON.stringify({ choices: [{ delta: { content: '好问题。\n[[要点:]]' }, finish_reason: 'stop' }] })}\n\n`, { headers: { 'Content-Type': 'text/event-stream' } })) as typeof fetch, 1000);
+  const handler = createHandler((async () => new Response(`data: ${JSON.stringify({ choices: [{ delta: { content: '好问题。\n[[要点:]]' }, finish_reason: 'stop' }] })}\n\n`, { headers: { 'Content-Type': 'text/event-stream' } })), 1000);
   const session = { mode: 'socratic', concept: '机会成本', topic: '代价？', keyPoints: ['放弃的最佳选择', '沉没成本'], roles: [{ id: 'r0', name: '苏珩', title: '', persona: '' }], messages: [] };
   const res = await handler.fetch(new Request('https://api.example.workers.dev/api/generate', { method: 'POST', headers: { Authorization: 'Bearer open-sesame', Origin: PAGES, 'Content-Type': 'application/json' }, body: JSON.stringify({ purpose: 'discuss', payload: { session, roleId: 'r0' }, stream: true }) }), env);
   assert.equal(res.headers.get('Access-Control-Allow-Origin'), PAGES);

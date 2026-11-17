@@ -88,7 +88,7 @@ export function Prepare() {
         <ErrorBanner />
         <BusyStrip />
         <div className="row">
-          <button className="secondary" disabled={busy} onClick={() => { update(s => { s.config.concept = plan.concept; s.config.mode = plan.mode; }); prepare(plan.previous); }}>重新生成</button>
+          <button className="secondary" disabled={busy} onClick={() => { update(s => { s.config.concept = plan.concept; s.config.mode = plan.mode; }); void prepare(plan.previous); }}>重新生成</button>
           <button className="primary grow" disabled={busy} onClick={startSession}>开始讨论</button>
         </div>
         {canInvite(plan.mode) && <button className="ghost block" disabled={busy} onClick={() => setInviting(true)}><Icon name="people" size={18} />邀请同学一起讨论</button>}

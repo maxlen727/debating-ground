@@ -34,6 +34,7 @@
 ```bash
 npm install          # 安装依赖
 npm run check        # 类型检查（tsc）
+npm run lint         # 代码检查（ESLint：没处理的 Promise、Hook 依赖、switch 漏分支等，只管对错不管格式）
 npm test             # 全部测试
 npm run build        # 构建界面到 dist/
 npm run server       # 本机服务 127.0.0.1:4173
@@ -46,7 +47,7 @@ cd native && ./gradlew assembleDebug testDebugUnitTest   # 原生安卓版：构
 cd worker && npm install && npm run dev   # 本地运行后端（先把 .dev.vars.example 复制为 .dev.vars）
 ```
 
-**每次提交前必须通过 `npm run check && npm test && npm run build`。** 没跑过就不要说“已完成”。如果某项失败且与你的改动无关，在 PR 里写明，不要顺手大改。
+**每次提交前必须通过 `npm run check && npm run lint && npm test && npm run build`。** 没跑过就不要说“已完成”。如果某项失败且与你的改动无关，在 PR 里写明，不要顺手大改。
 
 ## 不能破坏的约定
 
@@ -62,7 +63,8 @@ cd worker && npm install && npm run dev   # 本地运行后端（先把 .dev.var
 
 ## 代码规范
 
-- TypeScript `strict`，不用 `any`；确实需要时用 `unknown` 再收窄。
+- TypeScript `strict`，不用 `any`；确实需要时用 `unknown` 再收窄。`JSON.parse` 的结果先当 `unknown`，或断言成字段全是可选、之后逐个检查的结构。
+- 代码检查（`eslint.config.js`）报的问题要修，不要整条关掉规则。确属故意的写法，用 `// eslint-disable-next-line 规则名` 并在上一行写明原因。“发出去不等”的 Promise 写 `void`。
 - 业务逻辑写在 `actions.ts` 或 `lib/`，组件里只做展示和事件绑定。状态修改一律通过 `update(draft => …)`。
 - 小步修改，一个 PR 只做一件事。不要顺手重命名、格式化或重构与任务无关的代码。
 - 不新增依赖，除非任务需要且在 PR 里说明理由；优先用平台能力。
@@ -115,7 +117,7 @@ cd worker && npm install && npm run dev   # 本地运行后端（先把 .dev.var
 
 ## 完成一个任务的标准
 
-1. 代码改完，`npm run check && npm test && npm run build` 全部通过。
+1. 代码改完，`npm run check && npm run lint && npm test && npm run build` 全部通过。
 2. 新行为有测试覆盖（流程改动加到 `tests/flow.test.ts`，提示词改动加到 `tests/ai.test.ts`）。
 3. 界面改动在手机宽度、浅色和深色下检查过。
 4. 用户可见的行为变了，就更新 `README.md` 和 `docs/` 里对应的页面；界面明显变了，重新截图。
