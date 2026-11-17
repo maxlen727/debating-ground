@@ -549,3 +549,15 @@ test('a healthy save comes back unchanged', async () => {
   assert.deepEqual({ config: st.config, plan: st.plan, session: st.session, library: st.library }, before);
   assert.equal(st.ui.screen, 'session');
 });
+
+test('a malformed stream event fails the turn with a clear message and keeps progress unchanged', async () => {
+  learningPlan(); actions.startSession(); apiOn();
+  const sse = 'event: delta\ndata: {"t":"半截"}\n\nevent: delta\ndata: {oops\n\n';
+  globalThis.fetch = (async () => new Response(sse, { headers: { 'Content-Type': 'text/event-stream' } })) as typeof fetch;
+  const before = getState().session!.entries.length;
+  await actions.send('机会成本是放弃的最好选择。');
+  assert.match(getState().ui.error, /不完整.*未采用/);
+  assert.doesNotMatch(getState().ui.error, /JSON|Unexpected/);
+  // 学习者自己的发言留下，AI 的半截文字不进记录
+  assert.equal(getState().session!.entries.length, before + 1);
+});
