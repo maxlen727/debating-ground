@@ -14,6 +14,7 @@ npm run dev          # 界面热更新 http://127.0.0.1:5173（/api 自动转发
 npm run check        # 类型检查
 npm run lint         # 代码检查（ESLint）
 npm run format       # 自动整理格式（Prettier），format:check 只检查
+git config blame.ignoreRevsFile .git-blame-ignore-revs   # 一次性设置：git blame 跳过纯格式化的提交
 npm test             # 测试
 npm run build        # 构建界面到 dist/
 npm start            # 用构建好的 dist/ 启动
