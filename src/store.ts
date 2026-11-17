@@ -5,6 +5,7 @@ import type { Entry, ModeId, Persona, Previous, Reflection, Review, Seat, SeatCo
 import type { PointProposal, RoomMember, RoomStatus, Speaker } from '../shared/room.ts';
 import { DEFAULT_VOICE } from '../shared/speech.ts';
 import { holdingRenders, transition, type View } from './lib/motion.ts';
+import { restoreConfig, restoreLibrary, restorePlan, restoreSession } from './lib/restore.ts';
 
 export type Screen = 'learn' | 'prepare' | 'session' | 'review' | 'library' | 'card' | 'settings' | 'join';
 
@@ -111,10 +112,17 @@ function load(): AppState {
     // 反向讲解并进了苏格拉底追问（“换我来讲”）：选着它的设置改过来，按它准备的计划作废；进行中的讨论和知识卡片照旧
     if (saved?.config?.mode === 'teach') saved.config.mode = 'socratic';
     if (saved?.plan?.mode === 'teach') saved.plan = null;
-    if (saved) return { ...base, config: { ...base.config, ...saved.config }, plan: saved.plan ?? null, session: saved.session ?? null, library: Array.isArray(saved.library) ? saved.library : [], ui: { ...base.ui, screen: saved.screen === 'session' && saved.session && !saved.session.finished ? 'session' : 'learn' } };
+    if (saved) {
+      // 存档可能缺字段或写坏了：先按结构检查，坏掉的那一块作废，不让界面一打开就崩溃
+      const session = restoreSession(saved.session);
+      return {
+        ...base, config: restoreConfig(saved.config, base.config), plan: restorePlan(saved.plan), session, library: restoreLibrary(saved.library),
+        ui: { ...base.ui, screen: saved.screen === 'session' && session && !session.finished ? 'session' : 'learn' }
+      };
+    }
     // v0.4 的知识卡片结构相同，迁移过来
     const v2 = JSON.parse(localStorage.getItem('sibian-v2') ?? 'null');
-    if (v2 && Array.isArray(v2.library)) return { ...base, library: v2.library };
+    if (v2 && Array.isArray(v2.library)) return { ...base, library: restoreLibrary(v2.library) };
   } catch { /* 读取失败就从头开始 */ }
   return base;
 }

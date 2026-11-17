@@ -512,3 +512,40 @@ test('typing a draft does not copy the knowledge base or write storage on every 
   update(s => { s.ui.hint = null; });
   assert.match(store['sibian-v3'], /"draft":"机会成本是"/);
 });
+
+test('a damaged save does not crash the app: broken parts are dropped, knowledge cards are kept', async () => {
+  for (const k of Object.keys(store)) delete store[k];
+  store['sibian-v3'] = JSON.stringify({
+    config: { concept: '边际效用', mode: 'nope', seats: { A: 'x' }, counts: { A: 9, B: 2 }, stages: [] },
+    plan: { mode: 'socratic', concept: 'x' },
+    session: { id: 's1', mode: 'socratic', concept: 'x', topic: 'y', entries: 'oops' },
+    library: [null, 'x', { id: 'c1', concept: '机会成本', oneLine: '放弃的最好选择' }, { concept: '没有 id' }],
+    screen: 'session'
+  });
+  resetForTests();
+  const st = getState();
+  assert.equal(st.config.concept, '边际效用');
+  assert.equal(st.config.mode, defaultConfig().mode);
+  assert.deepEqual(st.config.seats, defaultConfig().seats);
+  assert.deepEqual(st.config.counts, defaultConfig().counts);
+  assert.equal(st.config.stages.length, defaultConfig().stages.length);
+  assert.equal(st.plan, null);
+  assert.equal(st.session, null);
+  assert.equal(st.ui.screen, 'learn');
+  assert.equal(st.library.length, 1, 'the usable card survives');
+  assert.deepEqual(st.library[0].points, []);
+  assert.deepEqual(st.library[0].quiz, []);
+  assert.deepEqual(st.library[0].reviews, []);
+});
+
+test('a healthy save comes back unchanged', async () => {
+  update(s => { s.config.concept = '机会成本'; s.config.mode = 'socratic'; });
+  await actions.prepare(null, undefined, 'start');
+  await actions.send('机会成本是放弃的选择里最好的那个。');
+  // 存档经过 JSON，值为 undefined 的字段本来就不会留下
+  const before = JSON.parse(JSON.stringify({ config: getState().config, plan: getState().plan, session: getState().session, library: getState().library }));
+  resetForTests();
+  const st = getState();
+  assert.deepEqual({ config: st.config, plan: st.plan, session: st.session, library: st.library }, before);
+  assert.equal(st.ui.screen, 'session');
+});
