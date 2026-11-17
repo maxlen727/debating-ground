@@ -1,0 +1,8 @@
+# ktlint 读这里的设置：Kotlin 官方编码规范（和 gradle.properties 的 kotlin.code.style=official、Android Studio 的默认格式一致），加上 Compose 的习惯
+root = true
+
+[*.{kt,kts}]
+ktlint_code_style = intellij_idea
+max_line_length = 160
+# Compose 的界面函数按约定用大写开头（LearnScreen()），不算违反函数命名规则
+ktlint_function_naming_ignore_when_annotated_with = Composable

@@ -1,27 +1,27 @@
 package debating.ground.app.ui.screens
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.em
-import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import debating.ground.app.ui.theme.LocalTokens
 import debating.ground.app.ui.theme.Sans
 import debating.ground.app.ui.theme.Serif
@@ -80,8 +80,14 @@ private fun Page(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun Heading(text: String) =
-    Text(text, style = TextStyles.title.copy(fontFamily = Sans, fontSize = TextSize.xl), color = LocalTokens.current.ink.color(), modifier = Modifier.semantics { heading() })
+private fun Heading(text: String) = Text(
+    text,
+    style = TextStyles.title.copy(fontFamily = Sans, fontSize = TextSize.xl),
+    color = LocalTokens.current.ink.color(),
+    modifier = Modifier.semantics {
+        heading()
+    },
+)
 
 @Composable
 private fun Note(text: String) = Text(text, style = TextStyles.small, color = LocalTokens.current.muted.color())
