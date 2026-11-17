@@ -23,8 +23,11 @@ export function createServer({ fetchImpl = fetch, timeoutMs = 90000, root = path
   const json = (res: http.ServerResponse, status: number, data: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(data)); };
   async function body(req: http.IncomingMessage): Promise<Record<string, unknown>> {
     const chunks: Buffer[] = []; let size = 0;
-    for await (const chunk of req) { size += chunk.length; if (size > 1_000_000) throw new ApiError('请求内容过大。', 413); chunks.push(chunk); }
-    try { return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); } catch { throw new ApiError('请求格式错误。'); }
+    for await (const chunk of req as AsyncIterable<Buffer>) { size += chunk.length; if (size > 1_000_000) throw new ApiError('请求内容过大。', 413); chunks.push(chunk); }
+    let data: unknown;
+    try { data = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); } catch { throw new ApiError('请求格式错误。'); }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new ApiError('请求格式错误。');
+    return data as Record<string, unknown>;
   }
 
   const envTts = (): TtsConfig | null => (process.env.XFYUN_APP_ID && process.env.XFYUN_API_KEY && process.env.XFYUN_API_SECRET ? { appId: process.env.XFYUN_APP_ID, apiKey: process.env.XFYUN_API_KEY, apiSecret: process.env.XFYUN_API_SECRET } : null);
@@ -95,7 +98,7 @@ export function createServer({ fetchImpl = fetch, timeoutMs = 90000, root = path
     },
     'POST /api/tts/config': async (s, req, res) => {
       const data = await body(req);
-      const read = (key: string) => typeof data[key] === 'string' ? (data[key] as string).trim() : '';
+      const read = (key: string) => typeof data[key] === 'string' ? (data[key]).trim() : '';
       const appId = read('appId'), apiKey = read('apiKey'), apiSecret = read('apiSecret');
       // 三项都清空：回到环境变量里的配置（如果有）
       if (!appId && !apiKey && !apiSecret) { s.tts = null; return json(res, 200, { ttsConfigured: !!envTts(), sttConfigured: !!envTts() }); }
@@ -107,7 +110,7 @@ export function createServer({ fetchImpl = fetch, timeoutMs = 90000, root = path
     'POST /api/generate': (s, req, res) => generate(s, req, res, false)
   };
 
-  const server = http.createServer(async (req, res) => {
+  async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('Referrer-Policy', 'no-referrer');
     let url: URL;
     try { url = new URL(req.url ?? '/', 'http://' + req.headers.host); } catch { return json(res, 400, { error: '无效地址' }); }
@@ -140,6 +143,10 @@ export function createServer({ fetchImpl = fetch, timeoutMs = 90000, root = path
       res.setHeader('Content-Type', TYPES[path.extname(file)] ?? 'application/octet-stream');
       res.end(req.method === 'HEAD' ? undefined : data);
     });
+  }
+  // 请求处理是异步的：兜底接住没预料到的异常，回一个 500，而不是留下没人处理的 Promise
+  const server = http.createServer((req, res) => {
+    handle(req, res).catch(() => { if (!res.headersSent) json(res, 500, { error: '本机服务未能完成请求。' }); else res.destroy(); });
   });
 
   // 语音输入：浏览器开 WebSocket 时会带上 Cookie 和 Origin，凭这两样认人（和普通请求一样只认本机页面）

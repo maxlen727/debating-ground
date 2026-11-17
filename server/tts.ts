@@ -69,7 +69,7 @@ export async function synthesizeXfyun(text: string, voice: unknown, env: XfyunEn
     try { ws = new WebSocketImpl(url.toString()); }
     catch { return finish(new ApiError('无法连接讯飞语音服务。', 502)); }
     ws.onopen = () => {
-      ws!.send(JSON.stringify({
+      ws.send(JSON.stringify({
         common: { app_id: appId },
         business: { aue: 'lame', sfl: 1, auf: 'audio/L16;rate=16000', vcn: cleanVoice(voice), speed: 50, volume: 50, pitch: 50, tte: 'UTF8' },
         data: { status: 2, text: base64(new TextEncoder().encode(clean)) }

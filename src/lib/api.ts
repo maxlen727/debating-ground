@@ -7,7 +7,7 @@ export type Target = 'local' | 'remote';
 
 async function readJSON(res: Response, fallback: string) {
   let data: { error?: string } & Record<string, unknown>;
-  try { data = await res.json(); } catch { throw new Error(fallback); }
+  try { data = await res.json() as typeof data; } catch (e) { throw new Error(fallback, { cause: e }); }
   if (!res.ok) throw new Error(data.error || '请求失败。');
   return data;
 }
@@ -28,7 +28,7 @@ async function send(path: string, options: RequestInit, target: Target): Promise
     return await fetch(url.replace(/\/+$/, '') + path, { ...options, credentials: 'omit', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + password, ...extra } });
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e;
-    throw new Error('连不上你的后端。请检查地址是否正确、后端是否已部署，以及 ALLOWED_ORIGINS 是否包含当前网站。');
+    throw new Error('连不上你的后端。请检查地址是否正确、后端是否已部署，以及 ALLOWED_ORIGINS 是否包含当前网站。', { cause: e });
   }
 }
 
@@ -54,7 +54,7 @@ export async function apiStream<T>(path: string, body: Record<string, unknown>, 
       if (!name || raw === undefined) continue;
       let data: { t?: unknown; error?: unknown };
       // 事件坏了就当作这次生成失败：不显示解析器的英文报错，也不采用半截内容
-      try { data = JSON.parse(raw); } catch { await reader.cancel().catch(() => {}); throw new Error('后端返回的内容不完整，本次内容未采用，请重试。'); }
+      try { data = JSON.parse(raw) as typeof data; } catch { await reader.cancel().catch(() => {}); throw new Error('后端返回的内容不完整，本次内容未采用，请重试。'); }
       if (name === 'delta') { if (typeof data.t === 'string') { text += data.t; onText(text); } }
       else if (name === 'done') { await reader.cancel().catch(() => {}); return data as T; }
       else if (name === 'error') throw new Error(typeof data.error === 'string' && data.error ? data.error : '请求失败。');

@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { RoomCore, snapshotFor, validateSetup, type Generate, type RoomDeps, type SocketLike, type StoredRoom } from '../worker/src/room.ts';
-import type { RoomSetup, RoomView, ServerMessage } from '../shared/room.ts';
+import type { RoomView, ServerMessage } from '../shared/room.ts';
 import { ROOM_CHAT, ROOM_LIMITS } from '../shared/room.ts';
 import type { Purpose, SessionSnapshot } from '../shared/types.ts';
 import { debateTurns, slots } from '../src/lib/debate.ts';
@@ -105,7 +105,7 @@ test('roundtable is a group chat: anyone can speak any time; an AI guest replies
   assert.ok(t.alarm <= 1_000_000 + 1000 + ROOM_CHAT.replyAfterMs, 'an alarm is set for the reply');
   await settle(t);
   assert.equal(t.calls.length, 1, 'one reply for the whole burst');
-  let v = guest.last();
+  const v = guest.last();
   assert.deepEqual(v.entries.filter(e => e.kind === 'msg').map(e => e.kind === 'msg' && e.name), ['林教授', '小明', '束束', '周老师']);
   assert.equal(v.speaker, null);
   assert.deepEqual(v.covered, [0]);
@@ -321,7 +321,7 @@ test('setup is validated on the backend', () => {
   const d = debateSetup();
   assert.throws(() => validateSetup({ ...d, turns: [{ ...d.turns[0], role: { id: 'Z9' } }] }), /比赛流程无效/);
   assert.doesNotThrow(() => validateSetup({ ...d, seats: d.seats.map(s => ({ ...s, type: 'ai' })) }), 'people pick seats in the room');
-  const ok = validateSetup(d) as RoomSetup;
+  const ok = validateSetup(d);
   assert.equal(ok.turns.length, d.turns.length);
   assert.equal(ok.seats[0].name, '正方 1 辩');
 });

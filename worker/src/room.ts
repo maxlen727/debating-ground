@@ -154,7 +154,7 @@ export class RoomCore {
     let msg: ClientMessage;
     try {
       if (typeof raw !== 'string' || raw.length > 16_000) throw new Error();
-      msg = JSON.parse(raw);
+      msg = JSON.parse(raw) as ClientMessage;
       if (!isObj(msg) || typeof msg.type !== 'string') throw new Error();
     } catch { return this.send(ws, { type: 'error', message: '消息格式错误。' }); }
     try {
@@ -645,7 +645,7 @@ export function roomClass<E>(makeGenerate: (env: E) => Generate, makeSynthesize?
       const path = new URL(req.url).pathname;
       if (path === '/init' && req.method === 'POST') {
         try {
-          return Response.json(await this.core.init(await req.json()));
+          return Response.json(await this.core.init(await req.json() as Record<string, unknown>));
         } catch (e) {
           return Response.json({ error: e instanceof ApiError ? e.message : '没能创建房间。' }, { status: e instanceof ApiError ? e.status : 500 });
         }

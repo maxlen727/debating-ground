@@ -131,6 +131,8 @@ export async function demoRun<P extends Purpose>(purpose: P, payload: PayloadMap
   const cost = s.concept === '机会成本';
   const n = s.keyPoints.length;
   switch (purpose) {
+    // 准备在上面单独处理（不需要讨论上下文）
+    case 'prepare': return null;
     case 'discuss': {
       const p = payload as PayloadMap['discuss'];
       const role = s.personas.find(r => r.id === p.roleId) ?? s.personas[0];

@@ -54,7 +54,7 @@ export function EntryView({ m, s, showTip, voice }: { m: Entry; s: S; showTip: b
           : <button className="bubble tappable" aria-haspopup="dialog" onClick={e => {
               // 点在虚线词上就查词，否则打开追问面板
               const term = termAt(e.target);
-              if (term) openTerm(term, m.id); else update(st => { st.ui.sheet = m.id; });
+              if (term) void openTerm(term, m.id); else update(st => { st.ui.sheet = m.id; });
             }}><Reveal id={m.id} text={m.text} live={false} final={<WithTerms text={m.text} terms={m.terms} />} /></button>}
         {showTip && <small className="tip">{s.mode === 'canvas' ? '轻点发言可以追问，或从这句展开一个分支单独聊。' : '轻点发言可以追问：没听懂、举例、反驳、分辨事实。'}{!!m.terms?.length && '带虚线的词，点一下看解释。'}</small>}
       </div>
@@ -83,7 +83,7 @@ export function ReflectCard({ m, concept }: { m: Reflection; concept: string }) 
             <button className="ghost small" onClick={() => dropReflection(m.id)}>跳过</button>
             <button className="primary small" disabled={!!ui.busy || !m.draft.trim()} onClick={() => submitReflection(m.id)}>提交小结</button>
           </div>
-          {streaming && <p className="feedback"><Reveal id={m.id} text={live!.text} live /></p>}
+          {streaming && <p className="feedback"><Reveal id={m.id} text={live.text} live /></p>}
         </>
       )}
     </section>

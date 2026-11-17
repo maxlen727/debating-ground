@@ -75,7 +75,7 @@ export function transition(from: View, to: View, commit: () => void) {
   running = vt;
   // 过渡被跳过时回调也会执行；万一没执行，别让界面一直不更新
   vt.updateCallbackDone.catch(() => { if (capturing) { capturing = false; apply(); } });
-  vt.finished.finally(() => {
+  void vt.finished.finally(() => {
     if (kind === 'close' && sheetOrigin) { sheetOrigin.style.viewTransitionName = ''; sheetOrigin = null; }
     if (running === vt) { running = null; delete root.dataset.nav; }
   });

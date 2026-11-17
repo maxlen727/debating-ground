@@ -16,7 +16,7 @@ const SCREENS = { learn: Learn, prepare: Prepare, session: Session, review: Revi
 export function App() {
   const { ui } = useApp();
   useEffect(() => {
-    refreshStatus();
+    void refreshStatus();
     // 打开了邀请链接，或者上次停在一场还没结束的多人讨论里
     readInviteFromLocation();
     const s = getState().session;
