@@ -87,7 +87,7 @@ export function makeGenerate(env: Env, fetchImpl: typeof fetch = (input, init) =
     const config = configOf(env);
     const request = buildRequest(purpose, payload);
     const result = await complete(config, request.messages, { fetchImpl, timeoutMs, redirect: 'manual', onText });
-    return finalize(request, result) as Awaited<ReturnType<Generate>>;
+    return finalize(request, result);
   };
 }
 

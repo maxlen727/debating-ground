@@ -84,7 +84,7 @@ export class Listening {
   private receive(raw: string) {
     if (this.done) return;
     let m: IatFrame;
-    try { m = JSON.parse(raw); } catch { return this.fail('讯飞返回了无法识别的数据。'); }
+    try { m = JSON.parse(raw) as IatFrame; } catch { return this.fail('讯飞返回了无法识别的数据。'); }
     // 讯飞的错误码和说明不含密钥，原样给出方便排查（例如应用没开通语音听写）
     if (m.code !== 0) return this.fail(`讯飞语音错误 ${m.code ?? '未知'}：${String(m.message ?? '请求失败').slice(0, 120)}`);
     const r = m.data?.result;
@@ -126,7 +126,7 @@ export function listenRelay(env: XfyunEnv, send: (e: ListenEvent) => void, close
     async handle(raw: unknown) {
       if (closed) return;
       let msg: { type?: unknown; audio?: unknown; password?: unknown };
-      try { msg = JSON.parse(String(raw)); } catch { return reply({ type: 'error', message: '消息格式错误。' }); }
+      try { msg = JSON.parse(typeof raw === 'string' ? raw : '') as typeof msg; } catch { return reply({ type: 'error', message: '消息格式错误。' }); }
       if (msg.type === 'start') {
         if (session) return;
         clearTimeout(idle);

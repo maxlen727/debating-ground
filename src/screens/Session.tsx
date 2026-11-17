@@ -39,6 +39,8 @@ function useLightCues(s: S | null) {
       const t = setTimeout(() => flash(document.querySelector(`[data-entry="${last}"] .bubble`) ?? document.querySelector(`[data-entry="${last}"]`), { radius: 170, strength: 0.55, duration: 1300 }), 380);
       return () => clearTimeout(t);
     }
+    // 只在点亮要点、落下新发言、换分支时发光：s 每次状态更新都是新对象，放进依赖会让它每打一个字就重算一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s?.id, s?.covered.length, s?.entries.length, s?.at]);
 }
 

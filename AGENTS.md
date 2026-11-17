@@ -1,6 +1,8 @@
 # AGENTS.md · 给在本仓库工作的 AI Agent
 
-本文件是所有 Agent（Claude Code、Codex、Cursor、Copilot 等）在这个仓库里的行为规范。开始任何任务前先读完。和人类成员的指示冲突时，以人类成员在当前任务里的明确要求为准；拿不准就停下来问。
+本文件是所有 Agent（Claude Code、Codex、Cursor、Copilot 等）在这个仓库里的行为规范。开始任何任务前先读完。
+
+**Agent 全权负责从实现到合并的全过程**：自己拆任务、开 Issue、写代码、自查、合并。人只定品味和方向（见“什么时候停下来问人”），可以事后看任何改动、随时叫停。和人类成员的指示冲突时，以人类成员的明确要求为准。
 
 ## 项目是什么
 
@@ -32,6 +34,7 @@
 ```bash
 npm install          # 安装依赖
 npm run check        # 类型检查（tsc）
+npm run lint         # 代码检查（ESLint：没处理的 Promise、Hook 依赖、switch 漏分支等，只管对错不管格式）
 npm test             # 全部测试
 npm run build        # 构建界面到 dist/
 npm run server       # 本机服务 127.0.0.1:4173
@@ -44,7 +47,7 @@ cd native && ./gradlew ktlintCheck lintDebug assembleDebug testDebugUnitTest   #
 cd worker && npm install && npm run dev   # 本地运行后端（先把 .dev.vars.example 复制为 .dev.vars）
 ```
 
-**每次提交前必须通过 `npm run check && npm test && npm run build`。** 没跑过就不要说“已完成”。如果某项失败且与你的改动无关，在 PR 里写明，不要顺手大改。
+**每次提交前必须通过 `npm run check && npm run lint && npm test && npm run build`。** 没跑过就不要说“已完成”。如果某项失败且与你的改动无关，在 PR 里写明，不要顺手大改。
 
 ## 不能破坏的约定
 
@@ -60,7 +63,8 @@ cd worker && npm install && npm run dev   # 本地运行后端（先把 .dev.var
 
 ## 代码规范
 
-- TypeScript `strict`，不用 `any`；确实需要时用 `unknown` 再收窄。
+- TypeScript `strict`，不用 `any`；确实需要时用 `unknown` 再收窄。`JSON.parse` 的结果先当 `unknown`，或断言成字段全是可选、之后逐个检查的结构。
+- 代码检查（`eslint.config.js`）报的问题要修，不要整条关掉规则。确属故意的写法，用 `// eslint-disable-next-line 规则名` 并在上一行写明原因。“发出去不等”的 Promise 写 `void`。
 - 业务逻辑写在 `actions.ts` 或 `lib/`，组件里只做展示和事件绑定。状态修改一律通过 `update(draft => …)`。
 - 小步修改，一个 PR 只做一件事。不要顺手重命名、格式化或重构与任务无关的代码。
 - 不新增依赖，除非任务需要且在 PR 里说明理由；优先用平台能力。
@@ -92,20 +96,28 @@ cd worker && npm install && npm run dev   # 本地运行后端（先把 .dev.var
 - **不直接推送 `main`，不 force push 共享分支，不改写别人的提交。**
 - 每个任务对应一个 Issue。分支名：`<类型>/<issue号>-<简短描述>`，例如 `feat/12-streaming`、`fix/18-reflect-card`。类型：`feat` `fix` `refactor` `docs` `test` `chore` `style`。
 - 提交信息：`<类型>: <做了什么>`，中文即可，正文写“为什么”。Agent 生成的提交在末尾加上 `Co-Authored-By:` 标明是哪个 Agent，作者用负责这个任务的人类成员。
-- 开 PR 时填写模板：关联 Issue、改了什么、怎么验证的、截图、风险。PR 必须由人类成员审查后合并（Squash merge）。
+- 开 PR 时填写模板：关联 Issue、改了什么、怎么验证的、截图、风险。PR 描述是写给事后翻看的人的记录，要如实。
+- **PR 由 Agent 自查后合并（Squash merge），不等人审查。** 合并前：CI 全部通过；没有冲突；对照“完成一个任务的标准”逐项确认；从头到尾复读一遍 diff，确认没有夹带无关改动；PR 上有审查意见的，先处理完。合并后删除分支，在 Issue 里勾掉做完的事。
 - 多个 Agent 并行时，各自在独立分支（推荐 `git worktree`）上工作；开始前 `git fetch` 并基于最新的 `main`。发现别人正在改同一个文件，先在 Issue 里沟通。
 - 不提交 `node_modules/`、`dist/`、`.env`、密钥、个人配置或截图以外的大文件。
 
 ## 什么时候停下来问人
 
-- 需求有两种以上合理理解，而且做错的代价大（改存储结构、改提示词的学习目标、改流程规则）。
-- 需要新增依赖、改变架构（例如服务端换框架、引入后端数据库）、或触碰密钥处理逻辑。
-- 测试失败且原因与你的任务无关。
-- 任务描述和本文件冲突。
+只在两类事情上问，其余自己判断、自己做完，把理由写进 PR：
+
+- **品味**：界面的观感和手感、文案的语气、动效的分寸，这些没有对错、取决于偏好的选择。有现成的规范或先例可循时照着做，不用问。
+- **方向**：做什么、不做什么，产品的学习目标，讨论模式和学习流程的设计原则，提示词的学习目标（措辞和细节的调整不算，照常改并跑评测）。
+
+另外，**不可逆、直接落到用户身上的操作**先说一声再做：发正式版（推 `v*` 标签）、改签名密钥或发布用的 Secrets、任何可能让用户设备上的数据丢失的发布。
+
+以下情况**不需要**问，自己处理并在 PR 里写明：
+- 新增依赖、调整架构：先确认确实需要、优先用平台能力，理由写进 PR。
+- 测试失败且原因与任务无关：查清根因；能修就另开 Issue 修掉，修不了就在 PR 里写明。
+- 需求有几种理解：选最符合“把概念弄懂”这个目标、改动最小、最容易撤回的那种，在 PR 里写明为什么这样选。
 
 ## 完成一个任务的标准
 
-1. 代码改完，`npm run check && npm test && npm run build` 全部通过。
+1. 代码改完，`npm run check && npm run lint && npm test && npm run build` 全部通过。
 2. 新行为有测试覆盖（流程改动加到 `tests/flow.test.ts`，提示词改动加到 `tests/ai.test.ts`）。
 3. 界面改动在手机宽度、浅色和深色下检查过。
 4. 用户可见的行为变了，就更新 `README.md` 和 `docs/` 里对应的页面；界面明显变了，重新截图。

@@ -102,9 +102,9 @@ test('request contract, text extraction, and no silent fallback', async () => {
   assert.equal((captured!.options.headers as Record<string, string>).Authorization, 'Bearer test-secret');
   assert.equal(captured!.options.redirect, 'error');
   assert.equal(JSON.parse(captured!.options.body as string).model, 'chosen-model');
-  await assert.rejects(complete(normalizeConfig(cfg), [], { fetchImpl: (async () => new Response('test-secret', { status: 401 })) as typeof fetch }), (e: Error) => /401/.test(e.message) && !e.message.includes('test-secret'));
-  await assert.rejects(complete(normalizeConfig(cfg), [], { fetchImpl: (async () => new Response(JSON.stringify({ choices: [{ message: { content: '' } }] }))) as typeof fetch }), /空|文本/);
-  await assert.rejects(complete(normalizeConfig(cfg), [], { fetchImpl: (async () => new Response(JSON.stringify({ choices: [{ message: { content: '未完成' }, finish_reason: 'length' }] }))) as typeof fetch }), /截断/);
+  await assert.rejects(complete(normalizeConfig(cfg), [], { fetchImpl: (async () => new Response('test-secret', { status: 401 })) }), (e: Error) => /401/.test(e.message) && !e.message.includes('test-secret'));
+  await assert.rejects(complete(normalizeConfig(cfg), [], { fetchImpl: (async () => new Response(JSON.stringify({ choices: [{ message: { content: '' } }] }))) }), /空|文本/);
+  await assert.rejects(complete(normalizeConfig(cfg), [], { fetchImpl: (async () => new Response(JSON.stringify({ choices: [{ message: { content: '未完成' }, finish_reason: 'length' }] }))) }), /截断/);
 });
 
 test('abort and timeout propagate as recoverable errors', async () => {
@@ -185,7 +185,7 @@ test('streaming: deltas arrive in order, markers never show, the result is valid
 test('streaming failures discard the partial text instead of keeping half an answer', async () => {
   const run = (res: () => Response, timeoutMs = 1000) => {
     const chunks: string[] = [];
-    return streamGenerate(normalizeConfig(cfg), buildRequest('discuss', { session: learning, roleId: 'r0' }), { fetchImpl: (async () => res()) as typeof fetch, timeoutMs }, c => chunks.push(c)).then(ok => ({ ok, chunks }));
+    return streamGenerate(normalizeConfig(cfg), buildRequest('discuss', { session: learning, roleId: 'r0' }), { fetchImpl: (async () => res()), timeoutMs }, c => chunks.push(c)).then(ok => ({ ok, chunks }));
   };
   const cut = await run(() => sse(['说到一半'], { finish: 'length' }));
   assert.equal(cut.ok, false);
@@ -399,4 +399,19 @@ test('换我来讲: after two questions in a row the student says what it unders
   assert.match(p, /用陈述句说说你现在是怎么理解的/);
   assert.doesNotMatch(p, /讲点知识/, 'a student does not lecture');
   assert.doesNotMatch(p, /先把它答清楚/, 'the teacher asking is not a cue for the student to explain the concept');
+});
+
+test('structured output never shows "[object Object]": objects in text fields become empty, numbers are kept', () => {
+  const rev = finalize({ messages: [], output: 'review', n: 2 }, { text: JSON.stringify({
+    oneLine: { text: '模型把一句话包成了对象' },
+    points: [{ label: 'a', status: 'mastered', note: { why: 'x' } }, { label: 2, status: 'partial', note: '数字标签也能显示' }],
+    quiz: []
+  }), model: 'm' }) as { data: { oneLine: string; points: { label: string; note: string }[] } };
+  assert.equal(rev.data.oneLine, '');
+  assert.equal(rev.data.points[0].note, '');
+  assert.equal(rev.data.points[1].label, '2');
+  assert.doesNotMatch(JSON.stringify(rev.data), /object Object/);
+  // 接口配置：不是字符串的输入当作没填，报“请填写”，而不是拿“[object Object]”去请求
+  assert.throws(() => normalizeConfig({ baseURL: { url: 'https://x' }, apiKey: 'k', model: 'm' }), /完整的 API 地址/);
+  assert.throws(() => normalizeConfig({ baseURL: 'https://example.com/v1', apiKey: { k: 1 }, model: 'm' }), /有效的 API Key/);
 });

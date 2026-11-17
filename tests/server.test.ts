@@ -41,7 +41,7 @@ test('static files cannot escape the build folder', async t => {
 test('generate can stream as server-sent events when the page asks for it', async t => {
   const server = createServer({ fetchImpl: (async () => new Response(
     `data: ${JSON.stringify({ choices: [{ delta: { content: '先想想' } }] })}\n\ndata: ${JSON.stringify({ choices: [{ delta: { content: '代价。\n[[要点:1]]' }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`,
-    { headers: { 'Content-Type': 'text/event-stream' } })) as typeof fetch });
+    { headers: { 'Content-Type': 'text/event-stream' } })) });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); }));
   const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;

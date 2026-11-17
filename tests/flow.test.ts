@@ -14,7 +14,7 @@ setDemoDelay(0);
 
 const realFetch = globalThis.fetch;
 function mockFetch(fn: (body: { purpose: string; payload: Record<string, unknown> }) => Response | Promise<Response>) {
-  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => fn(JSON.parse(String(init?.body ?? '{}')))) as typeof fetch;
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => fn(JSON.parse(String(init?.body ?? '{}'))));
 }
 const apiOn = () => update(s => { s.config.aiMode = 'api'; s.ai = { available: true, configured: true, verified: true, baseURL: '', model: 'chosen', remoteVerified: false, remoteModel: '' }; });
 const learningPlan = () => update(s => {
@@ -34,8 +34,8 @@ test('demo mode runs the whole loop: prepare, discuss, reflect, review, knowledg
   assert.ok(s.covered.length >= 3, 'key points light up');
   const reflection = s.entries.find(e => e.kind === 'reflect');
   assert.ok(reflection, 'a reflection card appears after the third turn');
-  actions.setReflectionDraft(reflection!.id, '机会成本是放弃的最好选择');
-  await actions.submitReflection(reflection!.id);
+  actions.setReflectionDraft(reflection.id, '机会成本是放弃的最好选择');
+  await actions.submitReflection(reflection.id);
   const done = getState().session!.entries.find(e => e.kind === 'reflect');
   assert.ok(done?.kind === 'reflect' && done.feedback.length > 0);
   await actions.finish();
@@ -84,7 +84,7 @@ test('debate reply advances exactly one seat and records model provenance; cance
   assert.ok(last.kind === 'msg' && last.source === 'api' && last.model === 'chosen');
 
   const { cancelAI } = await import('../src/lib/ai.ts');
-  globalThis.fetch = ((_u: unknown, init?: RequestInit) => new Promise((_, reject) => init!.signal!.addEventListener('abort', () => reject(new Error('aborted'))))) as typeof fetch;
+  globalThis.fetch = ((_u: unknown, init?: RequestInit) => new Promise((_, reject) => init!.signal!.addEventListener('abort', () => reject(new Error('aborted')))));
   const pending = actions.generateSeat(); cancelAI(); await pending;
   assert.equal(getState().session!.cursor, 1);
   assert.match(getState().ui.error, /取消/);
@@ -203,7 +203,7 @@ test('streaming in API mode: text shows while it is written; a failure removes i
       c.close();
     } });
     return new Response(body, { headers: { 'Content-Type': 'text/event-stream' } });
-  }) as typeof fetch;
+  });
   await actions.send('少玩了一天');
   assert.deepEqual(seenLive, ['先想想']);
   let s = getState().session!;
@@ -553,7 +553,7 @@ test('a healthy save comes back unchanged', async () => {
 test('a malformed stream event fails the turn with a clear message and keeps progress unchanged', async () => {
   learningPlan(); actions.startSession(); apiOn();
   const sse = 'event: delta\ndata: {"t":"半截"}\n\nevent: delta\ndata: {oops\n\n';
-  globalThis.fetch = (async () => new Response(sse, { headers: { 'Content-Type': 'text/event-stream' } })) as typeof fetch;
+  globalThis.fetch = (async () => new Response(sse, { headers: { 'Content-Type': 'text/event-stream' } }));
   const before = getState().session!.entries.length;
   await actions.send('机会成本是放弃的最好选择。');
   assert.match(getState().ui.error, /不完整.*未采用/);

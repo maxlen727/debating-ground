@@ -26,8 +26,8 @@ export function parseInvite(hash: string): { backend: string; roomId: string; in
   const m = hash.match(/^#join=([A-Za-z0-9_-]+)$/);
   if (!m) return null;
   try {
-    const v = JSON.parse(unb64(m[1]));
-    const u = new URL(v.b);
+    const v = JSON.parse(unb64(m[1])) as { b?: unknown; r?: unknown; c?: unknown };
+    const u = new URL(typeof v.b === 'string' ? v.b : '');
     const local = ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
     if ((u.protocol !== 'https:' && !(u.protocol === 'http:' && local)) || typeof v.r !== 'string' || typeof v.c !== 'string') return null;
     return { backend: u.origin + u.pathname.replace(/\/+$/, ''), roomId: v.r, invite: v.c };
@@ -242,7 +242,7 @@ export function ask<T>(msg: AskBody, label: string): Promise<T | null> {
     const reqId = uid();
     pending.set(reqId, { resolve: v => resolve(v as T), reject });
     signal.addEventListener('abort', () => { pending.delete(reqId); reject(new Error('已取消')); }, { once: true });
-    if (!send({ ...msg, reqId } as ClientMessage)) { pending.delete(reqId); reject(new Error('和房间的连接断开了，请稍后重试。')); }
+    if (!send({ ...msg, reqId })) { pending.delete(reqId); reject(new Error('和房间的连接断开了，请稍后重试。')); }
   }));
 }
 

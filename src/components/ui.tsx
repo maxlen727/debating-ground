@@ -29,7 +29,7 @@ const PATHS: Record<string, string> = {
   'turn-back': 'M9 14l-5-5 5-5M4 9h11a5 5 0 0 1 0 10h-3',
   mic: 'M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7'
 };
-export function Icon({ name, size = 20 }: { name: keyof typeof PATHS | string; size?: number }) {
+export function Icon({ name, size = 20 }: { name: string; size?: number }) {
   return <svg className="icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={PATHS[name]} /></svg>;
 }
 
