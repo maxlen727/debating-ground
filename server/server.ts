@@ -82,6 +82,7 @@ export function createServer({ fetchImpl = fetch, timeoutMs = 90000, root = path
           const purpose = url.pathname === '/api/test' ? 'test' : data.purpose as Purpose;
           if (purpose !== 'test' && !PURPOSES.includes(purpose)) throw new ApiError('不支持的 AI 操作。');
           const request = buildRequest(purpose, data.payload);
+          // 上面读请求体时让出过执行权，另一个请求可能已经先开始了：再查一次
           if (s.active) throw new ApiError('已有请求正在进行。', 409);
           const config = s.config; if (!config) throw new ApiError('API 已断开连接。', 409);
           s.verified = false;

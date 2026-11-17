@@ -140,3 +140,27 @@ test('the default deployment accepts the Android app (origin https://localhost) 
   assert.ok(origins.includes('https://maxlen727.github.io'));
   assert.ok(origins.includes('https://localhost'));
 });
+
+test('repeated wrong passwords are slowed down, per caller', async () => {
+  const { call, calls } = setup();
+  for (let i = 0; i < 10; i++) assert.equal((await call('/api/config', { password: 'guess-' + i })).status, 401);
+  const blocked = await call('/api/config', { password: 'guess-again' });
+  assert.equal(blocked.status, 429);
+  assert.match((await blocked.json()).error, /10 分钟/);
+  assert.equal((await call('/api/test', { method: 'POST' })).status, 429, 'the right password also waits, so the block cannot be probed');
+  assert.equal(calls.length, 0);
+  // 别的来源不受影响；没带口令的请求不算猜
+  const { call: other } = setup();
+  for (let i = 0; i < 12; i++) assert.equal((await other('/api/config', { password: null })).status, 401);
+  assert.equal((await other('/api/config')).status, 200);
+});
+
+test('request size is limited in bytes, not characters', async () => {
+  const { call, calls } = setup();
+  // 40 万个汉字：字符数不到上限，字节数（120 万）超了
+  const big = await call('/api/generate', { method: 'POST', body: { purpose: 'discuss', payload: { pad: '思'.repeat(400_000) } } });
+  assert.equal(big.status, 413);
+  const notObject = await call('/api/generate', { method: 'POST', body: [1, 2] });
+  assert.equal(notObject.status, 400);
+  assert.equal(calls.length, 0);
+});

@@ -21,7 +21,8 @@
 Worker 与本机服务的差别：
 
 - 密钥来自 Cloudflare 加密变量（`API_KEY`、`API_BASE_URL`、`MODEL`），不能从界面修改；`POST /api/config` 不存在。
-- 每个 `/api/*` 请求都要带 `Authorization: Bearer <ACCESS_PASSWORD>`；没设口令时一律拒绝。
+- 每个 `/api/*` 请求都要带 `Authorization: Bearer <ACCESS_PASSWORD>`；没设口令时一律拒绝。同一来源（`CF-Connecting-IP`）10 分钟内输错 10 次，之后返回 429；计数只在 Worker 实例的内存里，是减速带，不是唯一防线。
+- 请求体按字节数限制大小（`readBody`），超了就停止读取。
 - 只对 `ALLOWED_ORIGINS` 里的网站返回跨域许可。
 - Workers 不支持 `redirect: 'error'`，`complete()` 在 Worker 里用 `manual`，并把 3xx 当作失败。
 - `worker/` 必须能单独部署：Deploy to Cloudflare 按钮只复制这个子目录。所以 Worker 引用的是 `worker/src/vendor/` 里的副本，由 `npm run sync:worker` 从 `server/ai.ts` 和 `shared/` 原样生成；`tests/worker.test.ts` 会检查副本是否最新。
@@ -64,7 +65,8 @@ Worker 与本机服务的差别：
 
 - 全局状态在 `src/store.ts`：`config`（概念、模式、辩论席位与流程）、`plan`（准备好的讨论）、`session`（进行中的讨论）、`library`（知识卡片）、`ai`（连接状态）、`ui`（界面状态）。
 - `update(draft => …)` 在副本上修改再整体替换，组件通过 `useApp()` 订阅。
-- 持久化到 `localStorage` 的 `sibian-v3`。修改结构时升级版本号，并在 `load()` 里迁移旧数据。
+- 持久化到 `localStorage` 的 `sibian-v3`。修改结构时升级版本号，并在 `load()` 里迁移旧数据。读回来的存档先经过 `lib/restore.ts` 检查结构：缺的字段补默认值，坏掉的计划和讨论作废，知识卡片能救就救。
+- 输入框每敲一个字用 `typing()`，不用 `update()`：它不复制知识库，停下 400 毫秒再落盘。换页面、改知识库仍然用 `update()`。
 
 ## 多人房间
 
