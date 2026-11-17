@@ -1,0 +1,52 @@
+# 原生安卓版（开发中）
+
+用 Kotlin + Jetpack Compose 重写的安卓 App，代码在 `native/`。它会直接替换现在的 Capacitor App（`android/`）：同一个包名、同一把签名密钥，用户升级后知识库原样还在。路线图和阶段划分见 [issue #70](https://github.com/maxlen727/debating-ground/issues/70)。
+
+开发期间：
+
+- 现有 App 照常由 `android.yml` 发布，原生版只构建、测试，不发布。
+- 原生版的 debug 包名是 `debating.ground.app.dev`，可以和正式版同时装在一台手机上对比。
+
+## 本地构建
+
+需要 JDK 21 和安卓 SDK（compileSdk 37）。用 Android Studio 打开 `native/` 目录即可，命令行：
+
+```bash
+cd native
+./gradlew assembleDebug          # debug 包在 app/build/outputs/apk/debug/
+./gradlew testDebugUnitTest      # 单元测试和截图测试
+```
+
+命令行构建时，用 `ANDROID_HOME` 环境变量或 `native/local.properties`（`sdk.dir=…`，不进仓库）告诉 Gradle SDK 在哪里。
+
+## 和网页版保持一致
+
+原生版和网页版是同一套设计。下面这些由测试把关，改一边漏了另一边，`testDebugUnitTest` 会失败：
+
+- **颜色令牌**：`ui/theme/Tokens.kt` 和 `src/styles.css` 的浅色、深色令牌逐项比对（`TokensTest`）。网页版新增令牌，原生版也要加。
+- **图标**：`ui/Icons.kt` 用和 `src/components/ui.tsx` 相同的 SVG 路径（`IconPathsTest`）。
+- **主导航**：四个标签和网页版一样。窄屏用底部导航；宽度 ≥ 840dp 或横屏高度 ≤ 500dp 用左侧导航（`NavigationTest`）。
+
+字体分工、字号阶梯、只用系统字体这些规则，和 AGENTS.md 的界面规范相同，写在 `ui/theme/Theme.kt`。
+
+## 没有模拟器时怎么看界面
+
+`ScreenshotTest` 用 Robolectric 在 JVM 里渲染页面，存成图片到 `app/build/screenshots/`。目前覆盖这几种情况：
+
+- 手机 390dp（浅色、深色）
+- 最窄的 320dp
+- 平板 1280dp
+- 切换标签
+
+CI 会把截图作为构建产物上传，审查界面改动时直接下载来看。
+
+截图的局限：
+
+- Robolectric 里没有中文衬线字体，衬线文字会显示成黑体；字体效果要在真机上看。
+- 截图里系统栏高度为 0，避让状态栏、刘海是否正确，也要在真机上确认。
+
+第一次跑测试时，Robolectric 会从 Maven Central 下载安卓运行库（几百 MB），之后就用本地缓存了。
+
+## CI（`.github/workflows/native.yml`）
+
+`native/`、`src/styles.css`、`src/components/ui.tsx` 有改动时运行：构建 debug 包、跑单元测试和截图测试，上传 debug 包和截图（保留 14 天）。不签名、不发 Release。
