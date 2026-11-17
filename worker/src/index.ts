@@ -4,6 +4,7 @@
 // 多人讨论：/api/rooms 创建房间（需要访问口令），/api/rooms/<id>/ws 用邀请码加入（不需要口令）。
 import { ApiError, normalizeConfig, buildRequest, finalize, complete, streamGenerate, STREAMABLE } from './vendor/server/ai.ts';
 import type { Purpose } from './vendor/shared/types.ts';
+import { PURPOSES } from './vendor/shared/purposes.ts';
 import { ROOM_ID } from './vendor/shared/room.ts';
 import { randomToken, roomClass, type Generate } from './room.ts';
 import { synthesizeXfyun, ttsConfigured } from './vendor/server/tts.ts';
@@ -25,7 +26,6 @@ export interface Env {
 // 只用到 Durable Object 命名空间的这两个方法
 export interface RoomNamespace { idFromName(name: string): unknown; get(id: unknown): { fetch(req: Request): Promise<Response> } }
 
-const PURPOSES: Purpose[] = ['prepare', 'discuss', 'debate', 'hint', 'explain', 'reflect', 'review', 'term', 'point'];
 const MAX_BODY = 1_000_000;
 
 // 先各自做 SHA-256 再逐字节比较，耗时与口令内容无关，避免按时间猜口令

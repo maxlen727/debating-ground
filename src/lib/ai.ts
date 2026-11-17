@@ -1,13 +1,12 @@
 // AI 调用的统一入口：演示模式走本地模板，API 模式走本机服务。
 // 同一时间只允许一个请求；失败时把错误显示出来，返回 null，不改变讨论进度。
 import type { PayloadMap, Purpose, ResultMap, Source } from '../../shared/types.ts';
+import { STREAMABLE } from '../../shared/purposes.ts';
 import { getState, update } from '../store.ts';
 import { apiRequest, apiStream } from './api.ts';
 import { demoRun } from './demo.ts';
 import { clearLive, setLive, updateLive, type StreamKind } from './stream.ts';
 
-// 输出给人读的文字的用途，可以边生成边显示
-const STREAMABLE: Purpose[] = ['discuss', 'debate', 'hint', 'explain', 'reflect'];
 
 let controller: AbortController | null = null;
 export const cancelAI = () => controller?.abort();
