@@ -2,23 +2,21 @@ import type { CSSProperties } from 'react';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { flash } from '../lib/light.ts';
 import { MODES } from '../../shared/modes.ts';
-import { QUICK_MESSAGES } from '../../shared/room.ts';
-import type { ChatMessage, Entry, Reflection } from '../../shared/types.ts';
-import { QUICK, addReflection, aiTakeover, callOn, currentTurn, decidePoint, dropReflection, finish, generateSeat, hint, nextSpeaker, noteTyping, openBranch, openTerm, toggleTeaching, TEACHING, STUDENT, passTurn, pickSeat, proposePoint, quick, quickMessage, retryAI, send, setReflectionDraft, skipSeat, startRoom, stopTyping, submitReflection, suggestPoint, toggleAiPause, toggleListen, toggleVoice, listenAvailable, voiceAvailable } from '../actions.ts';
+import type { ChatMessage } from '../../shared/types.ts';
+import { QUICK, addReflection, currentTurn, decidePoint, finish, generateSeat, hint, nextSpeaker, openBranch, openTerm, toggleTeaching, proposePoint, quick, skipSeat, suggestPoint, voiceAvailable } from '../actions.ts';
 import { Empty, ErrorBanner, Icon, Sheet } from '../components/ui.tsx';
-import { CaretField } from '../components/SmoothCaret.tsx';
 import { Reveal } from '../components/Reveal.tsx';
-import { BackLine, BackSheet, BranchChips, CanvasPath, ForkForm, ForkHeader, GraphSheet } from '../components/Canvas.tsx';
+import { BackSheet, BranchChips, CanvasPath, ForkForm, ForkHeader, GraphSheet } from '../components/Canvas.tsx';
 import { levelEntries } from '../lib/canvas.ts';
 import { DebateBoard, NextLectern, RosterSheet, StageDivider, seatWho } from '../components/DebateArena.tsx';
 import { useLive } from '../lib/stream.ts';
 import { cancelAI } from '../lib/ai.ts';
 import { seatName } from '../lib/debate.ts';
 import { exportSession } from '../lib/exporter.ts';
-import { inviteLink, isPeer, mySeat, mySpeakingTurn, seatOwner, speakerLabel } from '../lib/room.ts';
-import { usePlaying } from '../lib/voice.ts';
-import { listeningSince, useListening } from '../lib/listen.ts';
-import { go, toast, typing, update, useApp, type Session as S } from '../store.ts';
+import { go, update, useApp, type Session as S } from '../store.ts';
+import { RoomBar, InviteSheet, SeatSheet, CallOnSheet, RoomComposer } from '../components/RoomPanel.tsx';
+import { HintCard, DraftInput } from '../components/DraftInput.tsx';
+import { EntryView } from '../components/Entries.tsx';
 
 // 光：要点刚被点亮时从那个小标签发光，新发言落下时从它身上发一点光，照亮周围的按钮和气泡
 function useLightCues(s: S | null) {
@@ -202,217 +200,8 @@ function LiveMessage({ s, onStop }: { s: S; onStop?: () => void }) {
   );
 }
 
-function HintCard() {
-  const { ui } = useApp();
-  const live = useLive();
-  const streaming = live?.kind === 'hint' && !!live.text;
-  if (!ui.hint && !streaming) return null;
-  return (
-    <div className="hint-card"><Icon name="bulb" size={18} />
-      <p>{streaming ? <Reveal id="hint" text={live!.text} live /> : <Reveal id="hint" text={ui.hint!} live={false} />}</p>
-      <button className="icon-btn small" aria-label="关闭提示" onClick={() => update(st => { st.ui.hint = null; })}><Icon name="close" size={16} /></button>
-    </div>
-  );
-}
-
 function Typing({ label, onStop }: { label: string; onStop?: () => void }) {
   return <div className="msg"><span className="avatar tone-ghost" aria-hidden="true">…</span><div className="msg-body"><div className="bubble typing"><span className="dots" aria-hidden="true"><i /><i /><i /></span>{label}{onStop && <button className="link" onClick={onStop}>停止</button>}</div></div></div>;
-}
-
-/* ---------- 多人讨论 ---------- */
-function RoomBar({ s }: { s: S }) {
-  const room = s.room!;
-  const seatOf = (seat?: string) => s.seats.find(x => x.id === seat);
-  return (
-    <div className="room-bar">
-      <div className="scroll-x members" role="list" aria-label="参与讨论的人">
-        {room.members.map(m => {
-          const seat = seatOf(m.seat);
-          return (
-            <span role="listitem" key={m.id} className={'member' + (m.online ? '' : ' away') + (m.id === room.memberId ? ' me' : '')}>
-              <i className={'presence' + (m.online ? ' on' : '')} aria-label={m.online ? '在线' : '离开'} />
-              {m.id === room.memberId ? '你' : m.name}{m.host && <small>房主</small>}{s.mode === 'debate' && <small>{seat ? seatName(seat) : '旁听'}</small>}{m.typing && m.id !== room.memberId && <small className="typing-label">正在输入…</small>}
-            </span>
-          );
-        })}
-      </div>
-      {room.host && !s.finished && <button className="chip-btn" onClick={() => update(st => { st.ui.invite = true; })}><Icon name="plus" size={14} />邀请</button>}
-      {(room.closed || !room.connected) && <p className="room-status" role="status">{room.closed || '正在连接房间…'}</p>}
-    </div>
-  );
-}
-
-function InviteSheet({ s }: { s: S }) {
-  const room = s.room!;
-  const url = room.invite ? inviteLink(room) : '';
-  const close = () => update(st => { st.ui.invite = false; });
-  const copy = async () => {
-    try { await navigator.clipboard.writeText(url); toast('邀请链接已复制。'); }
-    catch { toast('没能复制，请长按链接手动复制。'); }
-  };
-  const share = async () => { try { await navigator.share({ title: `一起讨论「${s.concept}」`, url }); } catch { /* 用户取消 */ } };
-  const left = Math.max(0, Math.round((room.expiresAt - Date.now()) / 60000));
-  return (
-    <Sheet title="邀请同学" onClose={close}>
-      {url ? (
-        <>
-          <p className="sheet-text">把这个链接发给同学，打开后写个名字就能加入。</p>
-          <code className="invite-link">{url}</code>
-          <div className="row">
-            <button className="primary grow" onClick={copy}>复制链接</button>
-            {typeof navigator.share === 'function' && <button className="secondary" onClick={share}>分享</button>}
-          </div>
-          <p className="fineprint">拿到链接的人都能加入，只发给一起讨论的同学。房间约 {left >= 60 ? Math.round(left / 60) + ' 小时' : left + ' 分钟'}后到期，讨论内容随房间一起删除。</p>
-        </>
-      ) : <p className="sheet-text">这台设备上没有保存邀请链接。请在创建房间的设备上分享。</p>}
-    </Sheet>
-  );
-}
-
-function SeatSheet({ s }: { s: S }) {
-  const room = s.room!;
-  const mine = mySeat(s);
-  return (
-    <Sheet title="选择席位" onClose={() => update(st => { st.ui.sheet = null; })}>
-      <div className="seat-pick">
-        {(['A', 'B'] as const).map(team => (
-          <section key={team} className={'team team-' + team}>
-            <b>{team === 'A' ? '正方 · 支持' : '反方 · 反对'}</b>
-            {s.seats.filter(x => x.team === team).map(seat => {
-              const owner = seatOwner(s, seat.id);
-              const me = owner?.id === room.memberId;
-              return (
-                <button key={seat.id} className={'seat-option' + (me ? ' on' : '')} disabled={!!owner && !me} aria-pressed={me} onClick={() => !me && pickSeat(seat.id)}>
-                  <span>{seatName(seat)}</span>
-                  <small>{me ? '你' : owner ? owner.name : seat.type === 'ai' ? 'AI 担任 · 也可以坐' : '留给同学 · 空着'}</small>
-                </button>
-              );
-            })}
-          </section>
-        ))}
-      </div>
-      {mine && <button className="ghost block" onClick={() => pickSeat(null)}>离开席位，改为旁听</button>}
-      <p className="fineprint">没人坐的席位由 AI 担任。比赛开始后也可以上场或换席位，轮到你的席位时会提醒你发言。</p>
-    </Sheet>
-  );
-}
-
-function CallOnSheet({ s }: { s: S }) {
-  const room = s.room!;
-  return (
-    <Sheet title="请谁说说" onClose={() => update(st => { st.ui.sheet = null; })}>
-      <div className="action-list">
-        {room.members.map(m => <button key={m.id} className="action" onClick={() => callOn({ kind: 'member', id: m.id })}><span>{m.id === room.memberId ? '我' : m.name}{!m.online && <small className="muted"> · 不在线</small>}</span><Icon name="chevron" size={18} /></button>)}
-        {s.personas.map(p => <button key={p.id} className="action" onClick={() => callOn({ kind: 'ai', id: p.id })}><span>{p.name}<small className="muted"> · AI 嘉宾</small></span><Icon name="chevron" size={18} /></button>)}
-      </div>
-    </Sheet>
-  );
-}
-
-function RoomComposer({ s }: { s: S }) {
-  const { ui } = useApp();
-  const room = s.room!;
-  const mine = mySpeakingTurn(s);
-  const busy = !!ui.busy;
-
-  if (room.status === 'lobby') {
-    const n = room.members.length;
-    return room.host ? (
-      <>
-        <p className="lobby-note">{n > 1 ? `已有 ${n} 人在房间里。` : '还没有同学加入。'}人到齐后开始讨论，晚来的同学也可以中途加入。</p>
-        <div className="row">
-          <button className="secondary" onClick={() => update(st => { st.ui.invite = true; })}>邀请同学</button>
-          <button className="primary grow" disabled={!room.connected} onClick={startRoom}>开始讨论</button>
-        </div>
-        {s.mode === 'debate' && <SeatPrompt s={s} />}
-      </>
-    ) : (
-      <>
-        <p className="lobby-note">等房主开始讨论……</p>
-        {s.mode === 'debate' && <SeatPrompt s={s} primary />}
-      </>
-    );
-  }
-
-  const t = s.turns[s.cursor];
-  // 现在轮到的是“等人”的席位（有同学坐，或留给同学但还空着）：房主可以让 AI 代答
-  const humanSeat = s.mode === 'debate' && !!t && (!!seatOwner(s, t.role.id) || t.role.type !== 'ai');
-  return (
-    <>
-      {room.error ? (
-        <div className="alert" role="alert"><span>{room.error}</span>{room.host && <button className="link" onClick={retryAI}>重试</button>}</div>
-      ) : s.mode === 'roundtable' ? (
-        // 圆桌是群聊：没有“轮到谁”，只说清楚 AI 嘉宾什么时候接话
-        <div className="turn-banner chat-banner">
-          {room.aiBusy ? <b>{room.aiBusy}</b> : room.aiPaused ? <span>AI 嘉宾暂停接话，房主点名时才说</span> : <span>想说就说，大家停下来几秒后 AI 嘉宾会接话</span>}
-        </div>
-      ) : (
-        <div className="turn-banner">
-          {s.mode === 'debate' && t && <span className={'dot team-' + t.role.team} aria-hidden="true" />}
-          {mine ? <b>轮到你发言</b> : room.aiBusy ? <b>{room.aiBusy}</b> : <>轮到 <b>{speakerLabel(s)}</b></>}
-          <span className="grow-right row">
-            {room.turnDeadline > 0 && !room.aiBusy && <Countdown deadline={room.turnDeadline} />}
-            {s.mode === 'debate' && <span className="muted">{s.cursor + 1}/{s.turns.length}</span>}
-          </span>
-        </div>
-      )}
-      <HintCard />
-      <div className="tools scroll-x">
-        {mine && <button className="tool" disabled={busy} onClick={hint}><Icon name="bulb" size={16} />给点提示</button>}
-        <button className="tool" disabled={busy} onClick={() => addReflection()}><Icon name="note" size={16} />写个小结</button>
-        {room.host && s.mode === 'roundtable' && <button className="tool" disabled={!!room.aiBusy} onClick={() => update(st => { st.ui.sheet = 'callon'; })}><Icon name="people" size={16} />点名</button>}
-        {room.host && humanSeat && !mine && !room.aiBusy && <button className="tool" onClick={aiTakeover}>让 AI 代答</button>}
-        {room.host && s.mode === 'roundtable' && <button className="tool" aria-pressed={!!room.aiPaused} onClick={toggleAiPause}>{room.aiPaused ? '恢复 AI 接话' : '暂停 AI 接话'}</button>}
-        {s.mode === 'debate' && (mine || room.host) && !room.aiBusy && <button className="tool" onClick={passTurn}>{mine ? '这次先跳过' : '跳过当前发言'}</button>}
-        {s.mode === 'debate' && <button className="tool" onClick={() => update(st => { st.ui.sheet = 'seats'; })}><Icon name="people" size={16} />{mySeat(s) ? '换席位' : '上场辩论'}</button>}
-        {/* 快捷短语：只是提醒大家，不进讨论记录 */}
-        <span className="tools-sep" aria-hidden="true" />
-        {QUICK_MESSAGES.map(text => <button key={text} className="tool quiet" onClick={() => quickMessage(text)}>{text}</button>)}
-      </div>
-      {mine ? <DraftInput s={s} placeholder={s.mode === 'debate' ? `${t?.action ?? '发言'}：我方认为……因为……` : '说点什么，随时可以插话……'} /> : <p className="lobby-note">{room.aiBusy ? '稍等，AI 正在发言。' : '轮到你时，这里会出现输入框。'}</p>}
-    </>
-  );
-}
-
-// 辩论开始前：提醒每个人选好自己的席位
-function SeatPrompt({ s, primary = false }: { s: S; primary?: boolean }) {
-  const seat = s.seats.find(x => x.id === mySeat(s));
-  const open = () => update(st => { st.ui.sheet = 'seats'; });
-  return seat
-    ? <button className="ghost block" onClick={open}>你是{seatName(seat)} · 换席位</button>
-    : <button className={(primary ? 'primary' : 'secondary') + ' block'} onClick={open}>选择阵营和席位</button>;
-}
-// 发言限时只是提醒：到点不打断，还可以把话说完
-function Countdown({ deadline }: { deadline: number }) {
-  const [, tick] = useState(0);
-  useEffect(() => { const id = setInterval(() => tick(n => n + 1), 1000); return () => clearInterval(id); }, []);
-  const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
-  const text = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
-  return left
-    ? <span className={'turn-countdown' + (left <= 10 ? ' soon' : '')} aria-label={`这次发言还剩 ${left} 秒`}>{text}</span>
-    : <span className="turn-countdown expired">时间到</span>;
-}
-
-function DraftInput({ s, placeholder }: { s: S; placeholder: string }) {
-  const { ui } = useApp();
-  const ref = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => { const t = ref.current; if (t) { t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 160) + 'px'; } }, [s.draft]);
-  const listening = useListening();
-  const mic = listenAvailable();
-  useEffect(() => stopTyping, []);
-  const submit = () => { if (listening) return; stopTyping(); send(s.draft); };
-  return (
-    <div className="input-row">
-      <CaretField fieldRef={ref} className="grow">
-        {/* 听写时文字由识别结果填写，先不让手动改，免得被下一次结果覆盖 */}
-        <textarea id="draft" ref={ref} rows={1} value={s.draft} maxLength={s.room ? 2000 : 4000} aria-label="你的发言" placeholder={listening ? '正在听，说完点一下麦克风' : placeholder} readOnly={!!listening}
-          onChange={e => { typing(st => { st.session!.draft = e.target.value; }); noteTyping(); }}
-          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && window.matchMedia('(pointer: fine)').matches) { e.preventDefault(); submit(); } }} />
-      </CaretField>
-      {mic && <MicButton phase={listening} />}
-      <button className="send" aria-label="发送" disabled={!!ui.busy || !!listening || !s.draft.trim()} onClick={submit}><Icon name="send" /></button>
-    </div>
-  );
 }
 
 /* ---------- 单人讨论 ---------- */
@@ -447,92 +236,6 @@ function Composer({ s }: { s: S }) {
   );
 }
 
-const termAt = (target: EventTarget) => (target as HTMLElement).closest?.<HTMLElement>('[data-term]')?.dataset.term ?? null;
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-// 把发言里 AI 标出的术语加上虚线
-function WithTerms({ text, terms }: { text: string; terms?: string[] }) {
-  if (!terms?.length) return <>{text}</>;
-  const list = [...terms].sort((a, b) => b.length - a.length);
-  const parts = text.split(new RegExp(`(${list.map(escapeRe).join('|')})`, 'g'));
-  return <>{parts.map((part, i) => list.includes(part) ? <span key={i} className="term" data-term={part}>{part}</span> : part)}</>;
-}
-
-function EntryView({ m, s, showTip, voice }: { m: Entry; s: S; showTip: boolean; voice: boolean }) {
-  if (m.kind === 'sys') {
-    if (m.back) return <BackLine m={m} s={s} />;
-    const topic = m.text.match(/^(讨论题|辩题)：([\s\S]+)$/);
-    return topic ? <div className="topic-line"><small>{topic[1]}</small><p>{topic[2]}</p></div> : <div className="sysline">{m.text}</div>;
-  }
-  if (m.kind === 'reflect') return <ReflectCard m={m} concept={s.concept} />;
-  const me = !!m.human;
-  const peer = isPeer(m);
-  const persona = s.personas.find(r => r.id === m.who);
-  const debate = s.mode === 'debate';
-  const tone = debate ? (m.team === 'A' ? 'a' : 'b') : me ? 'me' : peer ? 'peer' : persona?.tone ?? 'a';
-  const seat = debate ? m.name.replace(/（.*）$/, '') : '';
-  const target = debate && m.target ? s.seats.find(x => x.id === m.target) : undefined;
-  const label = me ? (debate ? seat + ' · 你' : '你')
-    : debate ? m.name : peer ? m.name : `${m.name}${persona?.title ? ' · ' + persona.title : ''}`;
-  const meta = [debate ? (m.action ?? '') + (target ? ` → ${seatName(target)}` : '') : m.action === TEACHING ? '讲解' : m.action === STUDENT ? '当学生' : '', m.source === 'demo' && !me ? '演示' : m.source === 'api' && !me ? m.model : '', peer && !debate ? '同学' : ''].filter(Boolean).join(' · ');
-  const avatarText = debate ? m.who.slice(1) : me ? '我' : m.name.slice(0, 1);
-  // 辩论按阵营分左右（正方左、反方右），不按“是不是我”
-  const side = debate ? ' side-' + (m.team ?? 'A') + (me ? ' mine' : '') : (me ? ' me' : '') + (peer ? ' peer' : '');
-  return (
-    <div className={'msg' + side} data-entry={m.id}>
-      <span className={'avatar tone-' + tone} aria-hidden="true">{avatarText}</span>
-      <div className="msg-body">
-        <div className="msg-meta"><b>{label}</b>{meta && <span>{meta}</span>}{m.skipped && <span>已跳过</span>}{voice && !m.skipped && <VoiceButton id={m.id} label={label} />}</div>
-        {me || m.skipped || s.finished
-          ? <div className={'bubble' + (m.skipped ? ' skipped' : '')} onClick={e => termAt(e.target) && openTerm(termAt(e.target)!, m.id)}><Reveal id={m.id} text={m.text} live={false} final={<WithTerms text={m.text} terms={m.terms} />} /></div>
-          : <button className="bubble tappable" aria-haspopup="dialog" onClick={e => {
-              // 点在虚线词上就查词，否则打开追问面板
-              const term = termAt(e.target);
-              if (term) openTerm(term, m.id); else update(st => { st.ui.sheet = m.id; });
-            }}><Reveal id={m.id} text={m.text} live={false} final={<WithTerms text={m.text} terms={m.terms} />} /></button>}
-        {showTip && <small className="tip">{s.mode === 'canvas' ? '轻点发言可以追问，或从这句展开一个分支单独聊。' : '轻点发言可以追问：没听懂、举例、反驳、分辨事实。'}{!!m.terms?.length && '带虚线的词，点一下看解释。'}</small>}
-      </div>
-    </div>
-  );
-}
-
-function ReflectCard({ m, concept }: { m: Reflection; concept: string }) {
-  const { ui, session } = useApp();
-  const draftRef = useRef<HTMLTextAreaElement>(null);
-  const live = useLive();
-  const streaming = live?.kind === 'reflect' && live.id === m.id && !!live.text;
-  return (
-    <section className="reflect" aria-label="小结卡" data-entry={m.id}>
-      <h3>停一下，用自己的话说说</h3>
-      {m.text ? (
-        <>
-          <p className="mine">{m.text}</p>
-          <p className="feedback"><Reveal id={m.id} text={m.feedback} live={false} /></p>
-        </>
-      ) : (
-        <>
-          <p className="muted">你现在怎么理解「{concept}」？一两句话就好。{session?.room && '小结只有你能看到。'}</p>
-          <CaretField fieldRef={draftRef}><textarea ref={draftRef} value={m.draft} rows={2} maxLength={1000} aria-label="我的小结" onChange={e => setReflectionDraft(m.id, e.target.value)} /></CaretField>
-          <div className="row end">
-            <button className="ghost small" onClick={() => dropReflection(m.id)}>跳过</button>
-            <button className="primary small" disabled={!!ui.busy || !m.draft.trim()} onClick={() => submitReflection(m.id)}>提交小结</button>
-          </div>
-          {streaming && <p className="feedback"><Reveal id={m.id} text={live!.text} live /></p>}
-        </>
-      )}
-    </section>
-  );
-}
-
-// 朗读按钮：只有后端配好讯飞时才出现；看起来是小字，可点区域有 44px 高
-function VoiceButton({ id, label }: { id: string; label: string }) {
-  const on = usePlaying() === id;
-  return (
-    <button className={'voice-play' + (on ? ' on' : '')} aria-pressed={on} aria-label={on ? `停止朗读${label}的发言` : `朗读${label}的发言`} onClick={() => toggleVoice(id)}>
-      <Icon name={on ? 'stop' : 'volume'} size={14} />{on ? '停止' : '朗读'}
-    </button>
-  );
-}
 
 // 补充讨论要点：新要点先待确认，采纳后才点亮追踪、进入复盘；多人房间由房主决定
 function PointsSheet({ s }: { s: S }) {
@@ -568,19 +271,6 @@ function PointsSheet({ s }: { s: S }) {
       )}
       <p className="fineprint">{room && !room.host ? '你的提议会给房主确认，采纳后大家的要点都会更新。' : debate ? '争点是交锋的方向，不改变赛程；采纳后会点亮追踪，并进入复盘。' : '采纳后会点亮追踪，并进入复盘。'}</p>
     </Sheet>
-  );
-}
-
-// 语音输入按钮：点一下开始，再点一下结束；识别出的文字填进输入框，不会自动发送
-function MicButton({ phase }: { phase: ReturnType<typeof useListening> }) {
-  const [, tick] = useState(0);
-  useEffect(() => { if (phase !== 'listening') return; const id = setInterval(() => tick(n => n + 1), 500); return () => clearInterval(id); }, [phase]);
-  const secs = phase === 'listening' ? Math.floor((Date.now() - listeningSince()) / 1000) : 0;
-  const label = phase === 'listening' ? `说完了，结束语音输入（已录 ${secs} 秒）` : phase === 'finishing' ? '正在识别最后一句' : phase === 'starting' ? '正在打开麦克风' : '语音输入';
-  return (
-    <button className={'mic' + (phase ? ' on ' + phase : '')} aria-label={label} aria-pressed={!!phase} disabled={phase === 'finishing'} onClick={toggleListen}>
-      {phase === 'listening' ? <span className="mic-time">{secs}″</span> : <Icon name="mic" />}
-    </button>
   );
 }
 
