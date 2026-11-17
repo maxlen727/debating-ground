@@ -1,6 +1,8 @@
 # AGENTS.md · 给在本仓库工作的 AI Agent
 
-本文件是所有 Agent（Claude Code、Codex、Cursor、Copilot 等）在这个仓库里的行为规范。开始任何任务前先读完。和人类成员的指示冲突时，以人类成员在当前任务里的明确要求为准；拿不准就停下来问。
+本文件是所有 Agent（Claude Code、Codex、Cursor、Copilot 等）在这个仓库里的行为规范。开始任何任务前先读完。
+
+**Agent 全权负责从实现到合并的全过程**：自己拆任务、开 Issue、写代码、自查、合并。人只定品味和方向（见“什么时候停下来问人”），可以事后看任何改动、随时叫停。和人类成员的指示冲突时，以人类成员的明确要求为准。
 
 ## 项目是什么
 
@@ -25,6 +27,7 @@
 | `tests/` | `node:test` 测试 | |
 | `docs/` | 产品文档站（VitePress），截图在 `docs/public/screenshots/` | 用户可见的行为变了，同一个 PR 里更新对应文档页 |
 | `android/`、`capacitor.config.json` | 安卓 App（Capacitor 打包 `dist/`）；App 里的差异在 `src/lib/platform.ts`、`src/lib/native.ts` | 签名密钥只在 CI Secrets 里，永远不进仓库；`android/app/src/main/assets/public` 是生成的，不提交；见 `docs/dev/android.md` |
+| `native/` | 原生安卓版（Kotlin + Compose，开发中，路线图见 #70），将替换 `android/` | 颜色令牌、图标、导航规则和网页版一致，由 `TokensTest` 等测试把关，改网页版的 `styles.css` 或图标时也要跑原生版测试；新增依赖写进 `gradle/libs.versions.toml` 并在 PR 里说明；见 `docs/dev/native.md` |
 
 ## 命令
 
@@ -40,6 +43,7 @@ npm run docs:dev     # 文档站热更新
 npm run sync:worker  # 改了 server/ai.ts 或 shared/ 后，同步到 worker/src/vendor/
 npm run eval:prompts # 提示词回归评测：用真实模型和模拟学习者聊几场（见脚本开头的说明）
 npm run android:sync # 构建界面并同步到安卓工程（之后 npx cap open android，或 cd android && ./gradlew assembleDebug）
+cd native && ./gradlew assembleDebug testDebugUnitTest   # 原生安卓版：构建、单元测试和截图测试（截图在 app/build/screenshots/）
 cd worker && npm install && npm run dev   # 本地运行后端（先把 .dev.vars.example 复制为 .dev.vars）
 ```
 
@@ -92,16 +96,24 @@ cd worker && npm install && npm run dev   # 本地运行后端（先把 .dev.var
 - **不直接推送 `main`，不 force push 共享分支，不改写别人的提交。**
 - 每个任务对应一个 Issue。分支名：`<类型>/<issue号>-<简短描述>`，例如 `feat/12-streaming`、`fix/18-reflect-card`。类型：`feat` `fix` `refactor` `docs` `test` `chore` `style`。
 - 提交信息：`<类型>: <做了什么>`，中文即可，正文写“为什么”。Agent 生成的提交在末尾加上 `Co-Authored-By:` 标明是哪个 Agent，作者用负责这个任务的人类成员。
-- 开 PR 时填写模板：关联 Issue、改了什么、怎么验证的、截图、风险。PR 必须由人类成员审查后合并（Squash merge）。
+- 开 PR 时填写模板：关联 Issue、改了什么、怎么验证的、截图、风险。PR 描述是写给事后翻看的人的记录，要如实。
+- **PR 由 Agent 自查后合并（Squash merge），不等人审查。** 合并前：CI 全部通过；没有冲突；对照“完成一个任务的标准”逐项确认；从头到尾复读一遍 diff，确认没有夹带无关改动；PR 上有审查意见的，先处理完。合并后删除分支，在 Issue 里勾掉做完的事。
 - 多个 Agent 并行时，各自在独立分支（推荐 `git worktree`）上工作；开始前 `git fetch` 并基于最新的 `main`。发现别人正在改同一个文件，先在 Issue 里沟通。
 - 不提交 `node_modules/`、`dist/`、`.env`、密钥、个人配置或截图以外的大文件。
 
 ## 什么时候停下来问人
 
-- 需求有两种以上合理理解，而且做错的代价大（改存储结构、改提示词的学习目标、改流程规则）。
-- 需要新增依赖、改变架构（例如服务端换框架、引入后端数据库）、或触碰密钥处理逻辑。
-- 测试失败且原因与你的任务无关。
-- 任务描述和本文件冲突。
+只在两类事情上问，其余自己判断、自己做完，把理由写进 PR：
+
+- **品味**：界面的观感和手感、文案的语气、动效的分寸，这些没有对错、取决于偏好的选择。有现成的规范或先例可循时照着做，不用问。
+- **方向**：做什么、不做什么，产品的学习目标，讨论模式和学习流程的设计原则，提示词的学习目标（措辞和细节的调整不算，照常改并跑评测）。
+
+另外，**不可逆、直接落到用户身上的操作**先说一声再做：发正式版（推 `v*` 标签）、改签名密钥或发布用的 Secrets、任何可能让用户设备上的数据丢失的发布。
+
+以下情况**不需要**问，自己处理并在 PR 里写明：
+- 新增依赖、调整架构：先确认确实需要、优先用平台能力，理由写进 PR。
+- 测试失败且原因与任务无关：查清根因；能修就另开 Issue 修掉，修不了就在 PR 里写明。
+- 需求有几种理解：选最符合“把概念弄懂”这个目标、改动最小、最容易撤回的那种，在 PR 里写明为什么这样选。
 
 ## 完成一个任务的标准
 

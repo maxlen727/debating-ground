@@ -1,0 +1,29 @@
+# 版本统一写在这里。新增依赖要在 PR 里说明理由（AGENTS.md）
+[versions]
+agp = "9.5.1"
+kotlin = "2.4.21"
+composeBom = "2026.09.00"
+activityCompose = "1.13.0"
+coreKtx = "1.19.1"
+junit = "4.13.2"
+robolectric = "4.18"
+
+[libraries]
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
+compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+compose-ui = { module = "androidx.compose.ui:ui" }
+compose-ui-graphics = { module = "androidx.compose.ui:ui-graphics" }
+compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
+compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
+compose-foundation = { module = "androidx.compose.foundation:foundation" }
+compose-material3 = { module = "androidx.compose.material3:material3" }
+junit = { module = "junit:junit", version.ref = "junit" }
+# 没有模拟器也能检查界面：在 JVM 里渲染 Compose 页面并截图（见 docs/dev/native.md）
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
+compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
