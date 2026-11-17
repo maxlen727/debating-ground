@@ -1,6 +1,6 @@
 // 学习流程的所有操作：准备 → 讨论 → 小结 → 复盘 → 知识库
 import type { ChatMessage, ExplainKind, PointSuggestion, Previous, Review, SessionSnapshot, Team, TermCard } from '../shared/types.ts';
-import { getState, go, toast, uid, update } from './store.ts';
+import { getState, go, toast, typing, uid, update } from './store.ts';
 import { forceNav } from './lib/motion.ts';
 import type { Card, Config, Screen, Session } from './store.ts';
 import { runAI } from './lib/ai.ts';
@@ -97,7 +97,7 @@ export async function refreshRoles() {
     p.rolesFor = topic;
   });
 }
-export const setContextDraft = (text: string) => update(s => { if (s.ui.context) s.ui.context.text = text; });
+export const setContextDraft = (text: string) => typing(s => { if (s.ui.context) s.ui.context.text = text; });
 
 function planProblem(multiplayer = false): string {
   const { plan, config } = getState();
@@ -355,7 +355,7 @@ export function toggleListen() {
   const before = s.draft, sep = /[A-Za-z0-9]$/.test(before) ? ' ' : '';
   const route = s.room ? 'room' : getState().config.aiMode === 'remote' ? 'remote' : 'local';
   void startListening(route, {
-    text: t => { update(st => { if (st.session?.id === s.id) st.session.draft = before + (t ? sep + t : ''); }); noteTyping(); },
+    text: t => { typing(st => { if (st.session?.id === s.id) st.session.draft = before + (t ? sep + t : ''); }); noteTyping(); },
     end: error => { if (error) toast(error); }
   });
 }
@@ -430,7 +430,7 @@ function editReflection(st: { session: Session | null }, id: string, fn: (m: { t
   const m = st.session?.entries.find(x => x.id === id); if (m?.kind === 'reflect') fn(m);
   const r = st.session?.room?.reflections.find(x => x.id === id); if (r) fn(r);
 }
-export function setReflectionDraft(id: string, draft: string) { update(st => editReflection(st, id, m => { m.draft = draft; })); }
+export function setReflectionDraft(id: string, draft: string) { typing(st => editReflection(st, id, m => { m.draft = draft; })); }
 export function dropReflection(id: string) {
   update(st => {
     st.session!.entries = st.session!.entries.filter(x => x.id !== id);

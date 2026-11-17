@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 const store: Record<string, string> = {};
 (globalThis as Record<string, unknown>).localStorage = { getItem: (k: string) => store[k] ?? null, setItem: (k: string, v: string) => { store[k] = v; } };
 
-const { getState, update, resetForTests, defaultConfig } = await import('../src/store.ts');
+const { getState, update, typing, resetForTests, defaultConfig } = await import('../src/store.ts');
 const actions = await import('../src/actions.ts');
 const { setDemoDelay } = await import('../src/lib/ai.ts');
 const { schedule, INTERVALS, DAY } = await import('../src/lib/srs.ts');
@@ -493,4 +493,71 @@ test('one-sentence start (#39): write a concept and go straight into the discuss
   await actions.prepare(null, undefined, 'start');
   assert.equal(getState().ui.screen, 'prepare');
   assert.equal(getState().session?.id, before, 'no new session without a seat for the learner');
+});
+
+test('typing a draft does not copy the knowledge base or write storage on every keystroke', async () => {
+  learningPlan(); actions.startSession();
+  update(s => { s.library.push({ id: 'c1' } as never); });
+  const library = getState().library, saved = store['sibian-v3'];
+  typing(s => { s.session!.draft = '机会'; });
+  typing(s => { s.session!.draft = '机会成本'; });
+  assert.equal(getState().session!.draft, '机会成本');
+  assert.equal(getState().library, library, 'the knowledge base is shared, not cloned');
+  assert.equal(store['sibian-v3'], saved, 'nothing is written while typing');
+  // 停下来以后补存
+  await new Promise(r => setTimeout(r, 450));
+  assert.match(store['sibian-v3'], /"draft":"机会成本"/);
+  // 之后的任何 update 都会立刻存，不会被排着队的旧草稿覆盖
+  typing(s => { s.session!.draft = '机会成本是'; });
+  update(s => { s.ui.hint = null; });
+  assert.match(store['sibian-v3'], /"draft":"机会成本是"/);
+});
+
+test('a damaged save does not crash the app: broken parts are dropped, knowledge cards are kept', async () => {
+  for (const k of Object.keys(store)) delete store[k];
+  store['sibian-v3'] = JSON.stringify({
+    config: { concept: '边际效用', mode: 'nope', seats: { A: 'x' }, counts: { A: 9, B: 2 }, stages: [] },
+    plan: { mode: 'socratic', concept: 'x' },
+    session: { id: 's1', mode: 'socratic', concept: 'x', topic: 'y', entries: 'oops' },
+    library: [null, 'x', { id: 'c1', concept: '机会成本', oneLine: '放弃的最好选择' }, { concept: '没有 id' }],
+    screen: 'session'
+  });
+  resetForTests();
+  const st = getState();
+  assert.equal(st.config.concept, '边际效用');
+  assert.equal(st.config.mode, defaultConfig().mode);
+  assert.deepEqual(st.config.seats, defaultConfig().seats);
+  assert.deepEqual(st.config.counts, defaultConfig().counts);
+  assert.equal(st.config.stages.length, defaultConfig().stages.length);
+  assert.equal(st.plan, null);
+  assert.equal(st.session, null);
+  assert.equal(st.ui.screen, 'learn');
+  assert.equal(st.library.length, 1, 'the usable card survives');
+  assert.deepEqual(st.library[0].points, []);
+  assert.deepEqual(st.library[0].quiz, []);
+  assert.deepEqual(st.library[0].reviews, []);
+});
+
+test('a healthy save comes back unchanged', async () => {
+  update(s => { s.config.concept = '机会成本'; s.config.mode = 'socratic'; });
+  await actions.prepare(null, undefined, 'start');
+  await actions.send('机会成本是放弃的选择里最好的那个。');
+  // 存档经过 JSON，值为 undefined 的字段本来就不会留下
+  const before = JSON.parse(JSON.stringify({ config: getState().config, plan: getState().plan, session: getState().session, library: getState().library }));
+  resetForTests();
+  const st = getState();
+  assert.deepEqual({ config: st.config, plan: st.plan, session: st.session, library: st.library }, before);
+  assert.equal(st.ui.screen, 'session');
+});
+
+test('a malformed stream event fails the turn with a clear message and keeps progress unchanged', async () => {
+  learningPlan(); actions.startSession(); apiOn();
+  const sse = 'event: delta\ndata: {"t":"半截"}\n\nevent: delta\ndata: {oops\n\n';
+  globalThis.fetch = (async () => new Response(sse, { headers: { 'Content-Type': 'text/event-stream' } })) as typeof fetch;
+  const before = getState().session!.entries.length;
+  await actions.send('机会成本是放弃的最好选择。');
+  assert.match(getState().ui.error, /不完整.*未采用/);
+  assert.doesNotMatch(getState().ui.error, /JSON|Unexpected/);
+  // 学习者自己的发言留下，AI 的半截文字不进记录
+  assert.equal(getState().session!.entries.length, before + 1);
 });

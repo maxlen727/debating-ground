@@ -10,13 +10,13 @@ import { acceptWebSocket, rejectUpgrade } from './wsserver.ts';
 import { SPEECH_SEGMENT } from '../shared/speech.ts';
 import { ApiError, normalizeConfig, buildRequest, finalize, complete, streamGenerate, STREAMABLE, type ApiConfig } from './ai.ts';
 import type { Purpose } from '../shared/types.ts';
+import { PURPOSES } from '../shared/purposes.ts';
 
 interface TtsConfig { appId: string; apiKey: string; apiSecret: string }
 interface SessionState { config: ApiConfig | null; verified: boolean; active: AbortController | null; touched: number; tts: TtsConfig | null }
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json' };
-const PURPOSES: Purpose[] = ['prepare', 'discuss', 'debate', 'hint', 'explain', 'reflect', 'review', 'term', 'point'];
 
 export function createServer({ fetchImpl = fetch, timeoutMs = 90000, root = path.join(here, '..', 'dist') }: { fetchImpl?: typeof fetch; timeoutMs?: number; root?: string } = {}) {
   const sessions = new Map<string, SessionState>();
@@ -27,8 +27,85 @@ export function createServer({ fetchImpl = fetch, timeoutMs = 90000, root = path
     try { return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); } catch { throw new ApiError('请求格式错误。'); }
   }
 
-  const envTts = () => (process.env.XFYUN_APP_ID && process.env.XFYUN_API_KEY && process.env.XFYUN_API_SECRET ? { appId: process.env.XFYUN_APP_ID, apiKey: process.env.XFYUN_API_KEY, apiSecret: process.env.XFYUN_API_SECRET } : null);
-  const xfyunOf = (s: SessionState) => { const t = s.tts ?? envTts(); return t ? { XFYUN_APP_ID: t.appId, XFYUN_API_KEY: t.apiKey, XFYUN_API_SECRET: t.apiSecret } : {}; };
+  const envTts = (): TtsConfig | null => (process.env.XFYUN_APP_ID && process.env.XFYUN_API_KEY && process.env.XFYUN_API_SECRET ? { appId: process.env.XFYUN_APP_ID, apiKey: process.env.XFYUN_API_KEY, apiSecret: process.env.XFYUN_API_SECRET } : null);
+  const ttsOf = (s: SessionState) => s.tts ?? envTts();
+  const xfyunOf = (s: SessionState) => { const t = ttsOf(s); return t ? { XFYUN_APP_ID: t.appId, XFYUN_API_KEY: t.apiKey, XFYUN_API_SECRET: t.apiSecret } : {}; };
+  const sessionId = (req: http.IncomingMessage) => req.headers.cookie?.match(/(?:^|;\s*)sibian_session=([a-f0-9]{48})(?:;|$)/)?.[1];
+  const publicState = (s: SessionState) => ({ configured: !!s.config, verified: s.verified, baseURL: s.config?.endpoint ?? '', model: s.config?.model ?? '', ttsConfigured: !!ttsOf(s), sttConfigured: !!ttsOf(s) });
+
+  // 认出这个浏览器的会话；没有就新建一个，用 HttpOnly Cookie 记住。顺手清掉 8 小时没用过的会话
+  function sessionFor(req: http.IncomingMessage, res: http.ServerResponse): SessionState {
+    let id = sessionId(req);
+    let state = id ? sessions.get(id) : undefined;
+    if (!state) {
+      id = crypto.randomBytes(24).toString('hex');
+      state = { config: null, verified: false, active: null, touched: Date.now(), tts: null };
+      sessions.set(id, state);
+      res.setHeader('Set-Cookie', `sibian_session=${id}; HttpOnly; SameSite=Strict; Path=/`);
+    }
+    state.touched = Date.now();
+    for (const [k, v] of sessions) if (!v.active && Date.now() - v.touched > 8 * 3600000) sessions.delete(k);
+    return state;
+  }
+
+  // 一次 AI 调用：同一会话同一时间只有一个，浏览器断开就取消
+  async function generate(s: SessionState, req: http.IncomingMessage, res: http.ServerResponse, test: boolean) {
+    if (!s.config) throw new ApiError('请先填写并连接 API。', 409);
+    if (s.active) throw new ApiError('已有请求正在进行，请等待或取消。', 409);
+    const data = await body(req);
+    const purpose = test ? 'test' : data.purpose as Purpose;
+    if (purpose !== 'test' && !PURPOSES.includes(purpose)) throw new ApiError('不支持的 AI 操作。');
+    const request = buildRequest(purpose, data.payload);
+    // 上面读请求体时让出过执行权，另一个请求可能已经先开始了：再查一次
+    if (s.active) throw new ApiError('已有请求正在进行。', 409);
+    const config = s.config; if (!config) throw new ApiError('API 已断开连接。', 409);
+    s.verified = false;
+    const controller = new AbortController(); s.active = controller;
+    res.on('close', () => { if (!res.writableEnded) controller.abort(); });
+    try {
+      // 浏览器要求流式、而且这种用途输出的是文字：用 SSE 边生成边发
+      if (data.stream === true && purpose !== 'test' && STREAMABLE.includes(purpose)) {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
+        const ok = await streamGenerate(config, request, { fetchImpl, timeoutMs, signal: controller.signal }, chunk => { if (!res.destroyed) res.write(chunk); });
+        if (ok) s.verified = true;
+        if (!res.destroyed) res.end();
+        return;
+      }
+      const result = await complete(config, request.messages, { fetchImpl, timeoutMs, signal: controller.signal });
+      s.verified = true;
+      const output = finalize(request, result);
+      if (!res.destroyed) json(res, 200, output);
+    } finally { if (s.active === controller) s.active = null; }
+  }
+
+  type Route = (s: SessionState, req: http.IncomingMessage, res: http.ServerResponse) => Promise<void> | void;
+  const routes: Record<string, Route> = {
+    'GET /api/config': (s, _req, res) => json(res, 200, publicState(s)),
+    'POST /api/config': async (s, req, res) => {
+      if (s.active) throw new ApiError('请先取消当前请求。', 409);
+      s.config = normalizeConfig(await body(req)); s.verified = false;
+      json(res, 200, publicState(s));
+    },
+    'DELETE /api/config': (s, _req, res) => { s.active?.abort(); s.config = null; s.verified = false; json(res, 200, publicState(s)); },
+    'POST /api/tts': async (s, req, res) => {
+      const data = await body(req);
+      if (typeof data.text !== 'string' || Array.from(data.text).length > SPEECH_SEGMENT) throw new ApiError('朗读文本无效或太长。');
+      if (!ttsOf(s)) throw new ApiError('讯飞语音还没有配置。', 503);
+      json(res, 200, await synthesizeXfyun(data.text, data.voice, xfyunOf(s)));
+    },
+    'POST /api/tts/config': async (s, req, res) => {
+      const data = await body(req);
+      const read = (key: string) => typeof data[key] === 'string' ? (data[key] as string).trim() : '';
+      const appId = read('appId'), apiKey = read('apiKey'), apiSecret = read('apiSecret');
+      // 三项都清空：回到环境变量里的配置（如果有）
+      if (!appId && !apiKey && !apiSecret) { s.tts = null; return json(res, 200, { ttsConfigured: !!envTts(), sttConfigured: !!envTts() }); }
+      if (!appId || !apiKey || !apiSecret) throw new ApiError('讯飞语音需要同时填写 App ID、API Key 和 API Secret。');
+      s.tts = { appId, apiKey, apiSecret };
+      json(res, 200, { ttsConfigured: true, sttConfigured: true });
+    },
+    'POST /api/test': (s, req, res) => generate(s, req, res, true),
+    'POST /api/generate': (s, req, res) => generate(s, req, res, false)
+  };
 
   const server = http.createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('Referrer-Policy', 'no-referrer');
@@ -38,76 +115,15 @@ export function createServer({ fetchImpl = fetch, timeoutMs = 90000, root = path
 
     if (url.pathname.startsWith('/api/')) {
       if (req.headers['x-sibian-client'] !== 'web' || (req.headers.origin && req.headers.origin !== url.origin)) return json(res, 403, { error: '请从本机思辨场页面访问。' });
-      let id = req.headers.cookie?.match(/(?:^|;\s*)sibian_session=([a-f0-9]{48})(?:;|$)/)?.[1];
-      let state = id ? sessions.get(id) : undefined;
-      if (!state) {
-        id = crypto.randomBytes(24).toString('hex');
-        state = { config: null, verified: false, active: null, touched: Date.now(), tts: null };
-        sessions.set(id, state);
-        res.setHeader('Set-Cookie', `sibian_session=${id}; HttpOnly; SameSite=Strict; Path=/`);
-      }
-      state.touched = Date.now();
-      for (const [k, v] of sessions) if (!v.active && Date.now() - v.touched > 8 * 3600000) sessions.delete(k);
-      const s = state;
-      const publicState = () => ({ configured: !!s.config, verified: s.verified, baseURL: s.config?.endpoint ?? '', model: s.config?.model ?? '', ttsConfigured: !!(s.tts ?? envTts()), sttConfigured: !!(s.tts ?? envTts()) });
-      const ttsEnv = () => s.tts ?? envTts();
+      const s = sessionFor(req, res);
+      const route = routes[`${req.method} ${url.pathname}`];
       try {
-        if (req.method === 'GET' && url.pathname === '/api/config') return json(res, 200, publicState());
-        if (req.method === 'POST' && url.pathname === '/api/tts') {
-          const data = await body(req);
-          if (typeof data.text !== 'string' || Array.from(data.text).length > SPEECH_SEGMENT) throw new ApiError('朗读文本无效或太长。');
-          const t = ttsEnv();
-          if (!t) throw new ApiError('讯飞语音还没有配置。', 503);
-          return json(res, 200, await synthesizeXfyun(data.text, data.voice, { XFYUN_APP_ID: t.appId, XFYUN_API_KEY: t.apiKey, XFYUN_API_SECRET: t.apiSecret }));
-        }
-        if (req.method === 'POST' && url.pathname === '/api/tts/config') {
-          const data = await body(req);
-          const read = (key: string) => typeof data[key] === 'string' ? (data[key] as string).trim() : '';
-          const appId = read('appId'), apiKey = read('apiKey'), apiSecret = read('apiSecret');
-          if (!appId && !apiKey && !apiSecret) { s.tts = null; return json(res, 200, { ttsConfigured: !!envTts(), sttConfigured: !!envTts() }); }
-          if (!appId || !apiKey || !apiSecret) throw new ApiError('讯飞语音需要同时填写 App ID、API Key 和 API Secret。');
-          s.tts = { appId, apiKey, apiSecret };
-          return json(res, 200, { ttsConfigured: true, sttConfigured: true });
-        }
-        if (req.method === 'POST' && url.pathname === '/api/config') {
-          if (s.active) throw new ApiError('请先取消当前请求。', 409);
-          s.config = normalizeConfig(await body(req)); s.verified = false;
-          return json(res, 200, publicState());
-        }
-        if (req.method === 'DELETE' && url.pathname === '/api/config') { s.active?.abort(); s.config = null; s.verified = false; return json(res, 200, publicState()); }
-        if (req.method === 'POST' && (url.pathname === '/api/test' || url.pathname === '/api/generate')) {
-          if (!s.config) throw new ApiError('请先填写并连接 API。', 409);
-          if (s.active) throw new ApiError('已有请求正在进行，请等待或取消。', 409);
-          const data = await body(req);
-          const purpose = url.pathname === '/api/test' ? 'test' : data.purpose as Purpose;
-          if (purpose !== 'test' && !PURPOSES.includes(purpose)) throw new ApiError('不支持的 AI 操作。');
-          const request = buildRequest(purpose, data.payload);
-          if (s.active) throw new ApiError('已有请求正在进行。', 409);
-          const config = s.config; if (!config) throw new ApiError('API 已断开连接。', 409);
-          s.verified = false;
-          const controller = new AbortController(); s.active = controller;
-          res.on('close', () => { if (!res.writableEnded) controller.abort(); });
-          try {
-            // 浏览器要求流式、而且这种用途输出的是文字：用 SSE 边生成边发
-            if (data.stream === true && purpose !== 'test' && STREAMABLE.includes(purpose)) {
-              res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
-              const ok = await streamGenerate(config, request, { fetchImpl, timeoutMs, signal: controller.signal }, chunk => { if (!res.destroyed) res.write(chunk); });
-              if (ok) s.verified = true;
-              if (!res.destroyed) res.end();
-              return;
-            }
-            const result = await complete(config, request.messages, { fetchImpl, timeoutMs, signal: controller.signal });
-            s.verified = true;
-            const output = finalize(request, result);
-            if (!res.destroyed) json(res, 200, output);
-          } finally { if (s.active === controller) s.active = null; }
-          return;
-        }
-        return json(res, 404, { error: '接口不存在。' });
+        if (!route) return json(res, 404, { error: '接口不存在。' });
+        await route(s, req, res);
       } catch (e) {
         if (!res.destroyed) json(res, e instanceof ApiError ? e.status : 500, { error: e instanceof ApiError ? e.message : '本机服务未能完成请求。' });
-        return;
       }
+      return;
     }
 
     if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: '方法不支持' });
@@ -132,7 +148,7 @@ export function createServer({ fetchImpl = fetch, timeoutMs = 90000, root = path
     try { url = new URL(req.url ?? '/', 'http://' + req.headers.host); } catch { return rejectUpgrade(socket, 400, 'Bad Request'); }
     if (url.pathname !== '/api/stt' || !['localhost', '127.0.0.1'].includes(url.hostname)) return rejectUpgrade(socket, 404, 'Not Found');
     if (req.headers.origin !== url.origin) return rejectUpgrade(socket, 403, 'Forbidden');
-    const id = req.headers.cookie?.match(/(?:^|;\s*)sibian_session=([a-f0-9]{48})(?:;|$)/)?.[1];
+    const id = sessionId(req);
     const state = id ? sessions.get(id) : undefined;
     if (!state) return rejectUpgrade(socket, 401, 'Unauthorized');
     const ws = acceptWebSocket(req, socket);

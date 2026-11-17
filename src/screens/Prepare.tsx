@@ -5,7 +5,7 @@ import { CaretField } from '../components/SmoothCaret.tsx';
 import { canInvite, inviteFriends, prepare, refreshRoles, startSession } from '../actions.ts';
 import { BusyStrip, ErrorBanner, Icon, Sheet, Stepper, TopBar } from '../components/ui.tsx';
 import { debateTurns, slots } from '../lib/debate.ts';
-import { go, update, useApp } from '../store.ts';
+import { go, typing, update, useApp } from '../store.ts';
 
 export function Prepare() {
   const { plan, config, ui } = useApp();
@@ -14,7 +14,7 @@ export function Prepare() {
   if (!plan) return <div className="screen"><TopBar title="准备讨论" back="learn" /></div>;
   const debate = plan.mode === 'debate';
   const busy = !!ui.busy;
-  const setPlan = (fn: (p: NonNullable<typeof plan>) => void) => update(s => { if (s.plan) fn(s.plan); });
+  const setPlan = (fn: (p: NonNullable<typeof plan>) => void) => typing(s => { if (s.plan) fn(s.plan); });
 
   return (
     <div className="screen prepare">
@@ -162,7 +162,7 @@ function Seats() {
                   </div>
                 </div>
                 {r.type === 'peer' && <p className="seat-hint">邀请同学时留给同学；单人讨论时由 AI 担任。</p>}
-                {r.type !== 'human' && <textarea value={r.bg} rows={2} maxLength={500} aria-label={`${t}${i + 1} 认知背景`} placeholder="认知背景" onChange={e => update(s => { s.config.seats[t][i].bg = e.target.value; })} />}
+                {r.type !== 'human' && <textarea value={r.bg} rows={2} maxLength={500} aria-label={`${t}${i + 1} 认知背景`} placeholder="认知背景" onChange={e => typing(s => { s.config.seats[t][i].bg = e.target.value; })} />}
               </div>
             ))}
           </div>
@@ -184,7 +184,7 @@ function Stages() {
           <li key={i} className="stage-row">
             <span className="num">{i + 1}</span>
             <div className="grow stage-fields">
-              <input value={st.name} maxLength={20} aria-label={`环节 ${i + 1} 名称`} onChange={e => update(s => { s.config.stages[i].name = e.target.value; })} />
+              <input value={st.name} maxLength={20} aria-label={`环节 ${i + 1} 名称`} onChange={e => typing(s => { s.config.stages[i].name = e.target.value; })} />
               <div className="row">
                 <select value={st.kind} aria-label={`环节 ${i + 1} 规则`} onChange={e => update(s => { s.config.stages[i].kind = e.target.value as StageKind; })}>
                   {Object.entries(STAGE_KINDS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}

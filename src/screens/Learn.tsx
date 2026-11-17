@@ -4,7 +4,7 @@ import { prepare, openCard, setContextDraft } from '../actions.ts';
 import { useRef } from 'react';
 import { BusyStrip, ErrorBanner, Icon } from '../components/ui.tsx';
 import { CaretField } from '../components/SmoothCaret.tsx';
-import { go, update, useApp } from '../store.ts';
+import { go, typing, update, useApp } from '../store.ts';
 
 const EXAMPLES = ['机会成本', '贝叶斯定理', '边际效用', '认知失调', '光速不变原理', '梯度下降'];
 const GLYPH: Record<ModeId, string> = { socratic: '问', roundtable: '圆', teach: '讲', debate: '辩', canvas: '枝' };
@@ -41,7 +41,7 @@ export function Learn() {
             <span className="sr-only">想弄懂的概念</span>
             <CaretField fieldRef={conceptRef}>
               <input id="concept" ref={conceptRef} value={config.concept} maxLength={80} placeholder="写下一个概念，比如：机会成本" disabled={busy}
-                onChange={e => update(s => { s.config.concept = e.target.value; s.ui.context = null; })}
+                onChange={e => typing(s => { s.config.concept = e.target.value; s.ui.context = null; })}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) void prepare(null, undefined, 'start'); }} />
             </CaretField>
           </label>

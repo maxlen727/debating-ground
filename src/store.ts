@@ -5,6 +5,7 @@ import type { Entry, ModeId, Persona, Previous, Reflection, Review, Seat, SeatCo
 import type { PointProposal, RoomMember, RoomStatus, Speaker } from '../shared/room.ts';
 import { DEFAULT_VOICE } from '../shared/speech.ts';
 import { holdingRenders, transition, type View } from './lib/motion.ts';
+import { restoreConfig, restoreLibrary, restorePlan, restoreSession } from './lib/restore.ts';
 
 export type Screen = 'learn' | 'prepare' | 'session' | 'review' | 'library' | 'card' | 'settings' | 'join';
 
@@ -111,10 +112,17 @@ function load(): AppState {
     // 反向讲解并进了苏格拉底追问（“换我来讲”）：选着它的设置改过来，按它准备的计划作废；进行中的讨论和知识卡片照旧
     if (saved?.config?.mode === 'teach') saved.config.mode = 'socratic';
     if (saved?.plan?.mode === 'teach') saved.plan = null;
-    if (saved) return { ...base, config: { ...base.config, ...saved.config }, plan: saved.plan ?? null, session: saved.session ?? null, library: Array.isArray(saved.library) ? saved.library : [], ui: { ...base.ui, screen: saved.screen === 'session' && saved.session && !saved.session.finished ? 'session' : 'learn' } };
+    if (saved) {
+      // 存档可能缺字段或写坏了：先按结构检查，坏掉的那一块作废，不让界面一打开就崩溃
+      const session = restoreSession(saved.session);
+      return {
+        ...base, config: restoreConfig(saved.config, base.config), plan: restorePlan(saved.plan), session, library: restoreLibrary(saved.library),
+        ui: { ...base.ui, screen: saved.screen === 'session' && session && !session.finished ? 'session' : 'learn' }
+      };
+    }
     // v0.4 的知识卡片结构相同，迁移过来
     const v2 = JSON.parse(localStorage.getItem('sibian-v2') ?? 'null');
-    if (v2 && Array.isArray(v2.library)) return { ...base, library: v2.library };
+    if (v2 && Array.isArray(v2.library)) return { ...base, library: restoreLibrary(v2.library) };
   } catch { /* 读取失败就从头开始 */ }
   return base;
 }
@@ -122,14 +130,22 @@ function load(): AppState {
 let state: AppState = load();
 const listeners = new Set<() => void>();
 let saveFailed = false;
-
+let saveTimer: ReturnType<typeof setTimeout> | undefined;
 function persist() {
+  clearTimeout(saveTimer); saveTimer = undefined;
   try {
     localStorage.setItem(STORE, JSON.stringify({ config: state.config, plan: state.plan, session: state.session, library: state.library, screen: state.ui.screen }));
     saveFailed = false;
   } catch {
     if (!saveFailed) { saveFailed = true; queueMicrotask(() => toast('浏览器未能保存记录，请导出本次内容。')); }
   }
+}
+// 打字时不必每个字都落盘：停下来 400 毫秒再存；页面被切走或关掉之前补存一次，不丢草稿
+const TYPING_SAVE_DELAY = 400;
+const flush = () => { if (saveTimer !== undefined) persist(); };
+if (typeof addEventListener === 'function') {
+  addEventListener('pagehide', flush);
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
 }
 
 export const getState = () => state;
@@ -152,8 +168,19 @@ export function update(fn: (draft: AppState) => void) {
   if (before.screen !== after.screen || before.overlay !== after.overlay) transition(before, after, notify);
   else if (!holdingRenders()) notify();
 }
+// 输入框每敲一个字调用一次：只改草稿、题目这类文字，不换页面、不动知识库。
+// 知识库可能很大，这里不复制它，也不立刻写入 localStorage（update 每次都会做这两件事，打字时会卡）
+export function typing(fn: (draft: Omit<AppState, 'library'>) => void) {
+  const { library, ...rest } = state;
+  const next = structuredClone(rest);
+  fn(next);
+  state = { ...next, library };
+  if (saveTimer === undefined) saveTimer = setTimeout(persist, TYPING_SAVE_DELAY);
+  if (!holdingRenders()) notify();
+}
 export function useApp(): AppState {
-  return useSyncExternalStore(cb => { listeners.add(cb); return () => listeners.delete(cb); }, () => rendered);
+  // 第三个参数给服务端渲染用（测试里把页面渲染成 HTML 检查），和浏览器里读的是同一份
+  return useSyncExternalStore(cb => { listeners.add(cb); return () => listeners.delete(cb); }, () => rendered, () => rendered);
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -170,6 +197,7 @@ export const uid = () => Date.now().toString(36) + Math.random().toString(36).sl
 
 // 测试用：重置为初始状态
 export function resetForTests(next?: Partial<AppState>) {
+  clearTimeout(saveTimer); saveTimer = undefined;
   state = { ...load(), ...next };
   notify();
 }

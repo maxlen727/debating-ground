@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { connect, connectRemote, disconnect, forgetRemote, saveTtsConfig, testConnection } from '../lib/api.ts';
 import { task } from '../lib/ai.ts';
 import { BusyStrip, ErrorBanner, TopBar } from '../components/ui.tsx';
-import { toast, update, useApp, type Config } from '../store.ts';
+import { toast, typing, update, useApp, type Config } from '../store.ts';
 import { isNativeApp } from '../lib/platform.ts';
 
 const DOCS = 'https://maxlen727.github.io/debating-ground/guide/self-host';
@@ -49,7 +49,7 @@ function VoicePanel() {
     <section className="panel">
       <div className="row between"><h3 className="section-label">讯飞语音（可选）</h3><span className={'status ' + (ready ? 'ok' : 'warn')}>{ready ? '已配置' : '未配置'}</span></div>
       {localApi && <TtsKeyForm ready={ready} />}
-      <label className="field"><span>发音人 ID</span><input value={config.voiceName} maxLength={64} onChange={e => update(s => { s.config.voiceName = e.target.value; })} placeholder="x4_xiaoyan" /></label>
+      <label className="field"><span>发音人 ID</span><input value={config.voiceName} maxLength={64} onChange={e => typing(s => { s.config.voiceName = e.target.value; })} placeholder="x4_xiaoyan" /></label>
       <p className="fineprint">{localApi
         ? '密钥只存在本机服务的内存里，停止服务或点“清除”后就没了；也可以在启动服务时用 XFYUN_* 环境变量提供。'
         : '讯飞密钥设置在你的后端（Worker 的加密变量），这里不需要填写。'}

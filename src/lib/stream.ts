@@ -15,7 +15,7 @@ export function setLive(next: Live | null) { if (next) shown.delete(next.id); li
 export function updateLive(id: string, text: string) { if (live?.id === id && live.text !== text) { live = { ...live, text }; emit(); } }
 export function clearLive(id?: string) { if (live && (!id || live.id === id)) { live = null; emit(); } }
 export function useLive(): Live | null {
-  return useSyncExternalStore(cb => { listeners.add(cb); return () => listeners.delete(cb); }, () => live);
+  return useSyncExternalStore(cb => { listeners.add(cb); return () => listeners.delete(cb); }, () => live, () => live);
 }
 
 /* ---------- 逐字显示的进度 ---------- */
