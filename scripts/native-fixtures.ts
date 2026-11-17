@@ -306,9 +306,324 @@ export async function generate(): Promise<Record<string, string>> {
   await record('prepare', { concept: '边际效用', mode: 'debate', topic: '学习者自己改过的辩题' });
   out['demo-cases.json'] = JSON.stringify(cases) + '\n';
 
+  // 学习流程的剧本：在网页版用演示模式跑一串操作，每一步之后记下规整后的状态和发给 AI 的快照。
+  // 原生版 FlowTest 按同样的剧本操作，每一步都要一致。id 和时间戳比较前换成占位符（canonical）。
+  out['flow-scripts.json'] = JSON.stringify(await recordFlows(S, A)) + '\n';
+
   // 原生测试读回存档时用同一个“现在”和时区
   out['meta.json'] = JSON.stringify({ now: NOW, timeZone: TIME_ZONE }, null, 2) + '\n';
   return out;
+}
+
+// ---------- 学习流程的剧本 ----------
+type Op = Record<string, unknown> & { op: string };
+export const FLOW_SCRIPTS: { name: string; ops: Op[] }[] = [
+  {
+    name: 'socratic-full',
+    ops: [
+      { op: 'config', concept: '机会成本', mode: 'socratic' },
+      { op: 'prepare' },
+      { op: 'start' },
+      { op: 'send', text: '   ' },
+      { op: 'send', text: '机会成本就是为了得到一样东西而放弃的最好的那个选择。' },
+      { op: 'quick', kind: 'unclear', target: 'lastAi' },
+      { op: 'quick', kind: 'disagree', target: 'lastAi' },
+      { op: 'send', text: '健身卡的钱已经花了，不该算。' },
+      { op: 'reflectSubmit', draft: '' },
+      { op: 'reflectSubmit', draft: '代价不只是钱，还有放弃的最好选择。' },
+      { op: 'addReflection' },
+      { op: 'addReflection' },
+      { op: 'dropReflection' },
+      { op: 'hint' },
+      { op: 'suggestPoint' },
+      { op: 'decidePoint', accept: false },
+      { op: 'suggestPoint' },
+      { op: 'decidePoint', accept: true },
+      { op: 'proposePoint', text: '放弃的最佳选择' },
+      { op: 'proposePoint', text: '机会成本和会计成本的区别' },
+      { op: 'suggestPoint' },
+      { op: 'term', term: '稀缺性' },
+      { op: 'term', term: '稀缺性' },
+      { op: 'teaching' },
+      { op: 'send', text: '比如你周六去打工，就不能去做家教。' },
+      { op: 'teaching' },
+      { op: 'finish' },
+      { op: 'rate', remembered: true },
+      { op: 'rate', remembered: false },
+      { op: 'discussAgain' },
+      { op: 'start' },
+    ],
+  },
+  {
+    name: 'roundtable-generic',
+    ops: [
+      { op: 'config', concept: '边际效用', mode: 'roundtable' },
+      { op: 'prepare', then: 'start' },
+      { op: 'send', text: '我觉得就是越吃越不想吃。' },
+      { op: 'nextSpeaker' },
+      { op: 'quick', kind: 'example', target: 'lastAi' },
+      { op: 'quick', kind: 'fact', target: 'lastAi' },
+      { op: 'reflectSubmit', draft: '每多一份带来的满足在变少。' },
+      { op: 'suggestPoint' },
+      { op: 'suggestPoint' },
+      { op: 'finish' },
+    ],
+  },
+  {
+    name: 'canvas-tree',
+    ops: [
+      { op: 'config', concept: '机会成本', mode: 'canvas' },
+      { op: 'prepare', then: 'start' },
+      { op: 'send', text: '少玩了一天' },
+      { op: 'openBranch', target: 'lastAi', topic: '' },
+      { op: 'openBranch', target: 'lastAi', topic: '稀缺性' },
+      { op: 'send', text: '比如周末的时间' },
+      { op: 'openBranch', target: 'lastAi', topic: '时间的价值' },
+      { op: 'bringBack', gist: '' },
+      { op: 'bringBack', gist: '时间也是一种稀缺的资源' },
+      { op: 'addReflection' },
+      { op: 'goToBranch', to: 'trunk' },
+      { op: 'goToBranch', to: 'first' },
+      { op: 'bringBack', gist: '时间和钱一样有限，用在一处就不能用在别处' },
+      { op: 'send', text: '那做家教也是代价' },
+      { op: 'finish' },
+    ],
+  },
+  {
+    name: 'debate-match',
+    ops: [
+      { op: 'config', concept: '机会成本', mode: 'debate' },
+      { op: 'prepare' },
+      { op: 'refreshRoles' },
+      { op: 'start' },
+      { op: 'send', text: '我方认为，上大学最大的成本不是学费，而是放弃的四年工资和工作经验。' },
+      { op: 'generateSeat' },
+      { op: 'quick', kind: 'unclear', target: 'lastAi' },
+      { op: 'quick', kind: 'disagree', target: 'lastAi' },
+      { op: 'hint' },
+      { op: 'generateSeat' },
+      { op: 'skipSeat' },
+      { op: 'generateSeat' },
+      { op: 'generateSeat' },
+      { op: 'send', text: '请问对方：如果学费全免，上大学还有成本吗？' },
+      { op: 'suggestPoint' },
+      { op: 'untilEnd' },
+      { op: 'finish' },
+    ],
+  },
+  {
+    name: 'edge-cases',
+    ops: [
+      { op: 'config', concept: '   ', mode: 'socratic' },
+      { op: 'prepare' },
+      { op: 'config', concept: '认知失调', mode: 'debate' },
+      { op: 'seatsAllAi' },
+      { op: 'prepare', then: 'start' },
+      { op: 'start' },
+      { op: 'config', concept: '认知失调', mode: 'socratic' },
+      { op: 'prepare', then: 'start' },
+      { op: 'send', text: '就是想法和做法不一致的时候会难受。' },
+      { op: 'config', concept: '认知失调', mode: 'socratic' },
+      { op: 'prepare', then: 'start' },
+      { op: 'finish' },
+    ],
+  },
+];
+
+// 按同一套规则从状态里找操作的目标（原生版 FlowTest 用同样的规则）
+type St = ReturnType<typeof import('../src/store.ts').getState>;
+const lastAi = (st: St) => st.session!.entries.findLast(e => e.kind === 'msg' && !e.human)!;
+const lastReflection = (st: St) => st.session!.entries.findLast(e => e.kind === 'reflect');
+
+const ID_KEYS = new Set([
+  'id',
+  'sessionId',
+  'from',
+  'parent',
+  'branch',
+  'back',
+  'messageId',
+  'openCard',
+  'sheet',
+  'at',
+]);
+const TIME_KEYS = new Set(['created', 'due', 'at']);
+// 规整：id 换成按出现顺序编号的占位符，时间戳换成 <t>。键按字母顺序遍历，两边的顺序一致
+export function canonical(v: unknown, ids = new Map<string, string>(), key = ''): unknown {
+  if (Array.isArray(v)) return v.map(x => canonical(x, ids, key));
+  if (v && typeof v === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(v).sort()) {
+      const x = (v as Record<string, unknown>)[k];
+      if (x === undefined) continue;
+      out[k] = canonical(x, ids, k);
+    }
+    return out;
+  }
+  if (typeof v === 'number' && TIME_KEYS.has(key)) return '<t>';
+  if (typeof v === 'string' && ID_KEYS.has(key)) {
+    if (!ids.has(v)) ids.set(v, `#${ids.size + 1}`);
+    return ids.get(v);
+  }
+  return v;
+}
+
+async function recordFlows(
+  S: typeof import('../src/store.ts'),
+  A: typeof import('../src/actions.ts'),
+) {
+  const scripts = [];
+  for (const script of FLOW_SCRIPTS) {
+    S.resetForTests();
+    // 每段剧本都从干净的初始状态开始（不带上一段剧本留下的设置、页面和存档）
+    S.update(s => {
+      s.config = S.defaultConfig();
+      s.library = [];
+      s.session = null;
+      s.plan = null;
+      s.ui.screen = 'learn';
+    });
+    const steps = [];
+    for (const o of script.ops) {
+      const st = S.getState();
+      switch (o.op) {
+        case 'config':
+          S.update(s => {
+            s.config.concept = o.concept as string;
+            s.config.mode = o.mode as never;
+          });
+          break;
+        case 'seatsAllAi':
+          S.update(s => {
+            for (const t of ['A', 'B'] as const) s.config.seats[t].forEach(x => (x.type = 'ai'));
+          });
+          break;
+        case 'prepare':
+          await A.prepare(null, undefined, (o.then as 'start' | undefined) ?? 'review');
+          break;
+        case 'refreshRoles':
+          await A.refreshRoles();
+          break;
+        case 'start':
+          A.startSession();
+          break;
+        case 'send':
+          await A.send(o.text as string);
+          break;
+        case 'quick':
+          await A.quick(o.kind as never, lastAi(st).id);
+          break;
+        case 'addReflection':
+          A.addReflection();
+          break;
+        case 'dropReflection':
+          A.dropReflection(lastReflection(st)!.id);
+          break;
+        case 'reflectSubmit': {
+          if (
+            !lastReflection(st) ||
+            lastReflection(st)!.kind !== 'reflect' ||
+            (lastReflection(st) as { text: string }).text
+          )
+            A.addReflection();
+          const r = lastReflection(S.getState())!;
+          A.setReflectionDraft(r.id, o.draft as string);
+          await A.submitReflection(r.id);
+          break;
+        }
+        case 'hint':
+          await A.hint();
+          break;
+        case 'proposePoint':
+          A.proposePoint(o.text as string);
+          break;
+        case 'suggestPoint':
+          await A.suggestPoint();
+          break;
+        case 'decidePoint':
+          A.decidePoint(st.session!.proposedPoints![0].id, o.accept as boolean);
+          break;
+        case 'term': {
+          const m = st.session!.entries.findLast(
+            e => e.kind === 'msg' && e.terms?.includes(o.term as string),
+          )!;
+          await A.openTerm(o.term as string, m.id);
+          break;
+        }
+        case 'teaching':
+          await A.toggleTeaching();
+          break;
+        case 'nextSpeaker':
+          await A.nextSpeaker();
+          break;
+        case 'openBranch':
+          await A.openBranch(lastAi(st).id, o.topic as string);
+          break;
+        case 'goToBranch':
+          A.goToBranch(o.to === 'trunk' ? undefined : st.session!.branches![0].id);
+          break;
+        case 'bringBack':
+          A.bringBack(o.gist as string);
+          break;
+        case 'generateSeat':
+          await A.generateSeat();
+          break;
+        case 'skipSeat':
+          A.skipSeat();
+          break;
+        case 'untilEnd':
+          // 把剩下的赛程走完：轮到“我”就发一句，轮到 AI 就生成
+          for (let guard = 0; guard < 40 && A.currentTurn(S.getState().session); guard++) {
+            const t = A.currentTurn(S.getState().session)!;
+            if (t.role.type === 'human')
+              await A.send(`${t.action}：我方坚持机会成本才是最大的代价。`);
+            else await A.generateSeat();
+          }
+          break;
+        case 'finish':
+          await A.finish();
+          break;
+        case 'rate':
+          A.rateCard(S.getState().library[0].id, o.remembered as boolean);
+          break;
+        case 'discussAgain':
+          await A.discussAgain(S.getState().library[0]);
+          break;
+        default:
+          throw new Error(`未知操作 ${o.op}`);
+      }
+      const now = S.getState();
+      const ui = now.ui;
+      steps.push({
+        state: canonical({
+          config: now.config,
+          plan: now.plan,
+          session: now.session,
+          library: now.library,
+          ui: {
+            screen: ui.screen,
+            busy: ui.busy,
+            error: ui.error,
+            toast: ui.toast,
+            hint: ui.hint,
+            explain: ui.explain,
+            sheet: ui.sheet,
+            openCard: ui.openCard,
+            term: ui.term,
+            context: ui.context,
+          },
+        }),
+        snapshot: now.session ? canonical(A.snapshot(now.session)) : null,
+        whole: now.session ? canonical(A.snapshot(now.session, true)) : null,
+      });
+      // 提示只算这一步的
+      S.update(s => {
+        s.ui.toast = '';
+      });
+    }
+    scripts.push({ name: script.name, ops: script.ops, steps });
+  }
+  return scripts;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
