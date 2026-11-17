@@ -179,7 +179,8 @@ export function typing(fn: (draft: Omit<AppState, 'library'>) => void) {
   if (!holdingRenders()) notify();
 }
 export function useApp(): AppState {
-  return useSyncExternalStore(cb => { listeners.add(cb); return () => listeners.delete(cb); }, () => rendered);
+  // 第三个参数给服务端渲染用（测试里把页面渲染成 HTML 检查），和浏览器里读的是同一份
+  return useSyncExternalStore(cb => { listeners.add(cb); return () => listeners.delete(cb); }, () => rendered, () => rendered);
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;

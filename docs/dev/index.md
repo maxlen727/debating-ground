@@ -81,6 +81,7 @@ docs/          本文档站（VitePress）
 - `tests/room.test.ts`：多人房间的加入、轮流发言、失败与重试、辩论席位、个人复盘、上限与过期删除。
 - `tests/room-flow.test.ts`：房主用真实的 actions 创建房间、邀请、发言、小结、结束并生成自己的复盘。
 - `tests/flow.test.ts`：在 Node 里直接驱动 actions，走完“准备 → 讨论 → 小结 → 复盘 → 知识卡片 → 复习”；API 失败、取消、辩论轮次。
+- `tests/render.test.ts`：界面冒烟测试。借 Vite 加载组件，把每个页面在几种典型状态下渲染成 HTML，确认不会崩溃、关键文字在；不跑副作用，也不检查样式，样式和动效仍要在手机宽度下人工看。
 
 改提示词时更新 `tests/ai.test.ts`，改流程时更新 `tests/flow.test.ts`。
 
