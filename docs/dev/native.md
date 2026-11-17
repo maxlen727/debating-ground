@@ -31,6 +31,18 @@ cd native
 
 字体分工、字号阶梯、只用系统字体这些规则，和 AGENTS.md 的界面规范相同，写在 `ui/theme/Theme.kt`。
 
+## 数据层和网页版的标准答案
+
+数据层在 `data/`：数据结构、存档检查、间隔复习、Markdown 导出、本地存储。存档格式和网页版的 `sibian-v3` 完全一致，导出文件可以互通，替换旧 App 时（M6）也能直接迁移知识库。
+
+为了让两边的逻辑不走样，`scripts/native-fixtures.ts` 用**网页版的真实代码**跑出几个场景的存档：做完的讨论、带分支的画布、进行中的辩论、内容很全的知识卡片、写坏的存档、旧版本的存档。它再记下网页版读回这些存档的结果和导出的 Markdown，放在 `native/app/src/test/resources/fixtures/`。原生版的 `FixturesTest` 读同样的存档，结果必须逐字一致。
+
+- 改了存档结构、`src/lib/restore.ts` 或 `src/lib/exporter.ts`，运行 `npm run fixtures:native` 重新生成，再跑原生测试，看看原生版要跟着改什么。
+- 网页版的 `tests/native-fixtures.test.ts` 会检查标准答案有没有过期，忘了重新生成就会失败。
+- 生成过程固定了随机数、时间和时区（上海），每次的结果都一样。
+
+存档检查分两层：`Restore.kt` 在 JSON 层面逐行对应网页版，保证结果逐字一致；`loadState` 再转成类型化的数据，给界面和业务逻辑用。
+
 ## 代码检查
 
 - **ktlint**：管 Kotlin 写法，用 Kotlin 官方编码规范，和 Android Studio 的默认格式一致，设置在 `native/.editorconfig`。它直接调 ktlint 的命令行版本，不用第三方 Gradle 插件，因为那些插件和 AGP 9 自带的 Kotlin 支持不一定兼容。`./gradlew ktlintFormat` 能自动改好大部分问题。

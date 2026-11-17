@@ -117,5 +117,7 @@ export function sessionMarkdown(s: Session) {
 
 export const exportSession = (s: Session) =>
   download(`思辨场-${s.concept}-讨论记录.md`, sessionMarkdown(s));
+export const libraryMarkdown = (cards: Card[]) =>
+  '# 思辨场知识库\n\n' + cards.map(reviewMarkdown).join('\n---\n\n');
 export const exportLibrary = (cards: Card[]) =>
-  download('思辨场-知识库.md', '# 思辨场知识库\n\n' + cards.map(reviewMarkdown).join('\n---\n\n'));
+  download('思辨场-知识库.md', libraryMarkdown(cards));

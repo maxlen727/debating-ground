@@ -1,0 +1,143 @@
+{
+  "config": {
+    "concept": "边际效用",
+    "mode": "roundtable",
+    "aiMode": "demo",
+    "remote": {
+      "url": "",
+      "password": ""
+    },
+    "name": "",
+    "counts": {
+      "A": 2,
+      "B": 2
+    },
+    "seats": {
+      "A": [
+        {
+          "type": "human",
+          "bg": ""
+        },
+        {
+          "type": "ai",
+          "bg": "经济学研究者，习惯用数据和模型说话。"
+        }
+      ],
+      "B": [
+        {
+          "type": "ai",
+          "bg": "中学老师，关注概念在日常生活里怎么被误用。"
+        },
+        {
+          "type": "ai",
+          "bg": "创业者，从真实的经营取舍出发。"
+        }
+      ]
+    },
+    "stages": [
+      {
+        "name": "开篇立论",
+        "kind": "opening",
+        "rounds": 1
+      },
+      {
+        "name": "交叉质询",
+        "kind": "cross",
+        "rounds": 1
+      },
+      {
+        "name": "自由辩论",
+        "kind": "free",
+        "rounds": 2
+      },
+      {
+        "name": "总结陈词",
+        "kind": "closing",
+        "rounds": 1
+      }
+    ],
+    "turnSeconds": 0,
+    "voiceName": "x4_xiaoyan"
+  },
+  "plan": null,
+  "session": null,
+  "library": [
+    {
+      "id": "card-rich",
+      "sessionId": "s-old",
+      "concept": "边际效用",
+      "topic": "第三块蛋糕为什么没有第一块好吃？",
+      "mode": "roundtable",
+      "created": 1762934400000,
+      "source": "api",
+      "model": "some-model",
+      "level": 2,
+      "due": 1763452800000,
+      "reviews": [
+        {
+          "at": 1763280000000,
+          "remembered": true
+        }
+      ],
+      "oneLine": "你分清了总效用和边际效用。",
+      "points": [
+        {
+          "label": "每多一份带来的满足在变少",
+          "status": "mastered",
+          "note": "用蛋糕的例子讲清楚了"
+        },
+        {
+          "label": "总效用仍可能上升",
+          "status": "partial",
+          "note": "提到了但没展开"
+        },
+        {
+          "label": "和价格的关系",
+          "status": "missing",
+          "note": ""
+        }
+      ],
+      "misconceptions": [
+        {
+          "said": "吃得越多越不满足",
+          "fix": "是每多一份的满足变少，总满足可能还在增加"
+        }
+      ],
+      "stances": [
+        {
+          "said": "水比钻石更有用",
+          "note": "理由是生存必需，这是价值判断"
+        },
+        {
+          "said": "没有注释的立场",
+          "note": ""
+        }
+      ],
+      "quiz": [
+        {
+          "q": "第三块蛋糕带来的满足比第一块少，说明什么？",
+          "options": [
+            "总效用下降",
+            "边际效用递减",
+            "价格太高"
+          ],
+          "answer": 1,
+          "why": "每多一份的满足在变少。"
+        }
+      ],
+      "terms": [
+        {
+          "term": "总效用",
+          "definition": "消费全部数量得到的满足之和",
+          "relation": "边际效用是它每多一份的变化"
+        },
+        {
+          "term": "无关系",
+          "definition": "只是一个词",
+          "relation": ""
+        }
+      ]
+    }
+  ],
+  "screen": "learn"
+}
