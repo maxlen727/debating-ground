@@ -12,14 +12,14 @@ class TokensTest {
     private val css = File(System.getProperty("web.styles")!!).readText()
 
     // 取出某一段里的 --名字: #RRGGBB
-    private fun colors(block: String): Map<String, Long> =
-        Regex("""--([a-z-]+):\s*#([0-9A-Fa-f]{6})\b""").findAll(block)
-            .associate { it.groupValues[1] to (0xFF000000 or it.groupValues[2].toLong(16)) }
+    private fun colors(block: String): Map<String, Long> = Regex("""--([a-z-]+):\s*#([0-9A-Fa-f]{6})\b""").findAll(block)
+        .associate { it.groupValues[1] to (0xFF000000 or it.groupValues[2].toLong(16)) }
 
     private val light = colors(css.substringAfter(":root {").substringBefore("}"))
     private val dark = colors(css.substringAfter("@media (prefers-color-scheme: dark)").substringAfter(":root {").substringBefore("}"))
 
     @Test fun lightTokensMatchTheWebStyles() = compare(light, LightTokens.byCssName(), "浅色")
+
     @Test fun darkTokensMatchTheWebStyles() = compare(dark, DarkTokens.byCssName(), "深色")
 
     @Test fun everyWebColorTokenExistsNatively() {

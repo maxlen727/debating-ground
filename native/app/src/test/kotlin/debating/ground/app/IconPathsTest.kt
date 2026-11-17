@@ -14,8 +14,12 @@ class IconPathsTest {
 
     @Test fun nativeIconsUseTheWebPaths() {
         val native = mapOf(
-            "back" to IconPaths.back, "chevron" to IconPaths.chevron, "learn" to IconPaths.learn,
-            "chat" to IconPaths.chat, "library" to IconPaths.library, "settings" to IconPaths.settings,
+            "back" to IconPaths.BACK,
+            "chevron" to IconPaths.CHEVRON,
+            "learn" to IconPaths.LEARN,
+            "chat" to IconPaths.CHAT,
+            "library" to IconPaths.LIBRARY,
+            "settings" to IconPaths.SETTINGS,
         )
         for ((name, path) in native) assertEquals("图标 $name", web[name] ?: error("ui.tsx 里没有图标 $name"), path)
     }

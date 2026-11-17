@@ -1,16 +1,16 @@
 package debating.ground.app
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.unit.dp
 import debating.ground.app.ui.AppScaffold
 import debating.ground.app.ui.theme.SibianTheme
@@ -44,17 +44,21 @@ class ScreenshotTest {
     }
 
     @Test fun phoneLight() = shoot("phone-light", dark = false)
+
     @Test fun phoneDark() = shoot("phone-dark", dark = true)
 
     @Config(qualifiers = "w320dp-h568dp-xxhdpi")
-    @Test fun narrowestPhone() = shoot("phone-320", dark = false, width = 320, height = 568)
+    @Test
+    fun narrowestPhone() = shoot("phone-320", dark = false, width = 320, height = 568)
 
     @Config(qualifiers = "w1280dp-h800dp-mdpi")
-    @Test fun tabletUsesTheRail() = shoot("tablet-light", dark = false, width = 1280, height = 800)
+    @Test
+    fun tabletUsesTheRail() = shoot("tablet-light", dark = false, width = 1280, height = 800)
 
     // 横着拿的手机：左侧导航，内容铺满右边
     @Config(qualifiers = "w844dp-h390dp-xxhdpi")
-    @Test fun landscapePhone() = shoot("phone-landscape", dark = false, width = 844, height = 390)
+    @Test
+    fun landscapePhone() = shoot("phone-landscape", dark = false, width = 844, height = 390)
 
     @Test fun tabsSwitchPages() {
         compose.setContent { SibianTheme(dark = false) { Box(Modifier.requiredSize(390.dp, 844.dp)) { AppScaffold() } } }
