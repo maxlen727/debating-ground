@@ -203,6 +203,109 @@ export async function generate(): Promise<Record<string, string>> {
       screen: 'learn',
     }),
   );
+  // 演示模式的标准答案：在几种典型的讨论状态下，每种用途各调用一次网页版的 demoRun，
+  // 记下调用前的讨论、payload、结果和调用后的 demoStep。原生版 DemoTest 用同样的输入，四样都要一致。
+  const { demoRun } = await import('../src/lib/demo.ts');
+  const cases: unknown[] = [];
+  async function record(purpose: string, payload: Record<string, unknown>) {
+    const before = structuredClone(S.getState().session);
+    let result: unknown;
+    try {
+      result = await demoRun(purpose as never, payload as never, 0);
+    } catch (e) {
+      result = { error: (e as Error).message };
+    }
+    cases.push({
+      purpose,
+      payload,
+      session: before,
+      result: result ?? null,
+      demoStep: S.getState().session?.demoStep ?? null,
+    });
+    // 每次调用都从同一个状态开始，互不影响
+    S.update(st => {
+      st.session = before;
+    });
+  }
+  const everyPurpose = async () => {
+    const s = S.getState().session!;
+    // 辩论没有角色、只走 debate 用途；讨论类模式才有 discuss
+    if (s.mode === 'debate') await record('debate', {});
+    else {
+      await record('discuss', { roleId: s.personas[0].id });
+      await record('discuss', { roleId: s.personas.at(-1)!.id, task: '换他来讲：学习者要当老师' });
+      await record('discuss', { roleId: s.personas[0].id, task: '学习者讲完了，请回到讨论' });
+    }
+    await record('point', {});
+    await record('term', { term: '稀缺性' });
+    await record('term', { term: '不在演示里的词' });
+    await record('hint', {});
+    for (const kind of ['unclear', 'example', 'fact']) await record('explain', { kind });
+    await record('reflect', { answer: '我的理解' });
+    await record('review', {});
+  };
+  async function situation(concept: string, mode: string, setup?: () => Promise<void> | void) {
+    for (const k of Object.keys(store)) delete store[k];
+    reset();
+    S.resetForTests();
+    S.update(s => {
+      s.config.concept = concept;
+      s.config.mode = mode as never;
+    });
+    await A.prepare(null, undefined, 'start');
+    await setup?.();
+    await everyPurpose();
+  }
+  await situation('机会成本', 'socratic');
+  await situation('机会成本', 'socratic', () => {
+    S.update(s => {
+      s.session!.demoStep = 5;
+      s.session!.covered = [0, 1, 2, 3, 4];
+    });
+  });
+  await situation('机会成本', 'socratic', () => {
+    S.update(s => {
+      s.session!.teaching = true;
+    });
+  });
+  await situation('边际效用', 'roundtable');
+  await situation('边际效用', 'socratic');
+  await situation('机会成本', 'canvas', async () => {
+    await A.send('少玩了一天');
+    const said = S.getState().session!.entries.findLast(e => e.kind === 'msg' && !e.human)!;
+    await A.openBranch(said.id, '稀缺性');
+  });
+  await situation('边际效用', 'canvas', async () => {
+    const said = S.getState().session!.entries.findLast(e => e.kind === 'msg' && !e.human)!;
+    await A.openBranch(said.id, '没听过的词');
+  });
+  await situation('机会成本', 'debate', async () => {
+    await A.send(
+      '我方认为，机会成本让人看清每个选择真正的代价，而上大学放弃的四年工资远比学费更大。这一点在县城尤其明显，很多同学都是这样算账的。',
+    );
+  });
+  await situation('边际效用', 'debate');
+  // 要点都列满了：演示模式里没有备选要点可提
+  await situation('机会成本', 'socratic', () => {
+    S.update(s => {
+      s.session!.keyPoints.push(
+        '机会成本不等于花掉的钱',
+        '时间也有机会成本',
+        '只比较最好的那个放弃项',
+      );
+    });
+  });
+  // 准备：每种模式、“机会成本”和别的概念、改过题目
+  for (const mode of ['socratic', 'roundtable', 'teach', 'debate', 'canvas'])
+    for (const concept of ['机会成本', '边际效用']) {
+      S.update(s => {
+        s.session = null;
+      });
+      await record('prepare', { concept, mode });
+    }
+  await record('prepare', { concept: '边际效用', mode: 'debate', topic: '学习者自己改过的辩题' });
+  out['demo-cases.json'] = JSON.stringify(cases) + '\n';
+
   // 原生测试读回存档时用同一个“现在”和时区
   out['meta.json'] = JSON.stringify({ now: NOW, timeZone: TIME_ZONE }, null, 2) + '\n';
   return out;
