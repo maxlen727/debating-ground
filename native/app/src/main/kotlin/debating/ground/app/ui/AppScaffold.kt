@@ -11,9 +11,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -28,9 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import debating.ground.app.ui.screens.DiscussScreen
 import debating.ground.app.ui.screens.LearnScreen
 import debating.ground.app.ui.screens.LibraryScreen
@@ -48,14 +44,12 @@ fun AppScaffold() {
         if (style == NavStyle.Rail) {
             Row(Modifier.fillMaxSize()) {
                 Rail(tab) { tab = it }
-                // 宽屏时内容不铺满：一列阅读宽度居中，和网页版一样
+                // 内容铺满导航右边的整块区域，不留两侧空白（和网页版宽屏时一样）。
                 // 左侧导航自己避开系统栏；内容这边避开状态栏、底部手势条和横屏时的刘海
                 Box(
-                    Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical + WindowInsetsSides.End)),
-                    contentAlignment = Alignment.TopCenter,
-                ) {
-                    Box(Modifier.widthIn(max = 720.dp).fillMaxHeight().background(LocalTokens.current.surface.color())) { Page(tab) }
-                }
+                    Modifier.fillMaxSize().background(LocalTokens.current.surface.color())
+                        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical + WindowInsetsSides.End)),
+                ) { Page(tab) }
             }
         } else {
             Scaffold(

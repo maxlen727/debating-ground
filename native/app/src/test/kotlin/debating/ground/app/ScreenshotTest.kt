@@ -52,6 +52,10 @@ class ScreenshotTest {
     @Config(qualifiers = "w1280dp-h800dp-mdpi")
     @Test fun tabletUsesTheRail() = shoot("tablet-light", dark = false, width = 1280, height = 800)
 
+    // 横着拿的手机：左侧导航，内容铺满右边
+    @Config(qualifiers = "w844dp-h390dp-xxhdpi")
+    @Test fun landscapePhone() = shoot("phone-landscape", dark = false, width = 844, height = 390)
+
     @Test fun tabsSwitchPages() {
         compose.setContent { SibianTheme(dark = false) { Box(Modifier.requiredSize(390.dp, 844.dp)) { AppScaffold() } } }
         compose.onNodeWithText("今天想弄懂\n什么？").assertIsDisplayed()

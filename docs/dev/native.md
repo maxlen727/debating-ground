@@ -33,7 +33,7 @@ cd native
 
 `ScreenshotTest` 用 Robolectric 在 JVM 里渲染页面，存成图片到 `app/build/screenshots/`。目前覆盖这几种情况：
 
-- 手机 390dp（浅色、深色）
+- 手机 390dp（浅色、深色）、横着拿的手机 844×390dp
 - 最窄的 320dp
 - 平板 1280dp
 - 切换标签
