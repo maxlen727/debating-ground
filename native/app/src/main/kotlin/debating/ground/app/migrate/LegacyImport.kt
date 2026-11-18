@@ -8,7 +8,7 @@ import java.io.File
 
 // 从套壳版（Capacitor）搬知识库：旧 App 的数据在 WebView 的 localStorage 里（来源 https://localhost），
 // 原生版用同一个包名升级上来以后，那份数据还在手机上。第一次启动时读出来，经过和网页版一样的结构检查，写进原生存储。
-// 规则（#104）：原生存储里已经有数据就不搬、不覆盖；读成功才记下“已搬过”，失败了下次启动再试；旧数据从不清除。
+// 规则（#104）：原生存储里已经有用户自己的东西（卡片、讨论）就不搬、不覆盖；读成功才记下“已搬过”，失败了下次启动再试；旧数据从不清除。
 
 /** 旧 App 留下的两份数据（都可能没有）。 */
 data class LegacyData(val v3: String?, val v2: String?)
@@ -25,12 +25,22 @@ class LegacyImport(private val dir: File, private val source: LegacySource, priv
     private val storage = Storage(dir)
     private val marker get() = File(dir, "legacy-imported")
 
-    /** 还要不要搬：没搬过，而且原生存储里还没有数据。 */
-    fun pending(): Boolean = !marker.exists() && storage.read() == null
+    /**
+     * 原生存储里有没有用户自己的东西（知识卡片、讨论、准备好的计划）。只有设置不算：
+     * 第一次没搬成时用户可能已经改过设置，原生存档就写出来了，下次启动仍然要能重试。
+     */
+    private fun nativeHasData(): Boolean {
+        val raw = storage.read() ?: return false
+        val s = runCatching { loadState(raw, null, now()) }.getOrNull() ?: return true
+        return s.library.isNotEmpty() || s.session != null || s.plan != null
+    }
+
+    /** 还要不要搬：没搬过，而且原生存储里还没有用户自己的东西。 */
+    fun pending(): Boolean = !marker.exists() && !nativeHasData()
 
     suspend fun run(): Imported? {
         if (marker.exists()) return null
-        if (storage.read() != null) {
+        if (nativeHasData()) {
             mark()
             return null
         }

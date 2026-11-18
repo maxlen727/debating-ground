@@ -56,6 +56,9 @@ class LegacyImportTest {
         // 没读成：不记“已搬过”，也不写原生存储
         assertTrue(LegacyImport(dir, { null }).pending())
         assertNull(Storage(dir).read())
+        // 这期间用户改了设置，原生存档写出来了：只有设置不算数据，下次照样重试
+        Storage(dir).write(SibianJson.encodeToString(SavedState.serializer(), SavedState()))
+        assertTrue(LegacyImport(dir, { null }).pending())
         val result = LegacyImport(dir, { LegacyData(fixture("rich-library.saved.json"), null) }).run()
         assertTrue(result!!.cards > 0)
     }
