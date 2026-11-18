@@ -1,0 +1,162 @@
+package debating.ground.app.ui.screens
+
+import android.content.Intent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
+import debating.ground.app.AppModel
+import debating.ground.app.flow.AppState
+import debating.ground.app.ui.BusyStrip
+import debating.ground.app.ui.ErrorBanner
+import debating.ground.app.ui.FinePrint
+import debating.ground.app.ui.GhostButton
+import debating.ground.app.ui.Input
+import debating.ground.app.ui.Panel
+import debating.ground.app.ui.PrimaryButton
+import debating.ground.app.ui.QuietLink
+import debating.ground.app.ui.SectionLabel
+import debating.ground.app.ui.Segmented
+import debating.ground.app.ui.StatusTag
+import debating.ground.app.ui.TopBar
+import debating.ground.app.ui.theme.LocalTokens
+import debating.ground.app.ui.theme.TextStyles
+import debating.ground.app.ui.theme.color
+
+// 设置：AI 来源。和网页版 src/screens/Settings.tsx 在 App 里的样子一致：演示模式或自己部署的后端。
+// 直接连接服务商在 M5 加入；朗读和语音输入不在原生版第一版里。
+
+private const val DOCS = "https://maxlen727.github.io/debating-ground/guide/self-host"
+
+@Composable
+fun SettingsScreen(st: AppState, model: AppModel) {
+    val t = LocalTokens.current
+    val l = model.learning
+    val busy = st.ui.busy != null
+    val mode = if (st.config.aiMode == "remote") "remote" else "demo"
+    Column(Modifier.fillMaxSize()) {
+        TopBar("设置", "AI 来源与连接")
+        Column(
+            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Panel {
+                SectionLabel("AI 来源")
+                Segmented(listOf("demo" to "演示模式", "remote" to "我的后端"), mode, "AI 来源", enabled = !busy) { id ->
+                    l.editConfig { it.copy(aiMode = id) }
+                }
+                FinePrint(
+                    if (mode == "demo") {
+                        "演示模式用本地模板走完整个流程，不需要网络和密钥。"
+                    } else {
+                        "连接你自己部署在 Cloudflare 上的思辨场后端。AI 服务商的密钥存在后端里，这台设备只需要后端地址和访问口令。"
+                    },
+                )
+            }
+            if (mode == "remote") RemotePanel(st, model)
+            Panel {
+                SectionLabel("关于格式")
+                Text(
+                    "讨论准备和理解复盘要求模型返回 JSON。较小的模型偶尔不按格式回答；遇到“没有按要求返回结构化结果”时，重试一次或换一个更强的模型。失败的请求不会改变讨论进度，也不会自动换成模板。",
+                    style = TextStyles.small,
+                    color = t.muted.color(),
+                )
+            }
+        }
+        if (st.ui.error.isNotEmpty() || busy) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ErrorBanner(st.ui.error) { l.clearError() }
+                BusyStrip(st.ui.busy) { l.cancelAI() }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RemotePanel(st: AppState, model: AppModel) {
+    val t = LocalTokens.current
+    val l = model.learning
+    val context = LocalContext.current
+    var url by rememberSaveable { mutableStateOf(st.config.remote.url) }
+    // 口令只在输入框里停一下：连接后清空，已保存的不回显
+    var password by rememberSaveable { mutableStateOf("") }
+    val busy = st.ui.busy != null
+    val saved = st.config.remote.url.isNotEmpty()
+    val status = st.ui.remote
+    Panel {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) { SectionLabel("连接我的后端") }
+            StatusTag(
+                if (status.verified) {
+                    "已连接，测试通过"
+                } else if (saved) {
+                    "已保存，未验证"
+                } else {
+                    "尚未连接"
+                },
+                if (status.verified) {
+                    "ok"
+                } else if (saved) {
+                    "warn"
+                } else {
+                    ""
+                },
+            )
+        }
+        if (status.model.isNotEmpty()) {
+            Text("后端使用的模型：${status.model}", style = TextStyles.small.copy(fontWeight = FontWeight.Medium), color = t.ink.color())
+        }
+        SectionLabel("后端地址")
+        Input(
+            url,
+            {
+                url = it
+            },
+            "后端地址",
+            placeholder = "https://debating-ground-api.你的子域.workers.dev",
+            keyboard = KeyboardOptions(
+                keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri,
+            ),
+        )
+        SectionLabel("访问口令")
+        Input(password, { password = it }, "访问口令", placeholder = if (saved) "已保存，不改就留空" else "部署时设置的 ACCESS_PASSWORD", secret = true)
+        Text(
+            "“连接并测试”会让后端调用一次模型，可能产生少量费用。后端地址和访问口令只保存在这台设备上，不会写进讨论记录、知识库或导出文件。",
+            style = TextStyles.small,
+            color = t.muted.color(),
+        )
+        QuietLink("还没有后端？看看怎么自己部署（免费额度就够用）", {
+            context.startActivity(Intent(Intent.ACTION_VIEW, DOCS.toUri()))
+        })
+        PrimaryButton("连接并测试", {
+            model.run {
+                if (connectRemote(url, password)) password = ""
+            }
+        }, Modifier.fillMaxWidth(), enabled = !busy)
+        if (saved) {
+            GhostButton("从这台设备上删除", {
+                l.forgetRemote()
+                url = ""
+                password = ""
+            }, Modifier.fillMaxWidth(), enabled = !busy)
+        }
+    }
+}

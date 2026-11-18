@@ -46,6 +46,9 @@ class Ai(
 
     val busy get() = current.get() != null
 
+    /** 这份设置对应的后端（设置页的“连接并测试”用）。 */
+    fun remote(config: Config): RemoteBackend = remoteFor(config)
+
     /** 取消正在进行的请求：讨论进度不变，显示“已取消”。 */
     fun cancel() {
         cancelled = true

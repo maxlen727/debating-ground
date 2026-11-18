@@ -94,7 +94,7 @@ class ScreenshotTest {
         compose.setContent { Frame(dark = false, width = 390, height = 844) }
         compose.onNodeWithText("今天想弄懂\n什么？").assertIsDisplayed()
         compose.onNodeWithText("知识库").performClick()
-        compose.onNodeWithText("讨论结束后的复盘会存成知识卡片，按间隔提醒你复习。").assertIsDisplayed()
+        compose.onNodeWithText("知识库还是空的").assertIsDisplayed()
         save("phone-library")
     }
 
@@ -210,5 +210,46 @@ class ScreenshotTest {
         awaitState { it.ui.screen == "prepare" && it.ui.busy == null }
         compose.onNodeWithText("共 ", substring = true).performScrollTo()
         save("phone-prepare-debate")
+    }
+
+    // 讨论两句后结束：复盘页
+    private fun finishOne(lines: List<String>) {
+        startAndTalk(lines)
+        model.run { finish() }
+        awaitState { it.ui.busy == null && it.session!!.review != null }
+    }
+
+    @Test
+    fun reviewPage() {
+        compose.setContent { Frame(dark = false, width = 390, height = 844) }
+        finishOne(listOf("机会成本就是做一件事放弃的另一件事最好的价值。", "比如我周末去打工，就放弃了在家复习的收获。"))
+        compose.onNodeWithText("要点掌握情况").assertIsDisplayed()
+        save("phone-review")
+    }
+
+    // 知识库和卡片（深色）：做一道检验题
+    @Test
+    fun libraryAndCardDark() {
+        compose.setContent { Frame(dark = true, width = 390, height = 844) }
+        finishOne(listOf("机会成本就是做一件事放弃的另一件事最好的价值。"))
+        model.learning.go("library")
+        compose.waitForIdle()
+        compose.onNodeWithText("全部 1").performClick()
+        save("phone-library-dark")
+        val card = model.state.value.library.first()
+        model.learning.openCard(card.id)
+        if (card.quiz.isNotEmpty()) model.learning.pickAnswer("c:${card.id}", 0, (card.quiz[0].answer + 1) % card.quiz[0].options.size)
+        compose.waitForIdle()
+        compose.onNodeWithText("这次回顾得怎么样？").assertIsDisplayed()
+        save("phone-card-dark")
+    }
+
+    @Test
+    fun settingsRemote() {
+        compose.setContent { Frame(dark = false, width = 390, height = 844) }
+        compose.onNodeWithText("设置").performClick()
+        compose.onNodeWithText("我的后端").performClick()
+        compose.onNodeWithText("连接并测试").assertExists()
+        save("phone-settings")
     }
 }

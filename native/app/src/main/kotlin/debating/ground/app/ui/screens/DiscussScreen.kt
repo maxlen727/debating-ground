@@ -1050,27 +1050,3 @@ private fun FinishSheet(s: Session, model: AppModel) {
         }
     }
 }
-
-// 复盘页在 M4d 加入，先说清楚现在能做什么
-@Composable
-fun ReviewPlaceholder(st: AppState, model: AppModel) {
-    val t = LocalTokens.current
-    val l = model.learning
-    Column(Modifier.fillMaxSize()) {
-        TopBar("复盘", st.session?.concept, onBack = { l.goBack() })
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            val busy = st.ui.busy
-            Text(
-                when {
-                    busy != null -> "$busy…"
-                    st.session?.review != null -> "复盘已经生成，存进了知识库。复盘页会在下一个开发版本里加入。"
-                    else -> "这次讨论没有你的发言，没有可以复盘的内容。"
-                },
-                style = TextStyles.body.copy(lineHeight = LINE_HEIGHT_SERIF.em),
-                color = t.ink.color(),
-            )
-            ErrorBanner(st.ui.error) { l.clearError() }
-            if (st.session != null) SecondaryButton("回到讨论", { l.go("session") })
-        }
-    }
-}

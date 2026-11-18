@@ -1,7 +1,9 @@
 package debating.ground.app.flow
 
 import debating.ground.app.ai.Ai
+import debating.ground.app.ai.AiFailure
 import debating.ground.app.ai.AiOutcome
+import debating.ground.app.ai.checkRemoteUrl
 import debating.ground.app.data.Branch
 import debating.ground.app.data.Card
 import debating.ground.app.data.ChatMessage
@@ -16,6 +18,7 @@ import debating.ground.app.data.PointProposal
 import debating.ground.app.data.Previous
 import debating.ground.app.data.QuizItem
 import debating.ground.app.data.Reflection
+import debating.ground.app.data.Remote
 import debating.ground.app.data.ReviewRecord
 import debating.ground.app.data.SavedState
 import debating.ground.app.data.SeatConfig
@@ -27,6 +30,11 @@ import debating.ground.app.data.Stance
 import debating.ground.app.data.SystemLine
 import debating.ground.app.data.TermCard
 import debating.ground.app.data.schedule
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
@@ -54,7 +62,13 @@ data class Ui(
     val openCard: String? = null,
     val term: TermView? = null,
     val context: ContextAsk? = null,
+    // 自己部署的后端：这次打开 App 以后有没有测试通过、用的是什么模型。不存档（和网页版 ai.remoteVerified 一样）
+    val remote: RemoteStatus = RemoteStatus(),
+    // 检验题选了哪个选项：键是 "s:讨论 id" 或 "c:卡片 id"，值是题号 → 选项。不存档
+    val quiz: Map<String, Map<Int, Int>> = emptyMap(),
 )
+
+data class RemoteStatus(val verified: Boolean = false, val model: String = "")
 
 data class Explain(val kind: String, val label: String, val quote: String, val text: String)
 
@@ -77,6 +91,8 @@ data class AppState(
 data class Live(val id: String, val kind: String, val label: String, val text: String, val who: String? = null)
 
 const val MAX_POINTS = 6
+private const val CONNECT_TIMEOUT_MS = 100_000L
+
 const val TEACHING = "讲给伙伴听"
 const val STUDENT = "当学生"
 private const val BRANCH_TOPIC_MAX = 40
@@ -156,7 +172,10 @@ class Learning(
         }
     }
 
-    fun cancelAI() = ai.cancel()
+    fun cancelAI() {
+        ai.cancel()
+        connecting?.cancel()
+    }
 
     /* ---------- 准备 ---------- */
 
@@ -855,11 +874,71 @@ class Learning(
                         it
                     }
                 },
-                ui = st.ui.copy(openCard = null, screen = "library"),
+                ui = st.ui.copy(openCard = null, screen = "library", quiz = st.ui.quiz - "c:$id"),
             )
         }
         toast("下次复习：${next.days} 天后")
     }
+
+    /* ---------- 设置：自己部署的后端 ---------- */
+
+    private var connecting: Job? = null
+
+    /**
+     * 连接并测试：先保存地址和口令，再读后端状态、让后端调用一次模型。和网页版 connectRemote 一样，
+     * 测试通过才切换到“我的后端”；失败时地址和口令仍然保存，显示原因。口令留空表示沿用已保存的。
+     */
+    suspend fun connectRemote(rawUrl: String, password: String): Boolean {
+        if (state.ui.busy != null) return false
+        val pw = password.ifEmpty { state.config.remote.password }
+        if (rawUrl.isBlank() || pw.isEmpty()) {
+            toast("请填写后端地址和访问口令。")
+            return false
+        }
+        val url = try {
+            checkRemoteUrl(rawUrl)
+        } catch (e: AiFailure) {
+            ui { it.copy(error = e.message.orEmpty()) }
+            return false
+        }
+        update { it.copy(config = it.config.copy(remote = Remote(url, pw)), ui = it.ui.copy(busy = "正在连接后端并测试", error = "", remote = RemoteStatus())) }
+        connecting = currentCoroutineContext()[Job]
+        val error = try {
+            val backend = ai.remote(state.config)
+            val status = withTimeout(CONNECT_TIMEOUT_MS) {
+                backend.status().also { backend.test() }
+            }
+            update { it.copy(config = it.config.copy(aiMode = "remote"), ui = it.ui.copy(busy = null, remote = RemoteStatus(true, status.model))) }
+            toast("连接成功，可以开始学习。")
+            return true
+        } catch (e: TimeoutCancellationException) {
+            "后端很久没有回应，请稍后再试。"
+        } catch (e: CancellationException) {
+            ui { it.copy(busy = null) }
+            toast("已取消。")
+            throw e
+        } catch (e: AiFailure) {
+            e.message.orEmpty()
+        } finally {
+            connecting = null
+        }
+        ui { it.copy(busy = null, error = error) }
+        return false
+    }
+
+    /** 从这台设备上删除后端地址和访问口令；正在用它的话换回演示模式。 */
+    fun forgetRemote() {
+        update {
+            it.copy(
+                config = it.config.copy(remote = Remote(), aiMode = if (it.config.aiMode == "remote") "demo" else it.config.aiMode),
+                ui = it.ui.copy(remote = RemoteStatus()),
+            )
+        }
+        toast("已从这台设备上删除后端地址和访问口令。")
+    }
+
+    /** 检验题选一个选项（选过就定了）。 */
+    fun pickAnswer(key: String, q: Int, o: Int) = ui { it.copy(quiz = it.quiz + (key to (it.quiz[key].orEmpty() + (q to o)))) }
 
     /** 再讨论一次：带上上次的一句话和没掌握的地方。 */
     suspend fun discussAgain(card: Card) {
