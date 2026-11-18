@@ -10,6 +10,14 @@ val MODE_NAMES = mapOf(
     "canvas" to "知识画布",
 )
 
+/** 辩论环节的规则（和网页版 shared/modes.ts 的 STAGE_KINDS 一致，DataTest 比对）。 */
+val STAGE_KINDS = linkedMapOf(
+    "opening" to "立论 · 双方一辩",
+    "cross" to "质询 · 问答配对",
+    "free" to "自由辩论 · 双方轮替",
+    "closing" to "总结 · 双方末辩",
+)
+
 val STATUS_LABEL = mapOf("mastered" to "已掌握", "partial" to "还模糊", "missing" to "没讲到")
 
 fun modeName(mode: String) = MODE_NAMES[mode] ?: mode

@@ -70,6 +70,7 @@ AI 层在 `ai/`。首版提供两种来源，直连服务商在 M5：
 - 当前页面由 `state.ui.screen` 决定，和网页版一样；“讨论”“准备”“卡片”是沉浸页，不显示导航。返回键交给流程层的 `goBack()`。
 - 通用部件在 `ui/Components.kt`，对应网页版 `styles.css` 的同名样式（`.primary`、`.chip`、`.mode`、`.banner`、`.dock`……）。
 - 讨论页在 `ui/screens/DiscussScreen.kt`。讨论记录倒着排（`reverseLayout`），AI 逐字生成时自动贴着底部。逐字显示在 `ui/Reveal.kt`，生成中的气泡和完成后的正式发言用同一个 id 记进度，衔接时不会从头再写；关掉动效时直接显示全文。底部面板在 `ui/Sheet.kt`，宽屏时变成居中的对话框。
+- 知识画布的部件在 `ui/screens/CanvasParts.kt`，分支图的布局算法（`data/Canvas.kt` 的 `graph()`）和网页版 `graphOf` 一样，`FlowTest` 在画布剧本的每一步逐字比对；辩论台面、空讲台和双方阵容在 `ui/screens/DebateParts.kt`。
 - 截图测试里，AI 调用在后台线程、结果投递回主线程。Robolectric 下 `waitUntil` 不处理这些投递，要用 `ScreenshotTest` 里的 `awaitState`：每次让真实时间过去一点，再让界面空闲一次。
 
 ## 代码检查

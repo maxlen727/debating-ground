@@ -13,6 +13,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
 import debating.ground.app.ui.AppScaffold
 import debating.ground.app.ui.LocalMotion
@@ -167,5 +168,47 @@ class ScreenshotTest {
         compose.setContent { Frame(dark = false, width = 1280, height = 800) }
         startAndTalk(listOf("机会成本就是做一件事放弃的另一件事最好的价值。"))
         save("tablet-discuss")
+    }
+
+    // 知识画布：从 AI 的话里展开一个分支，在分支里聊一句，打开分支图
+    @Test
+    fun canvasBranchAndGraph() {
+        compose.setContent { Frame(dark = false, width = 390, height = 844) }
+        model.learning.setMode("canvas")
+        startAndTalk(listOf("少玩了一天"))
+        val from = model.state.value.session!!.entries.last { it is debating.ground.app.data.ChatMessage && it.human != true }.id
+        model.run { openBranch(from, "稀缺性") }
+        awaitState { it.ui.busy == null && it.session!!.at != null && it.session!!.entries.size > 4 }
+        compose.onNodeWithText("带回主干").assertExists()
+        save("phone-canvas-branch")
+        model.learning.openSheet("tree")
+        compose.waitForIdle()
+        compose.onNodeWithText("分支图").assertIsDisplayed()
+        save("phone-canvas-graph")
+    }
+
+    // 辩论：台面、赛程条和下一位的空讲台
+    @Test
+    fun debateBoardDark() {
+        compose.setContent { Frame(dark = true, width = 390, height = 844) }
+        model.learning.setMode("debate")
+        compose.onNodeWithText("开始讨论").performClick()
+        awaitState { it.session != null && it.ui.busy == null && it.ui.screen == "session" }
+        model.run { send("我方认为，上大学最大的成本不是学费，而是放弃的四年工资和工作经验。") }
+        awaitState { it.ui.busy == null && it.session!!.cursor >= 1 }
+        model.run { generateSeat() }
+        awaitState { it.ui.busy == null && it.session!!.cursor >= 2 }
+        save("phone-debate-dark")
+    }
+
+    // 辩论的准备页：席位人数和比赛流程
+    @Test
+    fun prepareDebate() {
+        compose.setContent { Frame(dark = false, width = 390, height = 844) }
+        model.learning.setMode("debate")
+        compose.onNodeWithText("先看看题目和角色").performClick()
+        awaitState { it.ui.screen == "prepare" && it.ui.busy == null }
+        compose.onNodeWithText("共 ", substring = true).performScrollTo()
+        save("phone-prepare-debate")
     }
 }

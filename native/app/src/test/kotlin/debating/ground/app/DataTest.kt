@@ -73,5 +73,11 @@ class DataTest {
         assertEquals(order, debating.ground.app.data.MODE_ORDER)
         val status = Regex("""(\w+): '([^']+)'""").findAll(web.substringAfter("STATUS_LABEL")).associate { it.groupValues[1] to it.groupValues[2] }
         assertEquals(status, STATUS_LABEL)
+        val kinds = Regex("""(\w+): '([^']+)'""").findAll(web.substringAfter("STAGE_KINDS").substringBefore("};")).associate {
+            it.groupValues[1] to
+                it.groupValues[2]
+        }
+        assertEquals(kinds, debating.ground.app.data.STAGE_KINDS)
+        assertEquals(kinds.keys.toList(), debating.ground.app.data.STAGE_KINDS.keys.toList())
     }
 }
