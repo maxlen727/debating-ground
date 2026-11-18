@@ -49,7 +49,14 @@
   --lh-sans: 1.65;
   --lh-serif: 1.85;
   --r: 14px;
-  --tab-h: 62px;
+  /* 底部导航是悬浮的胶囊：胶囊高 --tab-h，上下各留 --nav-gap；页面底部要让出 --nav-clear */
+  --tab-h: 64px;
+  --nav-gap: 12px;
+  --nav-clear: calc(var(--tab-h) + var(--nav-gap) * 2 + env(safe-area-inset-bottom, 0px));
+  /* 悬浮的东西用“半透明磨砂”：半透明的卡片色加模糊，背景氛围透得出来 */
+  --glass-bg: color-mix(in srgb, var(--surface) 72%, transparent);
+  --glass-line: color-mix(in srgb, var(--line) 85%, transparent);
+  --float-shadow: 0 1px 2px rgb(24 36 31 / 6%), 0 10px 30px rgb(24 36 31 / 12%);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -83,6 +90,7 @@
     --bad: #ee9a86;
     --bad-soft: #3d231c;
     --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 8px 24px rgb(0 0 0 / 30%);
+    --float-shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 10px 30px rgb(0 0 0 / 40%);
     color-scheme: dark;
   }
 }
@@ -287,7 +295,7 @@ code {
   margin: 0 auto;
   min-height: 100dvh;
   background: transparent;
-  padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px));
+  padding-bottom: var(--nav-clear);
 }
 .app.immersive {
   padding-bottom: 0;
@@ -295,7 +303,7 @@ code {
 .screen {
   display: flex;
   flex-direction: column;
-  min-height: calc(100dvh - var(--tab-h) - env(safe-area-inset-bottom, 0px));
+  min-height: calc(100dvh - var(--nav-clear));
 }
 .immersive .screen {
   min-height: 100dvh;
@@ -350,22 +358,26 @@ code {
   padding-right: 4px;
 }
 
+/* 底部导航：悬浮的磨砂胶囊，左右和底部都留出空隙，页面内容可以滚到它下面 */
 .tabbar {
   position: fixed;
   z-index: 30;
-  bottom: 0;
+  bottom: calc(var(--nav-gap) + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
-  width: 100%;
-  max-width: 520px;
+  width: calc(100% - 32px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+  max-width: 440px;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  height: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px));
-  padding: 6px max(8px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px)
-    max(8px, env(safe-area-inset-left, 0px));
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  backdrop-filter: blur(14px);
-  border-top: 1px solid var(--line);
+  gap: 4px;
+  height: var(--tab-h);
+  padding: 6px;
+  border-radius: 32px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(18px) saturate(1.3);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  border: 1px solid var(--glass-line);
+  box-shadow: var(--float-shadow);
 }
 .tabbar button {
   display: flex;
@@ -375,10 +387,14 @@ code {
   gap: 2px;
   font-size: 11px;
   color: var(--muted);
-  border-radius: 12px;
+  border-radius: 26px;
+  transition:
+    background 0.25s,
+    color 0.25s;
 }
 .tabbar button.active {
-  color: var(--brand);
+  background: var(--lit);
+  color: var(--lit-ink);
   font-weight: 650;
 }
 .tab-icon {
@@ -399,24 +415,69 @@ code {
   text-align: center;
 }
 
+/* 底部操作：不垫满宽的底色，按钮自己悬浮在页面上。身后是一层渐隐的磨砂，
+   内容滚到这里会变模糊、变淡，不和按钮上的字叠在一起 */
 .dock {
   position: sticky;
-  bottom: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--tab-h) + var(--nav-gap) + env(safe-area-inset-bottom, 0px));
   z-index: 15;
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 10px max(16px, env(safe-area-inset-right, 0px)) 12px
     max(16px, env(safe-area-inset-left, 0px));
+}
+.dock::before,
+.composer::before {
+  content: '';
+  position: absolute;
+  inset: -28px 0 0;
+  z-index: -1;
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   background: linear-gradient(
     to top,
-    var(--surface) 75%,
-    color-mix(in srgb, var(--surface) 0%, transparent)
+    color-mix(in srgb, var(--page) 55%, transparent),
+    transparent
   );
+  mask-image: linear-gradient(to top, #000 55%, transparent);
 }
 .immersive .dock {
   bottom: 0;
   padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}
+/* 悬浮的按钮：主按钮带一圈品牌色的淡投影，其他的用磨砂底 */
+.dock .primary,
+.composer .primary,
+.composer .send {
+  box-shadow: 0 8px 22px -8px color-mix(in srgb, var(--brand) 70%, transparent);
+}
+.dock .secondary,
+.dock .quiet-link,
+.dock .busy-strip,
+.composer .tool,
+.composer .turn-banner,
+.composer-done,
+.composer .input-row textarea,
+.composer .mic {
+  background: var(--glass-bg);
+  backdrop-filter: blur(18px) saturate(1.3);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  border: 1px solid var(--glass-line);
+  box-shadow: var(--float-shadow);
+}
+/* 工具条能横向滚动，投影会被裁成方框：工具只用磨砂底和细边 */
+.composer .tool {
+  box-shadow: none;
+}
+.dock .quiet-link {
+  border-radius: 22px;
+  padding-inline: 18px;
+}
+.dock .busy-strip {
+  border-radius: 14px;
+  padding: 4px 4px 4px 14px;
 }
 .dock.slim:empty {
   display: none;
@@ -726,7 +787,7 @@ select:focus {
   z-index: 60;
   left: 50%;
   width: max-content;
-  bottom: calc(var(--tab-h) + 20px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--nav-clear) + 8px);
   transform: translate(-50%, 12px);
   max-width: min(90vw, 440px);
   background: var(--ink);
@@ -1574,14 +1635,12 @@ select:focus {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px max(12px, env(safe-area-inset-right, 0px))
+  padding: 6px max(12px, env(safe-area-inset-right, 0px))
     calc(10px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
-  background: color-mix(in srgb, var(--surface) 94%, transparent);
-  backdrop-filter: blur(12px);
-  border-top: 1px solid var(--line);
 }
 .composer-done {
-  padding-block: 4px;
+  padding: 6px 6px 6px 16px;
+  border-radius: 24px;
 }
 .composer-done > button {
   flex: none;
@@ -1593,6 +1652,10 @@ select:focus {
   gap: 6px;
   font-size: 13px;
   padding: 0 4px;
+}
+.composer .turn-banner {
+  padding: 6px 12px;
+  border-radius: 16px;
 }
 .chat-banner {
   color: var(--muted);
@@ -3343,13 +3406,21 @@ body::after {
     gap: 6px;
     padding: calc(24px + env(safe-area-inset-top, 0px)) 8px
       calc(12px + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
-    border-top: 0;
+    /* 左侧导航不做胶囊：贴着左边，保持原来的样子 */
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
   }
   .tabbar button {
     font-size: 12px;
   }
   .tabbar button.active {
     background: color-mix(in srgb, var(--brand) 9%, transparent);
+    color: var(--brand);
+  }
+  .tabbar button {
+    border-radius: 12px;
   }
   .dock {
     bottom: 0;
@@ -3444,6 +3515,12 @@ body::after {
     background: none;
     padding-top: 0;
   }
+  .learn .dock::before {
+    display: none;
+  }
+  .learn .dock .quiet-link {
+    align-self: flex-start;
+  }
   .learn .dock > * {
     width: calc((100% - 40px) * 5 / 11);
   }
@@ -3489,6 +3566,9 @@ body::after {
   .dock {
     position: static;
     background: none;
+  }
+  .dock::before {
+    display: none;
   }
   /* 输入框和工具排在同一行：宽度够，高度省下来给讨论 */
   .composer {
