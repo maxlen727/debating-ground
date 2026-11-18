@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicReference
 
 // 界面和学习流程之间的一层：持有状态，状态一变就在后台写存档，启动时读回。
 // 流程代码（flow/）不碰界面和存储，界面只读状态、调用这里的操作。
@@ -51,9 +52,15 @@ class AppModel(dir: File, private val scope: CoroutineScope = CoroutineScope(Sup
         )
     }
 
+    // 打字时每个字都会改状态：序列化也放到写存档的线程上，并且只写最新的一份，前面没来得及写的直接跳过
+    private val pending = AtomicReference<AppState?>(null)
+
     private fun save(st: AppState) {
-        val text = SibianJson.encodeToString(SavedState.serializer(), st.saved())
-        writer.execute { runCatching { storage.write(text) } }
+        if (pending.getAndSet(st) != null) return
+        writer.execute {
+            val latest = pending.getAndSet(null) ?: return@execute
+            runCatching { storage.write(SibianJson.encodeToString(SavedState.serializer(), latest.saved())) }
+        }
     }
 
     /** 在界面的协程里跑一个操作（发言、准备……）。 */

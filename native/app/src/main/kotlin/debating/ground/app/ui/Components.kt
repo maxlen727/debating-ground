@@ -40,6 +40,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import debating.ground.app.ui.theme.LocalTokens
@@ -60,37 +61,43 @@ private fun pressScale(source: MutableInteractionSource, enabled: Boolean): Floa
 
 /** 主按钮（.primary）：深绿底，按下时轻轻缩一点。 */
 @Composable
-fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, small: Boolean = false) {
     val t = LocalTokens.current
     val src = remember { MutableInteractionSource() }
     Box(
         modifier
-            .heightIn(min = 48.dp)
+            .heightIn(min = if (small) 40.dp else 48.dp)
             .scale(pressScale(src, enabled))
             .alpha(if (enabled) 1f else 0.45f)
             .background(t.brand.color(), RoundedCornerShape(R))
             .clickable(src, null, enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 20.dp),
+            .padding(horizontal = if (small) 14.dp else 20.dp),
         contentAlignment = Alignment.Center,
-    ) { Text(text, color = t.brandInk.color(), style = TextStyles.body.copy(fontWeight = FontWeight.SemiBold)) }
+    ) {
+        Text(
+            text,
+            color = t.brandInk.color(),
+            style = TextStyles.body.copy(fontWeight = FontWeight.SemiBold, fontSize = if (small) TextSize.sm else TextSize.md),
+        )
+    }
 }
 
 /** 次按钮（.secondary）：白底描边。 */
 @Composable
-fun SecondaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+fun SecondaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, small: Boolean = false) {
     val t = LocalTokens.current
     val src = remember { MutableInteractionSource() }
     Box(
         modifier
-            .heightIn(min = 48.dp)
+            .heightIn(min = if (small) 40.dp else 48.dp)
             .scale(pressScale(src, enabled))
             .alpha(if (enabled) 1f else 0.45f)
             .background(t.raised.color(), RoundedCornerShape(R))
             .border(1.dp, t.line.color(), RoundedCornerShape(R))
             .clickable(src, null, enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 20.dp),
+            .padding(horizontal = if (small) 14.dp else 20.dp),
         contentAlignment = Alignment.Center,
-    ) { Text(text, color = t.ink.color(), style = TextStyles.body.copy(fontWeight = FontWeight.SemiBold)) }
+    ) { Text(text, color = t.ink.color(), style = TextStyles.body.copy(fontWeight = FontWeight.SemiBold, fontSize = if (small) TextSize.sm else TextSize.md)) }
 }
 
 /** 文字按钮（.ghost）：品牌色字，可选图标。[small] 对应 .small。 */
@@ -322,12 +329,29 @@ fun TopBar(title: String, sub: String? = null, onBack: (() -> Unit)? = null, rig
             }
         }
         Column(Modifier.weight(1f).padding(horizontal = 6.dp)) {
-            Text(title, style = TextStyles.title, color = t.ink.color(), maxLines = 1, modifier = Modifier.semantics { heading() })
-            if (sub != null) Text(sub, style = TextStyles.small.copy(fontSize = 12.sp), color = t.muted.color(), maxLines = 1)
+            Text(
+                title,
+                style = TextStyles.title,
+                color = t.ink.color(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.semantics {
+                    heading()
+                },
+            )
+            if (sub != null) Text(sub, style = TextStyles.small.copy(fontSize = 12.sp), color = t.muted.color(), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         right()
     }
 }
+
+/** 和 CSS 的 color-mix(in srgb, this [part], other) 一样：按比例混两种颜色。 */
+fun Color.mix(part: Float, other: Color) = Color(
+    red = red * part + other.red * (1 - part),
+    green = green * part + other.green * (1 - part),
+    blue = blue * part + other.blue * (1 - part),
+    alpha = alpha * part + other.alpha * (1 - part),
+)
 
 private fun Color.compositeOver(bg: Color) = Color(
     red = red * alpha + bg.red * (1 - alpha),
