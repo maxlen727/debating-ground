@@ -19,6 +19,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
@@ -211,5 +212,44 @@ class AiTest {
             val e = runCatching { checkRemoteUrl(bad) }.exceptionOrNull()
             assertTrue("$bad 应该被拒绝", e is AiFailure && e.message!!.contains(why))
         }
+    }
+
+    // 设置页的“连接并测试”：先存地址和口令，读状态、调用一次模型，通过了才切到“我的后端”
+    @Test
+    fun connectingSavesTheBackendAndSwitchesOnlyAfterTheTestPasses() = runBlocking {
+        respond = { ex ->
+            if (ex.requestURI.path == "/api/config") {
+                reply(ex, 200, "application/json", """{"model":"some-model","ttsConfigured":false}""")
+            } else {
+                reply(ex, 200, "application/json", """{"ok":true}""")
+            }
+        }
+        val l = debating.ground.app.flow.Learning(debating.ground.app.flow.AppState(), remote())
+        assertTrue(l.connectRemote("$base/", "open-sesame"))
+        assertEquals("remote", l.state.config.aiMode)
+        assertEquals(Remote(base, "open-sesame"), l.state.config.remote)
+        assertEquals(debating.ground.app.flow.RemoteStatus(true, "some-model"), l.state.ui.remote)
+        assertEquals(null, l.state.ui.busy)
+        assertEquals(2, requests.size) // 读状态、测试各一次
+        assertEquals("Bearer open-sesame", requests[0].first["authorization"])
+    }
+
+    @Test
+    fun aFailedConnectionKeepsTheSettingsAndSaysWhy() = runBlocking {
+        respond = { reply(it, 401, "application/json", """{"error":"访问口令不对。"}""") }
+        val l = debating.ground.app.flow.Learning(debating.ground.app.flow.AppState(), remote())
+        assertFalse(l.connectRemote(base, "wrong"))
+        assertEquals("demo", l.state.config.aiMode)
+        assertEquals(base, l.state.config.remote.url)
+        assertEquals("访问口令不对。", l.state.ui.error)
+        assertFalse(l.state.ui.remote.verified)
+        // 地址不对：不发请求，直接说原因
+        val before = requests.size
+        assertFalse(l.connectRemote("http://example.com", "x"))
+        assertEquals("后端地址需要使用 HTTPS。", l.state.ui.error)
+        assertEquals(before, requests.size)
+        // 口令留空就沿用已保存的
+        l.forgetRemote()
+        assertEquals(Remote(), l.state.config.remote)
     }
 }

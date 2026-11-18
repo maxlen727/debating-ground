@@ -17,6 +17,7 @@ object IconPaths {
     const val PLUS = "M12 5v14M5 12h14"
     const val MINUS = "M5 12h14"
     const val UP = "M12 19V5M5 12l7-7 7 7"
+    const val DOWNLOAD = "M12 4v11M7 10l5 5 5-5M5 20h14"
     const val SEND = "M5 12h13M12 5l7 7-7 7"
     const val LEARN = "M4 19V6a2 2 0 0 1 2-2h12v15H6a2 2 0 0 0-2 2zM8 8h6"
     const val CHAT = "M5 5h14v10H9l-4 4z"

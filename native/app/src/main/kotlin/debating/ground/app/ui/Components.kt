@@ -40,6 +40,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -227,6 +230,9 @@ fun Input(
     style: TextStyle = TextStyles.body,
     big: Boolean = false,
     onDone: (() -> Unit)? = null,
+    keyboard: KeyboardOptions = KeyboardOptions.Default,
+    // 口令：显示成圆点，不联想、不记进输入法词库
+    secret: Boolean = false,
 ) {
     val t = LocalTokens.current
     val src = remember { MutableInteractionSource() }
@@ -241,7 +247,12 @@ fun Input(
         textStyle = style.copy(color = t.ink.color()),
         cursorBrush = SolidColor(t.brand.color()),
         interactionSource = src,
-        keyboardOptions = KeyboardOptions(imeAction = if (onDone != null) ImeAction.Go else ImeAction.Default),
+        keyboardOptions = keyboard.copy(
+            imeAction = if (onDone != null) ImeAction.Go else ImeAction.Default,
+            keyboardType = if (secret) KeyboardType.Password else keyboard.keyboardType,
+            autoCorrectEnabled = if (secret) false else keyboard.autoCorrectEnabled,
+        ),
+        visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
         keyboardActions = KeyboardActions(onGo = { onDone?.invoke() }),
         modifier = modifier
             .fillMaxWidth()
@@ -276,7 +287,13 @@ fun Input(
 @Composable
 fun Stepper(value: Int, min: Int, max: Int, label: String, onChange: (Int) -> Unit) {
     val t = LocalTokens.current
-    Row(Modifier.semantics { contentDescription = "$label：$value" }, verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.background(t.bg.color(), RoundedCornerShape(10.dp)).border(1.dp, t.line.color(), RoundedCornerShape(10.dp)).semantics {
+            contentDescription =
+                "$label：$value"
+        },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         StepButton(IconPaths.MINUS, "减少$label", value > min) { onChange(value - 1) }
         Text("$value", color = t.ink.color(), style = TextStyles.body.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.padding(horizontal = 2.dp))
         StepButton(IconPaths.PLUS, "增加$label", value < max) { onChange(value + 1) }
@@ -293,6 +310,50 @@ private fun StepButton(path: String, label: String, enabled: Boolean, onClick: (
         },
         contentAlignment = Alignment.Center,
     ) { Icon(lineIcon(path, path), null, Modifier.size(16.dp), tint = t.ink.color()) }
+}
+
+/** 分段选择（.segmented）：几个选项平分一行，选中的那个浮起来。 */
+@Composable
+fun Segmented(options: List<Pair<String, String>>, selected: String, label: String, enabled: Boolean = true, onSelect: (String) -> Unit) {
+    val t = LocalTokens.current
+    Row(
+        Modifier.fillMaxWidth().background(t.bg.color(), RoundedCornerShape(12.dp)).border(1.dp, t.line.color(), RoundedCornerShape(12.dp)).padding(3.dp)
+            .semantics { contentDescription = label },
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        for ((id, text) in options) {
+            val on = id == selected
+            Box(
+                Modifier.weight(1f).heightIn(min = 40.dp).background(if (on) t.raised.color() else Color.Transparent, RoundedCornerShape(9.dp))
+                    .alpha(if (enabled || on) 1f else 0.45f)
+                    .clickable(enabled = enabled, role = Role.RadioButton) { onSelect(id) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text,
+                    color = if (on) t.ink.color() else t.muted.color(),
+                    style = TextStyles.small.copy(fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal),
+                )
+            }
+        }
+    }
+}
+
+/** 状态小标签（.status）：[tone] 是 ok、warn 或空（灰色）。 */
+@Composable
+fun StatusTag(text: String, tone: String = "") {
+    val t = LocalTokens.current
+    val (bg, fg) = when (tone) {
+        "ok" -> t.goodSoft.color() to t.good.color()
+        "warn" -> t.warnSoft.color() to t.warn.color()
+        else -> t.bg.color() to t.muted.color()
+    }
+    Text(
+        text,
+        color = fg,
+        style = TextStyles.small.copy(fontSize = 12.sp),
+        modifier = Modifier.background(bg, RoundedCornerShape(20.dp)).padding(horizontal = 10.dp, vertical = 3.dp),
+    )
 }
 
 /** 底部操作区（.dock）：主要操作单手可达。上沿渐隐到透明，背景氛围透得出来。 */
