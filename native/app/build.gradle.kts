@@ -74,6 +74,7 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.javascriptengine)
     debugImplementation(libs.compose.ui.tooling)
 
     testImplementation(libs.junit)

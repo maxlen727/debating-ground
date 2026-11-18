@@ -186,7 +186,7 @@ class AiTest {
     @Test
     fun missingSetupIsExplainedNotSilentlyReplacedByTheDemo() = runBlocking {
         assertEquals("还没有连接你的后端。请在“设置”里填写后端地址和访问口令，或切换到演示模式。", failed(remote().run("hint", payload, Config(aiMode = "remote"), null)))
-        assertTrue(failed(remote().run("hint", payload, Config(aiMode = "api"), null)).contains("还不能直接连接服务商"))
+        assertEquals("还没有设置直接连接。请在“设置”里填写接口地址、模型和 API Key，或切换到演示模式。", failed(remote().run("hint", payload, Config(aiMode = "api"), null)))
     }
 
     @Test

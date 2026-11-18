@@ -15,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -42,7 +43,7 @@ import debating.ground.app.ui.theme.TextStyles
 import debating.ground.app.ui.theme.color
 
 // 设置：AI 来源。和网页版 src/screens/Settings.tsx 在 App 里的样子一致：演示模式或自己部署的后端。
-// 直接连接服务商在 M5 加入；朗读和语音输入不在原生版第一版里。
+// 原生 App 还多一种：直接连接服务商（密钥加密保存在设备上，见 AGENTS.md 约定 1）。朗读和语音输入不在原生版第一版里。
 
 private const val DOCS = "https://maxlen727.github.io/debating-ground/guide/self-host"
 
@@ -51,7 +52,7 @@ fun SettingsScreen(st: AppState, model: AppModel) {
     val t = LocalTokens.current
     val l = model.learning
     val busy = st.ui.busy != null
-    val mode = if (st.config.aiMode == "remote") "remote" else "demo"
+    val mode = st.config.aiMode.takeIf { it in setOf("remote", "api") } ?: "demo"
     Column(Modifier.fillMaxSize()) {
         TopBar("设置", "AI 来源与连接")
         Column(
@@ -60,18 +61,19 @@ fun SettingsScreen(st: AppState, model: AppModel) {
         ) {
             Panel {
                 SectionLabel("AI 来源")
-                Segmented(listOf("demo" to "演示模式", "remote" to "我的后端"), mode, "AI 来源", enabled = !busy) { id ->
+                Segmented(listOf("demo" to "演示模式", "remote" to "我的后端", "api" to "直接连接"), mode, "AI 来源", enabled = !busy) { id ->
                     l.editConfig { it.copy(aiMode = id) }
                 }
                 FinePrint(
-                    if (mode == "demo") {
-                        "演示模式用本地模板走完整个流程，不需要网络和密钥。"
-                    } else {
-                        "连接你自己部署在 Cloudflare 上的思辨场后端。AI 服务商的密钥存在后端里，这台设备只需要后端地址和访问口令。"
+                    when (mode) {
+                        "demo" -> "演示模式用本地模板走完整个流程，不需要网络和密钥。"
+                        "remote" -> "连接你自己部署在 Cloudflare 上的思辨场后端。AI 服务商的密钥存在后端里，这台设备只需要后端地址和访问口令。"
+                        else -> "这台手机直接调用 AI 服务商的 Chat Completions 接口，不需要部署后端。API Key 加密保存在这台设备上。"
                     },
                 )
             }
             if (mode == "remote") RemotePanel(st, model)
+            if (mode == "api") DirectPanel(st, model)
             Panel {
                 SectionLabel("关于格式")
                 Text(
@@ -156,6 +158,66 @@ private fun RemotePanel(st: AppState, model: AppModel) {
                 l.forgetRemote()
                 url = ""
                 password = ""
+            }, Modifier.fillMaxWidth(), enabled = !busy)
+        }
+    }
+}
+
+@Composable
+private fun DirectPanel(st: AppState, model: AppModel) {
+    val t = LocalTokens.current
+    val l = model.learning
+    val status = st.ui.direct
+    var url by rememberSaveable { mutableStateOf(status.baseURL) }
+    var name by rememberSaveable { mutableStateOf(status.model) }
+    // API Key 只在输入框里停一下：连接后清空，已保存的不回显、不进状态
+    var key by remember { mutableStateOf("") }
+    val busy = st.ui.busy != null
+    Panel {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) { SectionLabel("连接 AI 服务商") }
+            StatusTag(
+                if (status.verified) {
+                    "已连接，测试通过"
+                } else if (status.saved) {
+                    "已保存，未验证"
+                } else {
+                    "尚未连接"
+                },
+                if (status.verified) {
+                    "ok"
+                } else if (status.saved) {
+                    "warn"
+                } else {
+                    ""
+                },
+            )
+        }
+        SectionLabel("接口地址")
+        Input(url, {
+            url = it
+        }, "接口地址", placeholder = "https://你的服务商地址/v1", keyboard = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri))
+        FinePrint("Base URL 或完整的 Chat Completions 地址，会自动补上 /chat/completions。")
+        SectionLabel("模型名称")
+        Input(name, { name = it }, "模型名称", placeholder = "服务商支持的准确模型 ID")
+        SectionLabel("API Key")
+        Input(key, { key = it }, "API Key", placeholder = if (status.saved) "已保存，不改就留空" else "服务商控制台里的 API Key", secret = true)
+        Text(
+            "“连接并测试”会把密钥发送到你填写的接口，发起一次少量计费的测试。密钥用系统密钥库加密，只保存在这台设备上，不进系统备份，也不写进讨论记录、知识库或导出文件。",
+            style = TextStyles.small,
+            color = t.muted.color(),
+        )
+        PrimaryButton("连接并测试", {
+            val typed = key
+            key = ""
+            model.run { connectDirect(url, name, typed) }
+        }, Modifier.fillMaxWidth(), enabled = !busy)
+        if (status.saved) {
+            GhostButton("从这台设备上删除", {
+                l.forgetDirect()
+                url = ""
+                name = ""
+                key = ""
             }, Modifier.fillMaxWidth(), enabled = !busy)
         }
     }
