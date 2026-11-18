@@ -1,5 +1,11 @@
 // 通用界面组件
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
 import { cancelAI } from '../lib/ai.ts';
 import { go, update, useApp, type Screen } from '../store.ts';
 import type { PointStatus, QuizItem } from '../../shared/types.ts';
@@ -118,6 +124,25 @@ export function ErrorBanner() {
   );
 }
 
+// 往下滚时底部胶囊收起成当前标签的小圆，往回滚、滚到顶或点它就展开（参考 iOS 的标签栏）。换页面时展开
+function useCollapseOnScroll(screen: Screen) {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    setOn(false);
+    let last = window.scrollY;
+    const onScroll = () => {
+      const y = window.scrollY;
+      if (y <= 8) setOn(false);
+      else if (y > last + 4) setOn(true);
+      else if (y < last - 4) setOn(false);
+      last = y;
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, [screen]);
+  return { on, expand: () => setOn(false) };
+}
+
 export function TabBar() {
   const { ui, library, session } = useApp();
   const due = library.filter(c => c.due <= Date.now()).length;
@@ -131,14 +156,21 @@ export function TabBar() {
     ui.screen === s ||
     (s === 'library' && ui.screen === 'card') ||
     (s === 'session' && ui.screen === 'review');
+  const collapsed = useCollapseOnScroll(ui.screen);
   return (
-    <nav className="tabbar" aria-label="主导航">
+    <nav className={'tabbar' + (collapsed.on ? ' collapsed' : '')} aria-label="主导航">
       {tabs.map(([s, icon, label]) => (
         <button
           key={s}
           className={active(s) ? 'active' : ''}
           aria-current={active(s) ? 'page' : undefined}
-          onClick={() => go(s === 'session' && session?.finished && session.review ? 'review' : s)}
+          aria-label={collapsed.on && active(s) ? `${label}，展开导航` : undefined}
+          tabIndex={collapsed.on && !active(s) ? -1 : undefined}
+          onClick={() =>
+            collapsed.on
+              ? collapsed.expand()
+              : go(s === 'session' && session?.finished && session.review ? 'review' : s)
+          }
         >
           <span className="tab-icon">
             <Icon name={icon} size={22} />
@@ -175,10 +207,41 @@ export function Sheet({
     ref.current?.focus();
     return () => window.removeEventListener('keydown', k);
   }, [onClose]);
+  // 两档：内容多时先停在半高，往上拖到全高；往下拖关掉（全高时先回到半高）。半途松手弹回去
+  const [expanded, setExpanded] = useState(false);
+  const [canExpand, setCanExpand] = useState(false);
+  const [dragY, setDragY] = useState(0);
+  const start = useRef<{ y: number; t: number } | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (el && !expanded) setCanExpand(el.scrollHeight > el.clientHeight + 4);
+  }, [expanded, children]);
+  const onDown = (e: ReactPointerEvent) => {
+    start.current = { y: e.clientY, t: performance.now() };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onMove = (e: ReactPointerEvent) => {
+    if (!start.current) return;
+    const d = e.clientY - start.current.y;
+    setDragY(canExpand && !expanded ? Math.max(d, -120) : Math.max(d, 0));
+  };
+  const onUp = (e: ReactPointerEvent) => {
+    if (!start.current) return;
+    const d = e.clientY - start.current.y;
+    const v = d / Math.max(1, performance.now() - start.current.t); // 像素/毫秒
+    start.current = null;
+    setDragY(0);
+    if ((d < -60 || v < -0.8) && canExpand && !expanded) setExpanded(true);
+    else if (d > 120 || v > 0.8) {
+      if (expanded) setExpanded(false);
+      else onClose();
+    }
+  };
   return (
     <div className={'sheet-backdrop' + (morphing ? ' morphing' : '')} onClick={onClose}>
       <div
-        className={'sheet ' + className}
+        className={'sheet ' + className + (expanded ? ' full' : '') + (dragY ? ' dragging' : '')}
+        style={dragY > 0 ? { transform: `translateY(${dragY}px)` } : undefined}
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -186,12 +249,28 @@ export function Sheet({
         ref={ref}
         onClick={e => e.stopPropagation()}
       >
-        <div className="sheet-grip" aria-hidden="true" />
-        <div className="sheet-head">
-          <h2>{title}</h2>
-          <button className="icon-btn" aria-label="关闭" onClick={onClose}>
-            <Icon name="close" />
-          </button>
+        <div
+          className="sheet-drag"
+          onPointerDown={onDown}
+          onPointerMove={onMove}
+          onPointerUp={onUp}
+          onPointerCancel={onUp}
+        >
+          {canExpand ? (
+            <button
+              className="sheet-grip"
+              aria-label={expanded ? '收起到半高' : '展开到全高'}
+              onClick={() => setExpanded(x => !x)}
+            />
+          ) : (
+            <div className="sheet-grip quiet" aria-hidden="true" />
+          )}
+          <div className="sheet-head">
+            <h2>{title}</h2>
+            <button className="icon-btn" aria-label="关闭" onClick={onClose}>
+              <Icon name="close" />
+            </button>
+          </div>
         </div>
         {children}
       </div>
