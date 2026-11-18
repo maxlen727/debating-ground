@@ -151,7 +151,8 @@ fun AppScaffold(model: AppModel) {
                     }
                 }
                 CompositionLocalProvider(LocalNavClearance provides if (floatingNav) NAV_CLEARANCE else 0.dp) {
-                    Box(Modifier.fillMaxSize().nestedScroll(watchScroll).fadeBottom(if (floatingNav) NAV_CLEARANCE else 0.dp)) { pages() }
+                    // 淡出交给页面里的滚动内容（scrollWithEdge）：整页一起淡会把悬浮的底部按钮也淡掉
+                    Box(Modifier.fillMaxSize().nestedScroll(watchScroll)) { pages() }
                 }
                 // 进出沉浸页（讨论、准备、卡片）、键盘弹起时，胶囊沉下去或升上来
                 AnimatedVisibility(

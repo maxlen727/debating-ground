@@ -1,9 +1,22 @@
 package debating.ground.app.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,17 +29,25 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import debating.ground.app.AppModel
@@ -36,14 +57,18 @@ import debating.ground.app.data.MODE_ORDER
 import debating.ground.app.flow.AppState
 import debating.ground.app.ui.Banner
 import debating.ground.app.ui.BusyStrip
+import debating.ground.app.ui.Capsule
 import debating.ground.app.ui.Chip
+import debating.ground.app.ui.EaseOut
 import debating.ground.app.ui.ErrorBanner
 import debating.ground.app.ui.FinePrint
+import debating.ground.app.ui.IconPaths
 import debating.ground.app.ui.Input
-import debating.ground.app.ui.PrimaryButton
-import debating.ground.app.ui.QuietLink
+import debating.ground.app.ui.LocalMotion
+import debating.ground.app.ui.SecondaryButton
 import debating.ground.app.ui.SectionLabel
 import debating.ground.app.ui.WithFloatingDock
+import debating.ground.app.ui.lineIcon
 import debating.ground.app.ui.scrollWithEdge
 import debating.ground.app.ui.theme.LocalTokens
 import debating.ground.app.ui.theme.TextSize
@@ -65,20 +90,15 @@ fun LearnScreen(st: AppState, model: AppModel, now: Long) {
     WithFloatingDock(dock = {
         ErrorBanner(ui.error) { l.clearError() }
         BusyStrip(ui.busy) { l.cancelAI() }
-        // 一句话开始：写下概念就进讨论；想先看看题目、要点和角色，走准备页
-        PrimaryButton(
-            if (ui.context !=
-                null
-            ) {
-                "按这个经过开始讨论"
-            } else {
-                "开始讨论"
-            },
-            { model.run { prepare(null, null, "start") } },
-            Modifier.fillMaxWidth(),
+        // 写下概念后，开始按钮才从底部升起；没写时不摆一条点不了的灰按钮
+        StartBar(
+            visible = config.concept.trim().isNotEmpty(),
+            label = if (ui.context != null) "按这个经过开始" else "开始讨论",
+            detail = "${MODES[config.mode]?.name.orEmpty()} · ${config.concept.trim()}",
             enabled = canStart,
+            onPreview = { model.run { prepare() } },
+            onStart = { model.run { prepare(null, null, "start") } },
         )
-        QuietLink("先看看题目和角色", { model.run { prepare() } }, enabled = canStart)
     }) { bottom ->
         Column(Modifier.fillMaxSize()) {
             Column(
@@ -162,23 +182,78 @@ fun LearnScreen(st: AppState, model: AppModel, now: Long) {
     }
 }
 
+// 开始：左边“先看题目”（先看看题目、要点和角色再开始），右边是主按钮，写明用哪种方式讨论哪个概念
+@Composable
+private fun StartBar(visible: Boolean, label: String, detail: String, enabled: Boolean, onPreview: () -> Unit, onStart: () -> Unit) {
+    val t = LocalTokens.current
+    val motion = LocalMotion.current
+    AnimatedVisibility(
+        visible,
+        enter = if (motion) slideInVertically(tween(420, easing = EaseOut)) { it } + fadeIn(tween(240)) else EnterTransition.None,
+        exit = if (motion) slideOutVertically(tween(220)) { it } + fadeOut(tween(160)) else ExitTransition.None,
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            SecondaryButton("先看题目", onPreview, Modifier.height(56.dp), enabled = enabled)
+            val src = remember { MutableInteractionSource() }
+            val pressed by src.collectIsPressedAsState()
+            val scale by animateFloatAsState(if (pressed && enabled) 0.97f else 1f, label = "start-press")
+            Row(
+                Modifier
+                    .weight(1f)
+                    .height(56.dp)
+                    .scale(scale)
+                    .alpha(if (enabled) 1f else 0.5f)
+                    .shadow(12.dp, Capsule, spotColor = t.brand.color().copy(alpha = 0.5f))
+                    .background(t.brand.color(), Capsule)
+                    .clickable(src, null, enabled = enabled, role = Role.Button, onClickLabel = label, onClick = onStart)
+                    .padding(start = 22.dp, end = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        label,
+                        color = t.brandInk.color(),
+                        style = TextStyles.body.copy(fontWeight = FontWeight.SemiBold, fontSize = TextSize.md),
+                        maxLines = 1,
+                    )
+                    Text(
+                        detail,
+                        color = t.brandInk.color().copy(alpha = 0.72f),
+                        style = TextStyles.small.copy(fontSize = 12.sp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Box(Modifier.size(40.dp).background(t.brandInk.color().copy(alpha = 0.14f), CircleShape), contentAlignment = Alignment.Center) {
+                    Icon(lineIcon("send", IconPaths.SEND), null, Modifier.size(20.dp), tint = t.brandInk.color())
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun ModeCard(mode: String, on: Boolean, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val t = LocalTokens.current
     val info = MODES.getValue(mode)
     val shape = RoundedCornerShape(14.dp)
+    // 选中时边框、底色和字块渐变过去，不是一下子跳
+    val edge by animateColorAsState(if (on) t.brand.color() else t.line.color(), label = "mode-edge")
+    val tint by animateColorAsState(if (on) t.brand.color().copy(alpha = 0.07f) else t.brand.color().copy(alpha = 0f), label = "mode-tint")
+    val glyphBg by animateColorAsState(if (on) t.brand.color() else t.bg.color(), label = "mode-glyph")
+    val width by animateDpAsState(if (on) 2.dp else 1.dp, label = "mode-width")
     Column(
         modifier
             .semantics { selected = on }
             .background(t.raised.color(), shape)
-            .background(if (on) t.brand.color().copy(alpha = 0.07f) else androidx.compose.ui.graphics.Color.Transparent, shape)
-            .border(if (on) 2.dp else 1.dp, if (on) t.brand.color() else t.line.color(), shape)
+            .background(tint, shape)
+            .border(width, edge, shape)
             .clickable(enabled = enabled, role = Role.RadioButton, onClick = onClick)
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Box(
-            Modifier.size(34.dp).background(if (on) t.brand.color() else t.bg.color(), RoundedCornerShape(10.dp)),
+            Modifier.size(34.dp).background(glyphBg, RoundedCornerShape(10.dp)),
             contentAlignment = Alignment.Center,
         ) {
             Text(
