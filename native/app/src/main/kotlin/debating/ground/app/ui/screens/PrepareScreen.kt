@@ -263,7 +263,11 @@ fun PrepareScreen(st: AppState, model: AppModel) {
                                         modifier = Modifier.weight(1f),
                                     )
                                     Chip("我", seat.type == "human", { setSeat(model, seat.team, seat.index, "human") })
+                                    Chip("同学", seat.type == "peer", { setSeat(model, seat.team, seat.index, "peer") })
                                     Chip("AI", seat.type == "ai", { setSeat(model, seat.team, seat.index, "ai") })
+                                }
+                                if (seat.type == "peer") {
+                                    Text("邀请同学时留给同学；单人讨论时由 AI 担任。", style = TextStyles.small.copy(fontSize = 12.sp), color = t.muted.color())
                                 }
                                 if (seat.type != "human") {
                                     Input(
