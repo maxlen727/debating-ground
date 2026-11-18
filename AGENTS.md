@@ -46,6 +46,7 @@ npm run docs:dev     # 文档站热更新
 npm run sync:worker  # 改了 server/ai.ts 或 shared/ 后，同步到 worker/src/vendor/
 npm run fixtures:native # 改了存档结构、src/lib/restore.ts 或导出后，重新生成原生版的标准答案
 npm run bundle:native   # 改了 server/ai.ts 或 shared/ 后，重新打包原生版“直接连接”用的提示词（native/app/src/main/assets/sibian-ai.js）
+python3 scripts/atmosphere.py    # 改了背景氛围的参数（src/assets/atmosphere/atmosphere.json）或颜色令牌后，重新渲染背景图（网页版和原生版共用，需要 numpy 和 Pillow）
 npm run eval:prompts # 提示词回归评测：用真实模型和模拟学习者聊几场（见脚本开头的说明）
 cd native && ./gradlew ktlintCheck lintDebug assembleDebug testDebugUnitTest   # 原生安卓版：代码检查、构建、单元测试和截图测试（截图在 app/build/screenshots/）；./gradlew ktlintFormat 自动整理写法
 cd worker && npm install && npm run dev   # 本地运行后端（先把 .dev.vars.example 复制为 .dev.vars）
@@ -86,7 +87,7 @@ cd worker && npm install && npm run dev   # 本地运行后端（先把 .dev.var
   - 面板是四边留空隙的悬浮卡片，内容多时分半高、全高两档，下拖关闭。
   - 原生版用同样的规则（`ui/Glass.kt`）。
 - 颜色只用 `styles.css` 里的令牌（`--brand`、`--ink`、`--muted` 等），浅色和深色都要看一遍，不写死颜色。
-- 页面底下铺着一层背景氛围（渐隐的色块和淡噪点，极慢地漂，见 `styles.css` 的“背景氛围”一节，原生版是 `ui/Atmosphere.kt`）。页面、栏目不要再铺满屏的纯色底，否则会把它盖住；卡片、气泡、面板这些承载内容的地方照常用 `--surface`、`--raised`，保证文字对比度。吸附条用半透明加小范围模糊。
+- 页面底下铺着一层背景氛围（渐隐的色块和淡噪点，极慢地漂，见 `styles.css` 的“背景氛围”一节，原生版是 `ui/Atmosphere.kt`；色块是 `scripts/atmosphere.py` 预渲染的图，两边共用，改了颜色令牌要重新生成，`tests/atmosphere.test.ts` 会提醒）。页面、栏目不要再铺满屏的纯色底，否则会把它盖住；卡片、气泡、面板这些承载内容的地方照常用 `--surface`、`--raised`，保证文字对比度。吸附条用半透明加小范围模糊。
 - 字体分工：衬线（`--f-display`）只用于“知识本身”：概念名、讨论题、要点、学习者自己的小结、复盘结论、术语词条、检验题；对话气泡、按钮、标签、提示用无衬线（`--f-body`）。字号用 `--t-*` 阶梯，衬线正文行距用 `--lh-serif`。只用系统字体，不引入网络字体（App 要离线可用）。
 - 新的多行输入框用 `CaretField` 包一层，和其他输入框一样有平滑光标。
 - 文案站在用户一侧，说清楚会发生什么：按钮写动作（“开始讨论”），错误写原因和办法，不道歉、不含糊。不用 emoji 当图标。

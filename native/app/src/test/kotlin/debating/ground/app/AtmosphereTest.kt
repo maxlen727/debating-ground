@@ -1,50 +1,60 @@
 package debating.ground.app
 
-import debating.ground.app.ui.Glows
-import debating.ground.app.ui.driftPhase
-import debating.ground.app.ui.theme.LightTokens
+import debating.ground.app.ui.DRIFT_SECONDS
+import debating.ground.app.ui.DriftPath
+import debating.ground.app.ui.OVERSCAN
+import debating.ground.app.ui.driftAt
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
-// 背景氛围：原生版和网页版（styles.css 的“背景氛围”一节）是同一套参数，改一边要改另一边
+// 背景氛围：原生版和网页版用同一组图（scripts/atmosphere.py 生成），漂移的路线也一样
 class AtmosphereTest {
-    private val css = File(System.getProperty("web.styles")!!).readText()
-
-    // .atmosphere i:nth-child(n) { --x: 78%; --y: 12%; --r: .75; --c: var(--accent-soft); --a: .85; --t: 97s; --dx: -4vmax; --dy: 3vmax; }
-    private val web = Regex("""\.atmosphere i:nth-child\((\d)\) \{([^}]*)\}""").findAll(css).associate { m ->
-        m.groupValues[1].toInt() to Regex("""--([a-z]+):\s*([^;]+);""").findAll(m.groupValues[2]).associate { it.groupValues[1] to it.groupValues[2].trim() }
-    }
-
-    private fun num(v: String) = v.removeSuffix("%").removeSuffix("s").removeSuffix("vmax").toFloat()
+    private val stylesFile = File(System.getProperty("web.styles")!!)
+    private val css = stylesFile.readText()
+    private val repo = stylesFile.parentFile!!.parentFile!!
 
     @Test
-    fun nativeGlowsMatchTheWebStyles() {
-        assertEquals("色块数量", web.size, Glows.size)
-        Glows.forEachIndexed { i, g ->
-            val w = web[i + 1] ?: error("styles.css 里没有第 ${i + 1} 团色块")
-            val label = "第 ${i + 1} 团色块"
-            assertEquals("$label 的 x", num(w.getValue("x")) / 100, g.x, 1e-4f)
-            assertEquals("$label 的 y", num(w.getValue("y")) / 100, g.y, 1e-4f)
-            assertEquals("$label 的半径", num(w.getValue("r")), g.r, 1e-4f)
-            assertEquals("$label 的浓度", num(w.getValue("a")), g.alpha, 1e-4f)
-            assertEquals("$label 的周期", num(w.getValue("t")).toInt(), g.periodSeconds)
-            assertEquals("$label 的横向漂移", num(w.getValue("dx")) / 100, g.dx, 1e-4f)
-            assertEquals("$label 的纵向漂移", num(w.getValue("dy")) / 100, g.dy, 1e-4f)
-            // 颜色：网页版写的是 var(--令牌名)，原生版取同一个令牌
-            val token = w.getValue("c").removePrefix("var(--").removeSuffix(")")
-            assertEquals("$label 的颜色", LightTokens.byCssName()[token], g.color(LightTokens))
+    fun imagesAreTheSameAsTheWebOnes() {
+        for (theme in listOf("light", "dark")) {
+            for (shape in listOf("portrait", "landscape")) {
+                val web = File(repo, "src/assets/atmosphere/$theme-$shape.webp")
+                val native = File(repo, "native/app/src/main/res/drawable-nodpi/atmosphere_${theme}_$shape.webp")
+                assertArrayEquals("$theme-$shape：跑一次 python3 scripts/atmosphere.py", web.readBytes(), native.readBytes())
+            }
         }
     }
 
     @Test
-    fun driftGoesThereAndBackSlowly() {
-        assertEquals(0f, driftPhase(0, 97), 1e-6f)
-        assertEquals(1f, driftPhase(97_000, 97), 1e-4f) // 一个周期走到另一头
-        assertEquals(0f, driftPhase(194_000, 97), 1e-4f) // 再一个周期回来
-        assertEquals(0.5f, driftPhase(48_500, 97), 1e-4f)
-        // 两端放慢：刚出发时挪得比中间慢
-        assertTrue(driftPhase(5_000, 97) < 5_000f / 97_000)
+    fun overscanMatchesTheParameters() {
+        val json = File(repo, "src/assets/atmosphere/atmosphere.json").readText()
+        val v = Regex(""""overscan":\s*([0-9.]+)""").find(json)!!.groupValues[1].toFloat()
+        assertEquals(v, OVERSCAN, 1e-6f)
+        // 网页版的 inset 是同一个比例
+        assertEquals("-${(v * 100).toInt()}%", Regex("""\.atmosphere::before \{[^}]*inset: ([^;]+);""").find(css)!!.groupValues[1])
+    }
+
+    @Test
+    fun driftFollowsTheWebKeyframes() {
+        val block = Regex("""@keyframes drift \{(.*?)\n\}""", RegexOption.DOT_MATCHES_ALL).find(css)!!.groupValues[1]
+        val web = listOf(0f to 0f) +
+            Regex("""translate\((-?[0-9.]+)%, (-?[0-9.]+)%\)""").findAll(block).map { it.groupValues[1].toFloat() / 100 to it.groupValues[2].toFloat() / 100 }
+        assertEquals(web, DriftPath)
+        assertEquals("${DRIFT_SECONDS}s", Regex("""animation: drift (\d+s)""").find(css)!!.groupValues[1])
+    }
+
+    @Test
+    fun driftGoesOutAndBack() {
+        assertEquals(0f to 0f, driftAt(0))
+        val end = driftAt(DRIFT_SECONDS * 1000L)
+        assertEquals(DriftPath.last().first, end.first, 1e-5f)
+        assertEquals(DriftPath.last().second, end.second, 1e-5f)
+        val back = driftAt(DRIFT_SECONDS * 2000L)
+        assertEquals(0f, back.first, 1e-5f)
+        assertEquals(0f, back.second, 1e-5f)
+        // 走到第一段的一半
+        val mid = driftAt(DRIFT_SECONDS * 1000L / 6)
+        assertEquals(DriftPath[1].first / 2, mid.first, 1e-4f)
     }
 }

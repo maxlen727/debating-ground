@@ -1,0 +1,11 @@
+{
+  "note": "背景氛围的参数。改了这里或 styles.css 里用到的颜色令牌，跑 python3 scripts/atmosphere.py 重新生成图片。",
+  "overscan": 0.06,
+  "glows": [
+    { "x": 0.78, "y": 0.12, "r": 0.75, "token": "accent-soft", "alpha": 0.85 },
+    { "x": 0.1, "y": 0.42, "r": 0.7, "token": "lit", "alpha": 0.7 },
+    { "x": 0.85, "y": 0.7, "r": 0.65, "token": "c-bg", "alpha": 0.55 },
+    { "x": 0.3, "y": 0.95, "r": 0.6, "token": "b-bg", "alpha": 0.5 }
+  ],
+  "sizes": { "portrait": [270, 480], "landscape": [480, 270] }
+}
