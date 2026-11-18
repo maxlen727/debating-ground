@@ -43,6 +43,23 @@ cd native
 
 存档检查分两层：`Restore.kt` 在 JSON 层面逐行对应网页版，保证结果逐字一致；`loadState` 再转成类型化的数据，给界面和业务逻辑用。
 
+## 从套壳版搬知识库
+
+原生版要直接替换套壳版（#104）：同一个包名、同一把签名，用户在手机上看到的是一次普通更新。套壳版的数据在 WebView 的 localStorage 里（来源 `https://localhost`，键 `sibian-v3`，更早的是 `sibian-v2`），升级以后还留在手机上。
+
+`migrate/` 负责把它搬过来：
+
+- 第一次启动时，`WebViewLegacySource` 在同一个来源里打开一个只读的小页面，读出这两份数据。页面内容由 App 直接给出，不访问网络。
+- `LegacyImport` 用 `loadState` 做和网页版一样的结构检查，再写进原生存储。
+- 规则：
+  - 原生存储里已经有数据就不搬，也不覆盖。
+  - 读成功才记下“已搬过”（`legacy-imported` 文件），没读成下次启动再试。
+  - **旧数据从不清除**。
+  - 旧存档里的 `aiMode` 是 `api` 时改成演示模式：套壳版里没有本机服务，原生版的 `api` 是直接连接，要重新填密钥。
+- 搬完后用短暂提示告诉用户搬来了几张卡片。
+
+Robolectric 里的 WebView 不跑 JS，`LegacyImportTest` 用网页版写出来的真实存档代替读取，覆盖上面这些规则；`WebViewLegacySource` 本身要在真机上从套壳版升级一次来验证。
+
 ## AI 层
 
 AI 层在 `ai/`，提供三种来源：

@@ -77,6 +77,10 @@ class AppModel(dir: File, private val scope: CoroutineScope = CoroutineScope(Sup
         @Volatile private var instance: AppModel? = null
 
         // 整个 App 只有一份：转屏、深色模式切换时 Activity 会重建，状态和正在进行的请求不能丢
+
+        /** 已经读好的那一份（转屏、深色模式切换时 Activity 重建，直接用）。 */
+        fun loaded(): AppModel? = instance
+
         fun get(context: Context): AppModel = instance ?: synchronized(this) {
             instance ?: AppModel(
                 context.filesDir,
