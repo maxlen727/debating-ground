@@ -1,10 +1,17 @@
 package debating.ground.app.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -91,7 +98,18 @@ fun AppScaffold(model: AppModel) {
             l.clearToast()
         }
     }
+    // 这次换页是不是点底部导航引起的：决定左右滑还是前进后退
+    val viaTab = remember { booleanArrayOf(false) }
+    val motion = LocalMotion.current
+    val pages: @Composable () -> Unit = {
+        PageHost(screen, st, nav = {
+            val kind = navKind(initialState, targetState, viaTab[0])
+            viaTab[0] = false
+            pageTransform(kind, motion)
+        }) { scr, state -> Page(scr, state, model) }
+    }
     val onTab = { tab: Tab ->
+        viaTab[0] = true
         // 讨论结束且已有复盘时，“讨论”标签打开复盘页
         val s = st.session
         l.go(if (tab == Tab.Discuss && s?.finished == true && s.review != null) "review" else tab.screen)
@@ -112,7 +130,7 @@ fun AppScaffold(model: AppModel) {
                             if (showNav) WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical + WindowInsetsSides.End) else WindowInsets.safeDrawing,
                         )
                         .imePadding(),
-                ) { Page(st, model) }
+                ) { pages() }
             }
         } else {
             // 手机竖屏：底部导航是悬浮的胶囊，页面铺满整屏、可以滚到它下面。打字时键盘顶上来，胶囊先收起
@@ -133,9 +151,17 @@ fun AppScaffold(model: AppModel) {
                     }
                 }
                 CompositionLocalProvider(LocalNavClearance provides if (floatingNav) NAV_CLEARANCE else 0.dp) {
-                    Box(Modifier.fillMaxSize().nestedScroll(watchScroll).fadeBottom(if (floatingNav) NAV_CLEARANCE else 0.dp)) { Page(st, model) }
+                    Box(Modifier.fillMaxSize().nestedScroll(watchScroll).fadeBottom(if (floatingNav) NAV_CLEARANCE else 0.dp)) { pages() }
                 }
-                if (floatingNav) FloatingNav(activeTab(screen), collapsed, { collapsed = false }, onTab)
+                // 进出沉浸页（讨论、准备、卡片）、键盘弹起时，胶囊沉下去或升上来
+                AnimatedVisibility(
+                    floatingNav,
+                    Modifier.fillMaxSize(),
+                    enter = if (motion) slideInVertically(tween(360, easing = EaseOut)) { it / 6 } + fadeIn(tween(240)) else EnterTransition.None,
+                    exit = if (motion) slideOutVertically(tween(240)) { it / 6 } + fadeOut(tween(180)) else ExitTransition.None,
+                ) {
+                    BoxWithConstraints(Modifier.fillMaxSize()) { FloatingNav(activeTab(screen), collapsed, { collapsed = false }, onTab) }
+                }
             }
         }
         Toast(st.ui.toast)
@@ -143,7 +169,7 @@ fun AppScaffold(model: AppModel) {
 }
 
 @Composable
-private fun Page(st: AppState, model: AppModel) = when (st.ui.screen) {
+private fun Page(screen: String, st: AppState, model: AppModel) = when (screen) {
     "prepare" -> PrepareScreen(st, model)
     "session" -> DiscussScreen(st, model)
     "review" -> ReviewScreen(st, model)
@@ -156,14 +182,25 @@ private fun Page(st: AppState, model: AppModel) = when (st.ui.screen) {
 // 短暂提示（网页版的 .toast）：浮在底部，不挡操作
 @Composable
 private fun BoxScope.Toast(text: String) {
-    if (text.isEmpty()) return
+    val motion = LocalMotion.current
+    val last = remember { arrayOf("") }
+    if (text.isNotEmpty()) last[0] = text
+    AnimatedVisibility(
+        text.isNotEmpty(),
+        Modifier.align(Alignment.BottomCenter),
+        enter = if (motion) slideInVertically(tween(320, easing = EaseOut)) { it } + fadeIn(tween(200)) else EnterTransition.None,
+        exit = if (motion) fadeOut(tween(200)) + slideOutVertically(tween(240)) { it / 2 } else ExitTransition.None,
+    ) { ToastText(last[0]) }
+}
+
+@Composable
+private fun ToastText(text: String) {
     val t = LocalTokens.current
     Text(
         text,
         color = t.page.color(),
         style = TextStyles.small,
         modifier = Modifier
-            .align(Alignment.BottomCenter)
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .padding(bottom = 96.dp, start = 24.dp, end = 24.dp)
             .background(t.ink.color().copy(alpha = 0.88f), RoundedCornerShape(20.dp))

@@ -93,6 +93,7 @@ import debating.ground.app.flow.QUICK
 import debating.ground.app.flow.STUDENT
 import debating.ground.app.flow.TEACHING
 import debating.ground.app.flow.seatName
+import debating.ground.app.ui.Appear
 import debating.ground.app.ui.ErrorBanner
 import debating.ground.app.ui.FinePrint
 import debating.ground.app.ui.GhostButton
@@ -103,9 +104,12 @@ import debating.ground.app.ui.LocalMotion
 import debating.ground.app.ui.PrimaryButton
 import debating.ground.app.ui.Quote
 import debating.ground.app.ui.RevealText
+import debating.ground.app.ui.RiseIn
 import debating.ground.app.ui.SecondaryButton
 import debating.ground.app.ui.SectionLabel
 import debating.ground.app.ui.Sheet
+import debating.ground.app.ui.SheetHost
+import debating.ground.app.ui.SheetSpec
 import debating.ground.app.ui.TopBar
 import debating.ground.app.ui.fadeUnder
 import debating.ground.app.ui.glass
@@ -283,6 +287,9 @@ private fun Thread(s: Session, st: AppState, live: Live?, model: AppModel, modif
     val lastAi = s.entries.lastOrNull { it is ChatMessage && it.human != true }?.id
     val liveMsg = live?.takeIf { it.kind == "msg" && s.entries.none { e -> e.id == it.id } }
     val list = rememberLazyListState()
+    // 打开讨论时已经在的条目不做入场动画；之后新来的淡入、轻轻上浮（翻回去看旧的不重播）
+    val seen = remember(s.id) { HashSet<String>().apply { shown.forEach { add(it.id) } } }
+
     // 倒着排：最新的在最下面，文字变长时自动贴着底部；有新东西时滚回底部
     LaunchedEffect(shown.size, ui.busy, ui.hint, liveMsg?.id, s.at) { list.animateScrollToItem(0) }
     LazyColumn(
@@ -293,9 +300,12 @@ private fun Thread(s: Session, st: AppState, live: Live?, model: AppModel, modif
         verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.Bottom),
     ) {
         when {
-            liveMsg != null -> item(key = "live") { LiveMessage(s, liveMsg) { l.cancelAI() } }
-            ui.busy != null -> item(key = "busy") { Typing(ui.busy) { l.cancelAI() } }
-            debate -> item(key = "lectern") { NextLectern(s) }
+            // 生成中的气泡和完成后的正式发言用同一个 key：衔接时不会再淡入一次
+            liveMsg != null -> item(key = liveMsg.id) { RiseIn(liveMsg.id, seen) { LiveMessage(s, liveMsg) { l.cancelAI() } } }
+
+            ui.busy != null -> item(key = "busy") { RiseIn("busy-${s.entries.size}", seen) { Typing(ui.busy) { l.cancelAI() } } }
+
+            debate -> item(key = "lectern") { RiseIn("lectern-${s.cursor}", seen) { NextLectern(s) } }
         }
         val rev = shown.asReversed()
         for ((k, m) in rev.withIndex()) {
@@ -304,7 +314,9 @@ private fun Thread(s: Session, st: AppState, live: Live?, model: AppModel, modif
                 item(key = "chips-${m.id}") { BranchChips(s, m.id, m.human == true, ui.busy != null, model) }
             }
             item(key = m.id) {
-                EntryView(m, s, showTip = m.id == lastAi && s.learnerTurns == 0 && !s.finished, live = live, busy = ui.busy != null, model = model)
+                RiseIn(m.id, seen) {
+                    EntryView(m, s, showTip = m.id == lastAi && s.learnerTurns == 0 && !s.finished, live = live, busy = ui.busy != null, model = model)
+                }
             }
             // 辩论：环节变了就画一条分隔线（倒着排，所以放在这条后面）
             if (debate && m is ChatMessage && m.stage != null) {
@@ -839,7 +851,12 @@ private fun Tool(text: String, icon: String?, enabled: Boolean, on: Boolean = fa
 private fun HintCard(hint: String?, live: Live?, onClose: () -> Unit) {
     val t = LocalTokens.current
     val streaming = live?.takeIf { it.kind == "hint" && it.text.isNotEmpty() }
-    if (hint == null && streaming == null) return
+    Appear(streaming?.text ?: hint) { text -> HintRow(text, streaming != null, onClose) }
+}
+
+@Composable
+private fun HintRow(text: String, streaming: Boolean, onClose: () -> Unit) {
+    val t = LocalTokens.current
     Row(
         Modifier.fillMaxWidth().background(t.warnSoft.color(), RoundedCornerShape(12.dp)).padding(start = 12.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.Top,
@@ -849,8 +866,8 @@ private fun HintCard(hint: String?, live: Live?, onClose: () -> Unit) {
         Box(Modifier.weight(1f).padding(top = 1.dp)) {
             RevealText(
                 "hint",
-                streaming?.text ?: hint.orEmpty(),
-                live = streaming != null,
+                text,
+                live = streaming,
                 style = TextStyles.small.copy(lineHeight = 1.7.em),
                 color = t.ink.color(),
             )
@@ -904,16 +921,29 @@ private fun Sheets(s: Session, st: AppState, live: Live?, model: AppModel) {
     val l = model.learning
     val ui = st.ui
     val sheetMsg = s.entries.find { it.id == ui.sheet } as? ChatMessage
-    when {
-        ui.explain != null -> ExplainSheet(ui.explain.label, ui.explain.quote, ui.explain.text, live, s.room != null) { l.closeExplain() }
-        ui.term != null -> TermSheet(s, st, model)
-        sheetMsg != null -> QuickSheet(s, sheetMsg, ui.busy != null, model)
-        ui.sheet == "points" -> PointsSheet(s, st, model)
-        ui.sheet == "finish" -> FinishSheet(s, model)
-        ui.sheet == "roster" && s.mode == "debate" -> RosterSheet(s, model)
-        ui.sheet == "tree" && s.mode == "canvas" -> GraphSheet(s, ui.busy != null, model)
-        ui.sheet == "back" && s.mode == "canvas" -> BackSheet(s, model)
+    // 每个面板捕获打开时的数据：关上时托管它的 SheetHost 让它带着原来的内容沉下去
+    val spec = when {
+        ui.explain != null -> SheetSpec("explain") {
+            ExplainSheet(ui.explain.label, ui.explain.quote, ui.explain.text, live, s.room != null) { l.closeExplain() }
+        }
+
+        ui.term != null -> SheetSpec("term") { TermSheet(s, st, model) }
+
+        sheetMsg != null -> SheetSpec("quick-${sheetMsg.id}") { QuickSheet(s, sheetMsg, ui.busy != null, model) }
+
+        ui.sheet == "points" -> SheetSpec("points") { PointsSheet(s, st, model) }
+
+        ui.sheet == "finish" -> SheetSpec("finish") { FinishSheet(s, model) }
+
+        ui.sheet == "roster" && s.mode == "debate" -> SheetSpec("roster") { RosterSheet(s, model) }
+
+        ui.sheet == "tree" && s.mode == "canvas" -> SheetSpec("tree") { GraphSheet(s, ui.busy != null, model) }
+
+        ui.sheet == "back" && s.mode == "canvas" -> SheetSpec("back") { BackSheet(s, model) }
+
+        else -> null
     }
+    SheetHost(spec)
 }
 
 @Composable

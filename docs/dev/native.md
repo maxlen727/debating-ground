@@ -91,6 +91,7 @@ AI 层在 `ai/`，提供三种来源：
 - 当前页面由 `state.ui.screen` 决定，和网页版一样；“讨论”“准备”“卡片”是沉浸页，不显示导航。返回键交给流程层的 `goBack()`。
 - 通用部件在 `ui/Components.kt`，对应网页版 `styles.css` 的同名样式（`.primary`、`.chip`、`.mode`、`.banner`、`.dock`……）。
 - 讨论页在 `ui/screens/DiscussScreen.kt`。讨论记录倒着排（`reverseLayout`），AI 逐字生成时自动贴着底部。逐字显示在 `ui/Reveal.kt`，生成中的气泡和完成后的正式发言用同一个 id 记进度，衔接时不会从头再写；关掉动效时直接显示全文。底部面板在 `ui/Sheet.kt`，宽屏时变成居中的对话框。
+- 动效在 `ui/Motion.kt`，照网页版 `lib/motion.ts` 的“从哪里来，回哪里去”：换页由 `PageHost` 按 `navKind` 判断方向（往里走、返回、切标签、卡片放大和缩回，`MotionTest`），旧页面带着离开那一刻的状态退场；面板交给 `SheetHost` 托管，关上时带着原来的内容沉下去；错误提示、忙碌条、提示卡用 `Appear` 展开收起；讨论里新来的条目用 `RiseIn` 淡入上浮，翻回去看旧的不重播。`LocalMotion` 为 false（系统移除动画、截图测试）时全部直接切换。
 - 知识画布的部件在 `ui/screens/CanvasParts.kt`，分支图的布局算法（`data/Canvas.kt` 的 `graph()`）和网页版 `graphOf` 一样，`FlowTest` 在画布剧本的每一步逐字比对；辩论台面、空讲台和双方阵容在 `ui/screens/DebateParts.kt`。
 - 复盘、知识库、卡片、设置在 `ui/screens/ReviewScreen.kt`、`LibraryScreen.kt`、`SettingsScreen.kt`。导出交给系统的分享面板（`shareMarkdown`），导出内容由 `data/Export.kt` 生成、和网页版逐字一致。设置页的“连接并测试”在流程层的 `connectRemote`：先保存地址和口令，测试通过才切换到“我的后端”。
 - 悬浮的部件在 `ui/Glass.kt`：
