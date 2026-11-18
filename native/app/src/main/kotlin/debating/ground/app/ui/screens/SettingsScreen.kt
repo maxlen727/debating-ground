@@ -82,6 +82,7 @@ fun SettingsScreen(st: AppState, model: AppModel) {
                     )
                 }
                 if (mode == "remote") RemotePanel(st, model)
+                if (mode == "remote" && st.config.remote.url.isNotEmpty()) VoicePanel(st, model)
                 if (mode == "api") DirectPanel(st, model)
                 Panel {
                     SectionLabel("关于格式")
@@ -94,6 +95,29 @@ fun SettingsScreen(st: AppState, model: AppModel) {
                 Spacer(Modifier.height(bottom))
             }
         }
+    }
+}
+
+// 讯飞语音：密钥设在后端（Worker 的加密变量），这里只看配没配好、选发音人。和网页版 Settings 的 VoicePanel 一致
+@Composable
+private fun VoicePanel(st: AppState, model: AppModel) {
+    val ready = st.ui.remote.tts
+    Panel {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) { SectionLabel("讯飞语音（可选）") }
+            StatusTag(if (ready) "已配置" else "未配置", if (ready) "ok" else "warn")
+        }
+        Input(
+            st.config.voiceName,
+            { v -> model.learning.editConfig { it.copy(voiceName = v.take(64)) } },
+            "发音人 ID",
+            placeholder = "x4_xiaoyan",
+            maxLength = 64,
+        )
+        FinePrint(
+            "讯飞密钥设置在你的后端（Worker 的加密变量），这里不需要填写。配好后，发言旁会出现“朗读”，输入框旁会出现麦克风。" +
+                "讯飞应用里要分别开通“在线语音合成”和“语音听写（流式版）”；发音人 ID 要用已开通的音色。只在点朗读或说话时调用讯飞，录音不保存。",
+        )
     }
 }
 

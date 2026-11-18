@@ -39,8 +39,19 @@ class ScreenshotTest {
 
     @get:Rule val tmp = org.junit.rules.TemporaryFolder()
 
-    // 每个测试一份新的状态（存档写在临时目录里）
-    private val model by lazy { debating.ground.app.AppModel(tmp.newFolder()) }
+    // 每个测试一份新的状态（存档写在临时目录里）。朗读和语音输入用假的播放器、麦克风和连接
+    private val model by lazy {
+        debating.ground.app.AppModel(tmp.newFolder(), speech = { scope, _ ->
+            val out = object : debating.ground.app.speech.AudioOut {
+                override fun play(audio: ByteArray, mime: String, onDone: () -> Unit, onError: () -> Unit) {}
+                override fun stop() {}
+            }
+            debating.ground.app.speech.Speech(
+                debating.ground.app.speech.Voice(scope, { _, _ -> ByteArray(0) to "audio/mpeg" }, out) {},
+                debating.ground.app.speech.Listen(scope, { error("截图里不连") }, { error("截图里不录") }) { "" },
+            )
+        })
+    }
 
     private fun shoot(name: String, dark: Boolean, width: Int = 390, height: Int = 844) {
         compose.setContent {
@@ -151,6 +162,31 @@ class ScreenshotTest {
     }
 
     // 第三次发言后出现小结卡
+    // 后端配好了讯飞：发言旁有“朗读”，输入框旁有麦克风
+    @Test
+    fun discussWithVoice() {
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/api/config") { ex ->
+            val body = """{"model":"m","ttsConfigured":true,"sttConfigured":true}""".toByteArray()
+            ex.responseHeaders.add("Content-Type", "application/json")
+            ex.sendResponseHeaders(200, body.size.toLong())
+            ex.responseBody.write(body)
+            ex.close()
+        }
+        server.start()
+        try {
+            compose.setContent { Frame(dark = false, width = 390, height = 844) }
+            startAndTalk(listOf("机会成本就是放弃的另一件事最好的价值。"))
+            model.learning.editConfig { it.copy(aiMode = "remote", remote = debating.ground.app.data.Remote("http://127.0.0.1:${server.address.port}", "pw")) }
+            model.run { refreshRemote() }
+            awaitState { it.ui.remote.tts && it.ui.remote.stt }
+            compose.onNodeWithContentDescription("语音输入").assertIsDisplayed()
+            save("phone-discuss-voice")
+        } finally {
+            server.stop(0)
+        }
+    }
+
     @Test
     fun discussReflectionDark() {
         compose.setContent { Frame(dark = true, width = 390, height = 844) }

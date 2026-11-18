@@ -91,6 +91,7 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.javascriptengine)
+    implementation(libs.okhttp)
     debugImplementation(libs.compose.ui.tooling)
 
     testImplementation(libs.junit)

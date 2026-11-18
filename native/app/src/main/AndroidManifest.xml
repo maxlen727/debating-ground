@@ -9,6 +9,9 @@
     <!-- 连接自己部署的后端、直接连接服务商都要用网络 -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- 语音输入（可选，后端配好讯飞时才出现）：第一次点麦克风时才请求；录音只在内存里转发给后端，不保存 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <!-- allowBackup 和现在的 App 保持一致（知识库能随系统备份）。直接连接用的 API Key 存在 noBackupFilesDir，
          不进备份；而且它用 Android Keystore 里不能导出的密钥加密，就算文件被拷走也解不开 -->
     <application

@@ -100,6 +100,37 @@ class AiTest {
     }
 
     @Test
+    fun ttsSendsTheTextAndVoiceAndDecodesTheAudio() = runBlocking {
+        respond =
+            { reply(it, 200, "application/json", """{"audio":"${java.util.Base64.getEncoder().encodeToString("mp3".toByteArray())}","mime":"audio/mpeg"}""") }
+        val (audio, mime) = RemoteBackend(base, "open-sesame").tts("你好。", "x4_xiaoyan")
+        assertEquals("mp3", String(java.util.Base64.getDecoder().decode(audio)))
+        assertEquals("audio/mpeg", mime)
+        val (headers, body) = requests.single()
+        assertEquals("Bearer open-sesame", headers["authorization"])
+        assertEquals("""{"text":"你好。","voice":"x4_xiaoyan"}""", body)
+    }
+
+    @Test
+    fun ttsFailuresShowTheBackendsReason() = runBlocking {
+        respond = { reply(it, 503, "application/json", """{"error":"后端没有配置讯飞语音。"}""") }
+        try {
+            RemoteBackend(base, "pw").tts("你好。", "v")
+            fail("应该失败")
+        } catch (e: AiFailure) {
+            assertEquals("后端没有配置讯飞语音。", e.message)
+        }
+    }
+
+    @Test
+    fun statusReportsWhetherVoiceIsConfigured() = runBlocking {
+        respond = { reply(it, 200, "application/json", """{"model":"m","ttsConfigured":true,"sttConfigured":false}""") }
+        val st = RemoteBackend(base, "pw").status()
+        assertTrue(st.ttsConfigured)
+        assertFalse(st.sttConfigured)
+    }
+
+    @Test
     fun anOldBackendThatIgnoresStreamingStillWorks() = runBlocking {
         respond = { reply(it, 200, "application/json", """{"text":"整段返回","covered":[]}""") }
         val o = remote().run("discuss", payload, remoteConfig, null) { }

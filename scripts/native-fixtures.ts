@@ -6,6 +6,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { graphOf } from '../src/lib/canvas.ts';
+import { splitForSpeech } from '../shared/speech.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const FIXTURE_DIR = join(root, 'native', 'app', 'src', 'test', 'resources', 'fixtures');
@@ -313,8 +314,27 @@ export async function generate(): Promise<Record<string, string>> {
 
   // 原生测试读回存档时用同一个“现在”和时区
   out['direct-cases.json'] = JSON.stringify(await directCases()) + '\n';
+  // 朗读的分段：原生版按同样的规则切，一段一段请求后端合成
+  out['speech-cases.json'] = JSON.stringify(speechCases()) + '\n';
   out['meta.json'] = JSON.stringify({ now: NOW, timeZone: TIME_ZONE }, null, 2) + '\n';
   return out;
+}
+
+function speechCases() {
+  const long = '机会成本是你为了得到某样东西而放弃的最好的其他选择。'.repeat(30);
+  const inputs = [
+    '',
+    '   ',
+    '你好。',
+    '  第一句。\n\n  第二句！第三句？  ',
+    long,
+    '没有标点'.repeat(200),
+    'Hello world. This is English! Mixed 中文；还有分号;以及换行\n继续',
+    '表情😀和生僻字𠀀也要按一个字算。'.repeat(40),
+    '很长'.repeat(3000),
+    'tab\t和\u3000全角空格\u00a0不换行空格',
+  ];
+  return inputs.map(text => ({ text, parts: splitForSpeech(text) }));
 }
 
 // ---------- 学习流程的剧本 ----------

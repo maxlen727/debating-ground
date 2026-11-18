@@ -71,7 +71,14 @@ data class Ui(
     val quiz: Map<String, Map<Int, Int>> = emptyMap(),
 )
 
-data class RemoteStatus(val verified: Boolean = false, val model: String = "")
+/** 朗读能不能用：连着自己部署的后端，而且后端配好了讯飞（演示模式和直接连接都没有）。 */
+fun AppState.voiceReady() = config.aiMode == "remote" && ui.remote.tts
+
+/** 语音输入能不能用：同上，看后端的语音听写。 */
+fun AppState.listenReady() = config.aiMode == "remote" && ui.remote.stt
+
+/** 自己部署的后端：测试过没有、用的模型、讯飞朗读和语音输入配好了没有（GET /api/config，不产生费用）。 */
+data class RemoteStatus(val verified: Boolean = false, val model: String = "", val tts: Boolean = false, val stt: Boolean = false)
 
 data class DirectStatus(val saved: Boolean = false, val baseURL: String = "", val model: String = "", val verified: Boolean = false) {
     companion object {
@@ -917,7 +924,12 @@ class Learning(
             val status = withTimeout(CONNECT_TIMEOUT_MS) {
                 backend.status().also { backend.test() }
             }
-            update { it.copy(config = it.config.copy(aiMode = "remote"), ui = it.ui.copy(busy = null, remote = RemoteStatus(true, status.model))) }
+            update {
+                it.copy(
+                    config = it.config.copy(aiMode = "remote"),
+                    ui = it.ui.copy(busy = null, remote = RemoteStatus(true, status.model, status.ttsConfigured, status.sttConfigured)),
+                )
+            }
             toast("连接成功，可以开始学习。")
             return true
         } catch (e: TimeoutCancellationException) {
@@ -933,6 +945,18 @@ class Learning(
         }
         ui { it.copy(busy = null, error = error) }
         return false
+    }
+
+    /**
+     * 打开 App 时问一下后端的状态（和网页版 refreshStatus 一样，不调用模型、不产生费用）：
+     * 讯飞配好了没有，决定发言旁有没有“朗读”、输入框旁有没有麦克风。连不上就当没配，不打扰用户。
+     */
+    suspend fun refreshRemote() {
+        val remote = state.config.remote
+        if (state.config.aiMode != "remote" || remote.url.isEmpty()) return
+        val status = runCatching { ai.remote(state.config).status() }.getOrNull() ?: return
+        if (state.config.remote != remote) return
+        ui { it.copy(remote = it.remote.copy(model = status.model, tts = status.ttsConfigured, stt = status.sttConfigured)) }
     }
 
     /** 从这台设备上删除后端地址和访问口令；正在用它的话换回演示模式。 */
