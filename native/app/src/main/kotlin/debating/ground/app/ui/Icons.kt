@@ -13,6 +13,9 @@ import androidx.compose.ui.unit.dp
 object IconPaths {
     const val BACK = "M15 18l-6-6 6-6"
     const val CHEVRON = "M9 6l6 6-6 6"
+    const val CLOSE = "M6 6l12 12M18 6L6 18"
+    const val PLUS = "M12 5v14M5 12h14"
+    const val SEND = "M5 12h13M12 5l7 7-7 7"
     const val LEARN = "M4 19V6a2 2 0 0 1 2-2h12v15H6a2 2 0 0 0-2 2zM8 8h6"
     const val CHAT = "M5 5h14v10H9l-4 4z"
     const val LIBRARY = "M5 4h4v16H5zM10 4h4v16h-4zM15.5 5l3.5 1-3 14-3.5-1z"

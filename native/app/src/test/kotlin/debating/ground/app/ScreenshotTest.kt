@@ -33,11 +33,16 @@ import java.io.File
 class ScreenshotTest {
     @get:Rule val compose = createComposeRule()
 
+    @get:Rule val tmp = org.junit.rules.TemporaryFolder()
+
+    // 每个测试一份新的状态（存档写在临时目录里）
+    private val model by lazy { debating.ground.app.AppModel(tmp.newFolder()) }
+
     private fun shoot(name: String, dark: Boolean, width: Int = 390, height: Int = 844) {
         compose.setContent {
             Frame(dark, width, height)
         }
-        compose.onNodeWithText("学习").assertIsDisplayed()
+        compose.onNodeWithText("今天想弄懂\n什么？").assertIsDisplayed()
         save(name)
     }
 
@@ -45,8 +50,20 @@ class ScreenshotTest {
     @Composable
     private fun Frame(dark: Boolean, width: Int, height: Int) {
         CompositionLocalProvider(LocalMotion provides false) {
-            SibianTheme(dark = dark) { Box(Modifier.requiredSize(width.dp, height.dp)) { AppScaffold() } }
+            SibianTheme(dark = dark) { Box(Modifier.requiredSize(width.dp, height.dp)) { AppScaffold(model) } }
         }
+    }
+
+    // 等流程走完：AI 调用在后台线程，结果投递回主线程。Robolectric 下 waitUntil 不处理这些投递，
+    // 所以每次先让真实时间过去一点，再让界面空闲一次
+    private fun awaitState(timeoutMs: Long = 5_000, done: (debating.ground.app.flow.AppState) -> Boolean) {
+        val until = System.currentTimeMillis() + timeoutMs
+        while (!done(model.state.value)) {
+            check(System.currentTimeMillis() < until) { "等了 ${timeoutMs}ms，状态还是 ${model.state.value.ui}" }
+            Thread.sleep(30)
+            compose.waitForIdle()
+        }
+        compose.waitForIdle()
     }
 
     private fun save(name: String) {
@@ -71,11 +88,32 @@ class ScreenshotTest {
     @Test
     fun landscapePhone() = shoot("phone-landscape", dark = false, width = 844, height = 390)
 
-    @Test fun tabsSwitchPages() {
+    @Test
+    fun tabsSwitchPages() {
         compose.setContent { Frame(dark = false, width = 390, height = 844) }
         compose.onNodeWithText("今天想弄懂\n什么？").assertIsDisplayed()
         compose.onNodeWithText("知识库").performClick()
         compose.onNodeWithText("讨论结束后的复盘会存成知识卡片，按间隔提醒你复习。").assertIsDisplayed()
         save("phone-library")
+    }
+
+    // 演示模式下准备一场讨论，停在准备页
+    @Test
+    fun preparePage() {
+        compose.setContent { Frame(dark = false, width = 390, height = 844) }
+        compose.onNodeWithText("先看看题目和角色").performClick()
+        awaitState { it.ui.screen == "prepare" }
+        compose.onNodeWithText("要弄懂的要点").assertIsDisplayed()
+        save("phone-prepare")
+    }
+
+    @Test
+    fun preparePageDark() {
+        compose.setContent { Frame(dark = true, width = 390, height = 844) }
+        model.learning.setMode("roundtable")
+        compose.onNodeWithText("先看看题目和角色").performClick()
+        awaitState { it.ui.screen == "prepare" }
+        compose.onNodeWithText("圆桌嘉宾").assertExists()
+        save("phone-prepare-roundtable-dark")
     }
 }

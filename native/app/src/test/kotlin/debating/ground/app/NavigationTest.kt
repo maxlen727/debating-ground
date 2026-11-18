@@ -2,7 +2,8 @@ package debating.ground.app
 
 import debating.ground.app.ui.NavStyle
 import debating.ground.app.ui.Tab
-import debating.ground.app.ui.backTarget
+import debating.ground.app.ui.activeTab
+import debating.ground.app.ui.immersive
 import debating.ground.app.ui.navStyleFor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -22,10 +23,13 @@ class NavigationTest {
         assertEquals(NavStyle.Rail, navStyleFor(700, 400))
     }
 
-    @Test fun backReturnsToLearnFirstThenLeaves() {
-        assertEquals(Tab.Learn, backTarget(Tab.Library))
-        assertEquals(Tab.Learn, backTarget(Tab.Settings))
-        assertNull(backTarget(Tab.Learn))
+    @Test
+    fun tabsLightUpLikeTheWebApp() {
+        assertEquals(Tab.Learn, activeTab("learn"))
+        assertEquals(Tab.Discuss, activeTab("review"))
+        assertEquals(Tab.Library, activeTab("card"))
+        assertNull(activeTab("prepare"))
+        assertEquals(listOf("session", "prepare", "card"), listOf("learn", "session", "prepare", "card", "library", "settings", "review").filter(::immersive))
     }
 
     @Test fun tabsMatchTheWebApp() {

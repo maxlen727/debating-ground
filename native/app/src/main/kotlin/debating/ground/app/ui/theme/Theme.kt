@@ -73,3 +73,14 @@ fun SibianTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -
         MaterialTheme(colorScheme = scheme, content = content)
     }
 }
+
+/** 角色头像的颜色：tone a/b/c 对应网页版的 .tone-a/.tone-b/.tone-c（--a-bg/--a-fg 等）。 */
+@Composable
+fun toneColors(tone: String): Pair<androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color> {
+    val t = LocalTokens.current
+    return when (tone) {
+        "a" -> t.aBg.color() to t.aFg.color()
+        "b" -> t.bBg.color() to t.bFg.color()
+        else -> t.cBg.color() to t.cFg.color()
+    }
+}
