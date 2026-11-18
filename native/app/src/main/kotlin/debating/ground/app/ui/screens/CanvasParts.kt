@@ -67,6 +67,7 @@ import debating.ground.app.ui.Input
 import debating.ground.app.ui.PrimaryButton
 import debating.ground.app.ui.SectionLabel
 import debating.ground.app.ui.Sheet
+import debating.ground.app.ui.glass
 import debating.ground.app.ui.lineIcon
 import debating.ground.app.ui.mix
 import debating.ground.app.ui.theme.LocalTokens
@@ -88,7 +89,8 @@ fun CanvasPath(s: Session, busy: Boolean, model: AppModel) {
     val crumbs = listOf<Pair<String?, String>>(null to "主干") + chain.map { it.id to it.topic }
     val total = s.branches?.size ?: 0
     Row(
-        Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+        // 路径条是一条悬浮的磨砂胶囊
+        Modifier.padding(horizontal = 12.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp), 6.dp).padding(start = 6.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {

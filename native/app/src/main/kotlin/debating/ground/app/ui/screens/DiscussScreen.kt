@@ -38,6 +38,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -49,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -56,6 +58,8 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -69,6 +73,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -93,6 +98,7 @@ import debating.ground.app.ui.FinePrint
 import debating.ground.app.ui.GhostButton
 import debating.ground.app.ui.IconPaths
 import debating.ground.app.ui.Input
+import debating.ground.app.ui.LocalFloating
 import debating.ground.app.ui.LocalMotion
 import debating.ground.app.ui.PrimaryButton
 import debating.ground.app.ui.Quote
@@ -101,6 +107,8 @@ import debating.ground.app.ui.SecondaryButton
 import debating.ground.app.ui.SectionLabel
 import debating.ground.app.ui.Sheet
 import debating.ground.app.ui.TopBar
+import debating.ground.app.ui.fadeUnder
+import debating.ground.app.ui.glass
 import debating.ground.app.ui.lineIcon
 import debating.ground.app.ui.mix
 import debating.ground.app.ui.theme.LINE_HEIGHT_SERIF
@@ -129,10 +137,18 @@ fun DiscussScreen(st: AppState, model: AppModel) {
     // 辩论赛程没走完就结束，会跳过剩下的环节（包括总结陈词），先确认一下
     val onFinish = { if (debate && s.cursor < s.turns.size) l.openSheet("finish") else model.run { finish() } }
     Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize()) {
-            SessionTop(s, busy, onFinish, model)
-            Thread(s, st, live, model, Modifier.weight(1f))
-            ComposerArea(s, st, live, model)
+        // 顶栏和输入栏都悬浮在讨论记录上：记录可以滚到它们下面，滚到附近时淡出，不垫整条底色
+        val density = LocalDensity.current
+        var top by remember { mutableStateOf(0.dp) }
+        var composer by remember { mutableStateOf(0.dp) }
+        Box(Modifier.fillMaxSize()) {
+            Thread(s, st, live, model, Modifier.fillMaxSize().fadeUnder(top, composer), top, composer)
+            Box(Modifier.align(Alignment.TopCenter).onSizeChanged { top = with(density) { it.height.toDp() } }) {
+                SessionTop(s, busy, onFinish, model)
+            }
+            Box(Modifier.align(Alignment.BottomCenter).onSizeChanged { composer = with(density) { it.height.toDp() } }) {
+                ComposerArea(s, st, live, model)
+            }
         }
         Sheets(s, st, live, model)
     }
@@ -162,13 +178,7 @@ private fun EmptyDiscuss(onStart: () -> Unit) {
 private fun SessionTop(s: Session, busy: Boolean, onFinish: () -> Unit, model: AppModel) {
     val t = LocalTokens.current
     val l = model.learning
-    val line = t.line.color()
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .background(t.surface.color().copy(alpha = 0.9f))
-            .drawBehind { drawLine(line, Offset(0f, size.height), Offset(size.width, size.height), 1.dp.toPx()) },
-    ) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         TopBar(s.concept, "${MODES[s.mode]?.name ?: ""} · ${s.topic}", onBack = { l.go("learn") }) {
             if (s.finished) {
                 SecondaryButton("看复盘", { l.go("review") }, small = true)
@@ -189,8 +199,9 @@ private fun PointsProgress(s: Session, model: AppModel) {
     // 新点亮的要点滚到看得见的地方
     val lit = s.covered.lastOrNull()
     LaunchedEffect(s.covered.size) { if (lit != null) row.animateScrollToItem(lit) }
+    // 要点进度是一条悬浮的磨砂胶囊
     Row(
-        Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, bottom = 6.dp),
+        Modifier.padding(horizontal = 12.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp), 6.dp).padding(start = 14.dp, end = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -263,7 +274,7 @@ private fun PointChip(text: String, lit: Boolean) {
 /* ---------- 讨论记录 ---------- */
 
 @Composable
-private fun Thread(s: Session, st: AppState, live: Live?, model: AppModel, modifier: Modifier) {
+private fun Thread(s: Session, st: AppState, live: Live?, model: AppModel, modifier: Modifier, top: Dp, bottom: Dp) {
     val l = model.learning
     val ui = st.ui
     val debate = s.mode == "debate"
@@ -278,7 +289,7 @@ private fun Thread(s: Session, st: AppState, live: Live?, model: AppModel, modif
         modifier.fillMaxWidth(),
         state = list,
         reverseLayout = true,
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 12.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 18.dp + top, bottom = 12.dp + bottom),
         verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.Bottom),
     ) {
         when {
@@ -691,26 +702,26 @@ private fun Feedback(content: @Composable () -> Unit) {
 
 @Composable
 private fun ComposerArea(s: Session, st: AppState, live: Live?, model: AppModel) {
-    val t = LocalTokens.current
     val l = model.learning
-    val line = t.line.color()
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .background(t.surface.color().copy(alpha = 0.94f))
-            .drawBehind { drawLine(line, Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx()) }
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        ErrorBanner(st.ui.error) { l.clearError() }
-        when {
-            s.awaitingReview == true -> DoneRow("赛程结束了，读完总结陈词再复盘。") {
-                PrimaryButton("进入复盘", { model.run { finish() } }, enabled = st.ui.busy == null, small = true)
+    // 不垫整条底色：工具、输入框、按钮各自悬浮（磨砂底或投影）
+    CompositionLocalProvider(LocalFloating provides true) {
+        Column(
+            Modifier
+                .widthIn(max = 720.dp)
+                .fillMaxWidth()
+                .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            ErrorBanner(st.ui.error) { l.clearError() }
+            when {
+                s.awaitingReview == true -> DoneRow("赛程结束了，读完总结陈词再复盘。") {
+                    PrimaryButton("进入复盘", { model.run { finish() } }, enabled = st.ui.busy == null, small = true)
+                }
+
+                s.finished -> DoneRow("这次讨论已结束。") { PrimaryButton("看复盘", { l.go("review") }, small = true) }
+
+                else -> Composer(s, st, live, model)
             }
-
-            s.finished -> DoneRow("这次讨论已结束。") { PrimaryButton("看复盘", { l.go("review") }, small = true) }
-
-            else -> Composer(s, st, live, model)
         }
     }
 }
@@ -718,7 +729,11 @@ private fun ComposerArea(s: Session, st: AppState, live: Live?, model: AppModel)
 @Composable
 private fun DoneRow(text: String, action: @Composable () -> Unit) {
     val t = LocalTokens.current
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(
+        Modifier.fillMaxWidth().glass(RoundedCornerShape(24.dp)).padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         Text(text, style = TextStyles.small, color = t.muted.color(), modifier = Modifier.weight(1f))
         action()
     }
@@ -776,8 +791,9 @@ private fun Composer(s: Session, st: AppState, live: Live?, model: AppModel) {
 @Composable
 private fun TurnBanner(dot: Color, text: AnnotatedString.Builder.() -> Unit) {
     val t = LocalTokens.current
+    // 小小的磨砂胶囊，压在讨论记录上也看得清
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+        Modifier.glass(RoundedCornerShape(16.dp), 3.dp).padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -795,10 +811,14 @@ private fun Tool(text: String, icon: String?, enabled: Boolean, on: Boolean = fa
         contentAlignment = Alignment.Center,
     ) {
         Row(
-            Modifier.background(
-                if (on) t.brand.color().mix(0.12f, t.bg.color()) else t.bg.color(),
-                RoundedCornerShape(18.dp),
-            ).border(1.dp, if (on) t.brand.color().mix(0.45f, t.line.color()) else t.line.color(), RoundedCornerShape(18.dp))
+            Modifier.then(
+                if (on) {
+                    Modifier.background(t.brand.color().mix(0.12f, t.bg.color()), RoundedCornerShape(18.dp))
+                        .border(1.dp, t.brand.color().mix(0.45f, t.line.color()), RoundedCornerShape(18.dp))
+                } else {
+                    Modifier.glass(RoundedCornerShape(18.dp), 3.dp)
+                },
+            )
                 .padding(horizontal = 11.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(5.dp),
@@ -854,7 +874,7 @@ private fun DraftInput(draft: String, placeholder: String, busy: Boolean, onChan
             modifier = Modifier.weight(1f).heightIn(min = 46.dp).semantics { contentDescription = "你的发言" },
             decorationBox = { inner ->
                 Box(
-                    Modifier.background(t.raised.color(), RoundedCornerShape(22.dp)).border(1.dp, t.line.color(), RoundedCornerShape(22.dp))
+                    Modifier.glass(RoundedCornerShape(23.dp))
                         .padding(horizontal = 16.dp, vertical = 11.dp),
                 ) {
                     if (draft.isEmpty()) Text(placeholder, style = TextStyles.body, color = t.muted.color(), maxLines = 1)
@@ -866,6 +886,10 @@ private fun DraftInput(draft: String, placeholder: String, busy: Boolean, onChan
         Box(
             Modifier.size(
                 46.dp,
+            ).shadow(
+                if (enabled) 8.dp else 0.dp,
+                CircleShape,
+                spotColor = t.brand.color().copy(alpha = 0.45f),
             ).alpha(if (enabled) 1f else 0.45f).background(t.brand.color(), CircleShape).clickable(enabled = enabled, role = Role.Button, onClick = onSend)
                 .semantics { contentDescription = "发送" },
             contentAlignment = Alignment.Center,

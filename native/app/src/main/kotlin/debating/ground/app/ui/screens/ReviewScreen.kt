@@ -12,8 +12,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -64,9 +66,9 @@ import debating.ground.app.data.TermCard
 import debating.ground.app.data.sessionMarkdown
 import debating.ground.app.flow.AppState
 import debating.ground.app.ui.BusyStrip
-import debating.ground.app.ui.Dock
 import debating.ground.app.ui.ErrorBanner
 import debating.ground.app.ui.FinePrint
+import debating.ground.app.ui.GlassIconButton
 import debating.ground.app.ui.IconPaths
 import debating.ground.app.ui.LocalMotion
 import debating.ground.app.ui.Panel
@@ -74,7 +76,9 @@ import debating.ground.app.ui.PrimaryButton
 import debating.ground.app.ui.SecondaryButton
 import debating.ground.app.ui.SectionLabel
 import debating.ground.app.ui.TopBar
+import debating.ground.app.ui.WithFloatingDock
 import debating.ground.app.ui.lineIcon
+import debating.ground.app.ui.scrollWithEdge
 import debating.ground.app.ui.theme.LINE_HEIGHT_SERIF
 import debating.ground.app.ui.theme.LocalTokens
 import debating.ground.app.ui.theme.Serif
@@ -91,12 +95,7 @@ fun shareMarkdown(context: Context, title: String, text: String) {
 }
 
 @Composable
-fun ExportButton(label: String, onClick: () -> Unit) {
-    val t = LocalTokens.current
-    Box(Modifier.size(44.dp).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = label }, contentAlignment = Alignment.Center) {
-        Icon(lineIcon("download", IconPaths.DOWNLOAD), null, tint = t.ink.color())
-    }
-}
+fun ExportButton(label: String, onClick: () -> Unit) = GlassIconButton(IconPaths.DOWNLOAD, label, onClick)
 
 @Composable
 fun ReviewScreen(st: AppState, model: AppModel) {
@@ -115,67 +114,69 @@ fun ReviewScreen(st: AppState, model: AppModel) {
     val hasInput = s.entries.any { (it is ChatMessage && it.human == true) || (it is Reflection && it.text.isNotEmpty()) }
     val card = st.library.find { it.sessionId == s.id }
     val busy = st.ui.busy != null
-    Column(Modifier.fillMaxSize()) {
-        TopBar("理解复盘", "${s.concept} · ${MODES[s.mode]?.name.orEmpty()}", onBack = { l.go("session") }) {
-            ExportButton("导出讨论记录和复盘") { shareMarkdown(context, "${s.concept} · 讨论记录", sessionMarkdown(s)) }
-        }
-        Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            if (r == null) {
-                Panel {
-                    when {
-                        !hasInput -> {
-                            Text("这次讨论里还没有你的发言，没有可以复盘的内容。", style = TextStyles.body, color = t.ink.color())
-                            PrimaryButton("回到讨论", { l.resume() }, Modifier.fillMaxWidth())
-                        }
-
-                        busy -> Text("正在复盘整场讨论……", style = TextStyles.body, color = t.muted.color())
-
-                        else -> {
-                            Text("复盘还没有生成。", style = TextStyles.body, color = t.ink.color())
-                            PrimaryButton("生成理解复盘", { model.run { generateReview() } }, Modifier.fillMaxWidth())
-                        }
-                    }
-                    ErrorBanner(st.ui.error) { l.clearError() }
-                }
-            } else {
-                val mastered = r.points.count { it.status == "mastered" }
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    Ring(mastered, r.points.size)
-                    Column(Modifier.weight(1f)) {
-                        Text(r.oneLine, style = DisplaySm, color = t.ink.color())
-                        Text(
-                            (if (r.source == "api") "由 ${r.model} 根据你的发言和小结生成，供参考" else "演示模式：预设示例或规则统计") + " · 已存入知识库",
-                            style = TextStyles.small.copy(fontSize = 12.sp),
-                            color = t.muted.color(),
-                            modifier = Modifier.padding(top = 6.dp),
-                        )
-                    }
-                }
-                ReviewBody(r.points, r.misconceptions, r.stances, s.glossary)
-                if (r.quiz.isNotEmpty()) {
-                    Panel {
-                        SectionLabel("检验一下")
-                        Quiz(r.quiz, st.ui.quiz["s:${s.id}"].orEmpty()) { q, o -> l.pickAnswer("s:${s.id}", q, o) }
-                    }
-                }
-                FinePrint("第一次复习在明天。到时候知识库会提醒你，先凭记忆做题，再看这份复盘。")
+    WithFloatingDock(dock = {
+        if (r != null && card != null) {
+            ErrorBanner(st.ui.error) { l.clearError() }
+            BusyStrip(st.ui.busy) { l.cancelAI() }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SecondaryButton("回看讨论", { l.go("session") })
+                PrimaryButton("从薄弱点再讨论", { model.run { discussAgain(card) } }, Modifier.weight(1f), enabled = !busy)
             }
         }
-        if (r != null && card != null) {
-            Dock {
-                ErrorBanner(st.ui.error) { l.clearError() }
-                BusyStrip(st.ui.busy) { l.cancelAI() }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SecondaryButton("回看讨论", { l.go("session") })
-                    PrimaryButton("从薄弱点再讨论", { model.run { discussAgain(card) } }, Modifier.weight(1f), enabled = !busy)
+    }) { bottom ->
+        Column(Modifier.fillMaxSize()) {
+            TopBar("理解复盘", "${s.concept} · ${MODES[s.mode]?.name.orEmpty()}", onBack = { l.go("session") }) {
+                ExportButton("导出讨论记录和复盘") { shareMarkdown(context, "${s.concept} · 讨论记录", sessionMarkdown(s)) }
+            }
+            Column(
+                Modifier.weight(1f).scrollWithEdge().padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                if (r == null) {
+                    Panel {
+                        when {
+                            !hasInput -> {
+                                Text("这次讨论里还没有你的发言，没有可以复盘的内容。", style = TextStyles.body, color = t.ink.color())
+                                PrimaryButton("回到讨论", { l.resume() }, Modifier.fillMaxWidth())
+                            }
+
+                            busy -> Text("正在复盘整场讨论……", style = TextStyles.body, color = t.muted.color())
+
+                            else -> {
+                                Text("复盘还没有生成。", style = TextStyles.body, color = t.ink.color())
+                                PrimaryButton("生成理解复盘", { model.run { generateReview() } }, Modifier.fillMaxWidth())
+                            }
+                        }
+                        ErrorBanner(st.ui.error) { l.clearError() }
+                    }
+                } else {
+                    val mastered = r.points.count { it.status == "mastered" }
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        Ring(mastered, r.points.size)
+                        Column(Modifier.weight(1f)) {
+                            Text(r.oneLine, style = DisplaySm, color = t.ink.color())
+                            Text(
+                                (if (r.source == "api") "由 ${r.model} 根据你的发言和小结生成，供参考" else "演示模式：预设示例或规则统计") + " · 已存入知识库",
+                                style = TextStyles.small.copy(fontSize = 12.sp),
+                                color = t.muted.color(),
+                                modifier = Modifier.padding(top = 6.dp),
+                            )
+                        }
+                    }
+                    ReviewBody(r.points, r.misconceptions, r.stances, s.glossary)
+                    if (r.quiz.isNotEmpty()) {
+                        Panel {
+                            SectionLabel("检验一下")
+                            Quiz(r.quiz, st.ui.quiz["s:${s.id}"].orEmpty()) { q, o -> l.pickAnswer("s:${s.id}", q, o) }
+                        }
+                    }
+                    FinePrint("第一次复习在明天。到时候知识库会提醒你，先凭记忆做题，再看这份复盘。")
                 }
+                Spacer(Modifier.height(bottom))
             }
         }
     }

@@ -76,6 +76,18 @@ AI 层在 `ai/`，提供三种来源：
 - 讨论页在 `ui/screens/DiscussScreen.kt`。讨论记录倒着排（`reverseLayout`），AI 逐字生成时自动贴着底部。逐字显示在 `ui/Reveal.kt`，生成中的气泡和完成后的正式发言用同一个 id 记进度，衔接时不会从头再写；关掉动效时直接显示全文。底部面板在 `ui/Sheet.kt`，宽屏时变成居中的对话框。
 - 知识画布的部件在 `ui/screens/CanvasParts.kt`，分支图的布局算法（`data/Canvas.kt` 的 `graph()`）和网页版 `graphOf` 一样，`FlowTest` 在画布剧本的每一步逐字比对；辩论台面、空讲台和双方阵容在 `ui/screens/DebateParts.kt`。
 - 复盘、知识库、卡片、设置在 `ui/screens/ReviewScreen.kt`、`LibraryScreen.kt`、`SettingsScreen.kt`。导出交给系统的分享面板（`shareMarkdown`），导出内容由 `data/Export.kt` 生成、和网页版逐字一致。设置页的“连接并测试”在流程层的 `connectRemote`：先保存地址和口令，测试通过才切换到“我的后端”。
+- 悬浮的部件在 `ui/Glass.kt`：
+  - 手机竖屏的底部导航是悬浮的胶囊，页面铺满整屏，内容可以滚到它下面；键盘弹出时胶囊收起。
+  - 底部操作（`WithFloatingDock`）和讨论页的输入栏也悬浮，不垫满宽的底色：
+    - 主按钮带投影，次按钮、文字链接、工具和输入框用磨砂底（`glass`）。
+    - 滚动内容的末尾留出它们量出来的高度。
+  - 内容快滚到悬浮控件时用 `fadeBottom` 淡出：只改内容自己的透明度，背景氛围照样透出来，文字不会和按钮叠在一起。
+  - Compose 不能模糊身后的内容，所以磨砂底几乎不透明。
+  - 布局和交互参考 iOS 液态玻璃的规范（Apple HIG 的 Materials、Tab bars、Toolbars、Sheets、Buttons）：
+    - 有文字的按钮是胶囊，只有图标的按钮是圆形磨砂（`GlassIconButton`）。
+    - 顶栏不垫底色：返回和右边的操作悬浮。页面滚动后，内容在顶上淡出（`scrollWithEdge`）。讨论页的顶栏、要点进度、辩论台面、画布路径都浮在讨论记录上（`fadeUnder`）。
+    - 面板（`Sheet`）是四边留空隙的悬浮卡片。内容多时先停在半高，往上拖到全高；往下拖或在内容顶端继续下滑就关掉。
+    - 往下滚时底部胶囊收起成当前标签的小圆，往回滚或点它就展开。
 - 截图测试里，AI 调用在后台线程、结果投递回主线程。Robolectric 下 `waitUntil` 不处理这些投递，要用 `ScreenshotTest` 里的 `awaitState`：每次让真实时间过去一点，再让界面空闲一次。
 
 ## 代码检查

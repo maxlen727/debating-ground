@@ -10,10 +10,13 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.dp
 import debating.ground.app.ui.AppScaffold
 import debating.ground.app.ui.LocalMotion
@@ -260,5 +263,18 @@ class ScreenshotTest {
         compose.onNodeWithText("直接连接").performClick()
         compose.onNodeWithText("连接 AI 服务商").assertExists()
         save("phone-settings-direct-dark")
+    }
+
+    // 往下滚时底部胶囊收起成当前标签的小圆，点一下展开
+    @Test
+    fun navCollapsesOnScroll() {
+        compose.setContent { Frame(dark = false, width = 390, height = 844) }
+        compose.onNodeWithText("怎么讨论").performTouchInput { swipeUp() }
+        compose.waitForIdle()
+        compose.onNodeWithText("知识库").assertDoesNotExist()
+        save("phone-nav-collapsed")
+        compose.onNodeWithContentDescription("学习，展开导航").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("知识库").assertExists()
     }
 }
