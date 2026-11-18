@@ -76,6 +76,13 @@ AI 层在 `ai/`，提供三种来源：
 - 讨论页在 `ui/screens/DiscussScreen.kt`。讨论记录倒着排（`reverseLayout`），AI 逐字生成时自动贴着底部。逐字显示在 `ui/Reveal.kt`，生成中的气泡和完成后的正式发言用同一个 id 记进度，衔接时不会从头再写；关掉动效时直接显示全文。底部面板在 `ui/Sheet.kt`，宽屏时变成居中的对话框。
 - 知识画布的部件在 `ui/screens/CanvasParts.kt`，分支图的布局算法（`data/Canvas.kt` 的 `graph()`）和网页版 `graphOf` 一样，`FlowTest` 在画布剧本的每一步逐字比对；辩论台面、空讲台和双方阵容在 `ui/screens/DebateParts.kt`。
 - 复盘、知识库、卡片、设置在 `ui/screens/ReviewScreen.kt`、`LibraryScreen.kt`、`SettingsScreen.kt`。导出交给系统的分享面板（`shareMarkdown`），导出内容由 `data/Export.kt` 生成、和网页版逐字一致。设置页的“连接并测试”在流程层的 `connectRemote`：先保存地址和口令，测试通过才切换到“我的后端”。
+- 悬浮的部件在 `ui/Glass.kt`：
+  - 手机竖屏的底部导航是悬浮的胶囊，页面铺满整屏，内容可以滚到它下面；键盘弹出时胶囊收起。
+  - 底部操作（`WithFloatingDock`）和讨论页的输入栏也悬浮，不垫满宽的底色：
+    - 主按钮带投影，次按钮、文字链接、工具和输入框用磨砂底（`glass`）。
+    - 滚动内容的末尾留出它们量出来的高度。
+  - 内容快滚到悬浮控件时用 `fadeBottom` 淡出：只改内容自己的透明度，背景氛围照样透出来，文字不会和按钮叠在一起。
+  - Compose 不能模糊身后的内容，所以磨砂底几乎不透明。
 - 截图测试里，AI 调用在后台线程、结果投递回主线程。Robolectric 下 `waitUntil` 不处理这些投递，要用 `ScreenshotTest` 里的 `awaitState`：每次让真实时间过去一点，再让界面空闲一次。
 
 ## 代码检查

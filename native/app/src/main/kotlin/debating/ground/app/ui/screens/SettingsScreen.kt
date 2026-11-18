@@ -5,8 +5,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -38,6 +40,7 @@ import debating.ground.app.ui.SectionLabel
 import debating.ground.app.ui.Segmented
 import debating.ground.app.ui.StatusTag
 import debating.ground.app.ui.TopBar
+import debating.ground.app.ui.WithFloatingDock
 import debating.ground.app.ui.theme.LocalTokens
 import debating.ground.app.ui.theme.TextStyles
 import debating.ground.app.ui.theme.color
@@ -53,40 +56,41 @@ fun SettingsScreen(st: AppState, model: AppModel) {
     val l = model.learning
     val busy = st.ui.busy != null
     val mode = st.config.aiMode.takeIf { it in setOf("remote", "api") } ?: "demo"
-    Column(Modifier.fillMaxSize()) {
-        TopBar("设置", "AI 来源与连接")
-        Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Panel {
-                SectionLabel("AI 来源")
-                Segmented(listOf("demo" to "演示模式", "remote" to "我的后端", "api" to "直接连接"), mode, "AI 来源", enabled = !busy) { id ->
-                    l.editConfig { it.copy(aiMode = id) }
+    // 连接时的进度和出错原因悬浮在底部，不被导航胶囊挡住
+    WithFloatingDock(dock = {
+        ErrorBanner(st.ui.error) { l.clearError() }
+        BusyStrip(st.ui.busy) { l.cancelAI() }
+    }) { bottom ->
+        Column(Modifier.fillMaxSize()) {
+            TopBar("设置", "AI 来源与连接")
+            Column(
+                Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Panel {
+                    SectionLabel("AI 来源")
+                    Segmented(listOf("demo" to "演示模式", "remote" to "我的后端", "api" to "直接连接"), mode, "AI 来源", enabled = !busy) { id ->
+                        l.editConfig { it.copy(aiMode = id) }
+                    }
+                    FinePrint(
+                        when (mode) {
+                            "demo" -> "演示模式用本地模板走完整个流程，不需要网络和密钥。"
+                            "remote" -> "连接你自己部署在 Cloudflare 上的思辨场后端。AI 服务商的密钥存在后端里，这台设备只需要后端地址和访问口令。"
+                            else -> "这台手机直接调用 AI 服务商的 Chat Completions 接口，不需要部署后端。API Key 加密保存在这台设备上。"
+                        },
+                    )
                 }
-                FinePrint(
-                    when (mode) {
-                        "demo" -> "演示模式用本地模板走完整个流程，不需要网络和密钥。"
-                        "remote" -> "连接你自己部署在 Cloudflare 上的思辨场后端。AI 服务商的密钥存在后端里，这台设备只需要后端地址和访问口令。"
-                        else -> "这台手机直接调用 AI 服务商的 Chat Completions 接口，不需要部署后端。API Key 加密保存在这台设备上。"
-                    },
-                )
-            }
-            if (mode == "remote") RemotePanel(st, model)
-            if (mode == "api") DirectPanel(st, model)
-            Panel {
-                SectionLabel("关于格式")
-                Text(
-                    "讨论准备和理解复盘要求模型返回 JSON。较小的模型偶尔不按格式回答；遇到“没有按要求返回结构化结果”时，重试一次或换一个更强的模型。失败的请求不会改变讨论进度，也不会自动换成模板。",
-                    style = TextStyles.small,
-                    color = t.muted.color(),
-                )
-            }
-        }
-        if (st.ui.error.isNotEmpty() || busy) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                ErrorBanner(st.ui.error) { l.clearError() }
-                BusyStrip(st.ui.busy) { l.cancelAI() }
+                if (mode == "remote") RemotePanel(st, model)
+                if (mode == "api") DirectPanel(st, model)
+                Panel {
+                    SectionLabel("关于格式")
+                    Text(
+                        "讨论准备和理解复盘要求模型返回 JSON。较小的模型偶尔不按格式回答；遇到“没有按要求返回结构化结果”时，重试一次或换一个更强的模型。失败的请求不会改变讨论进度，也不会自动换成模板。",
+                        style = TextStyles.small,
+                        color = t.muted.color(),
+                    )
+                }
+                Spacer(Modifier.height(bottom))
             }
         }
     }
