@@ -18,13 +18,29 @@ android {
         versionName = (project.findProperty("versionName") as String?) ?: "0.0.0-dev"
     }
 
+    // 正式签名：和套壳版（android/）读同样的环境变量，用同一把密钥。密钥只在 CI 里从仓库 Secrets 解出来，
+    // 不进仓库。签名一样，手机才会把原生版当成套壳版的更新，而不是另一个 App（#104）。本地没配就构建未签名的 release 包
+    val keystore = System.getenv("ANDROID_KEYSTORE_FILE")
+    signingConfigs {
+        create("release") {
+            if (keystore != null) {
+                storeFile = file(keystore)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
-        // 开发期的 debug 包换个包名后缀，能和现在的 App 同时装着对比；切换发布时（M6）再定正式包
+        // debug 包换个包名后缀，能和正式版同时装着对比
         debug {
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
         }
         release {
+            if (keystore != null) signingConfig = signingConfigs.getByName("release")
+            // 不混淆：JS 引擎、kotlinx.serialization 都靠反射或固定名字，省下的体积不值得冒这个险
             isMinifyEnabled = false
         }
     }
