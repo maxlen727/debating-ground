@@ -17,6 +17,6 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         // 系统设置里把动画关掉（开发者选项的“动画时长缩放”为 0，或无障碍里的“移除动画”）时，背景不漂
         val motion = Settings.Global.getFloat(contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f
-        setContent { CompositionLocalProvider(LocalMotion provides motion) { SibianTheme { AppScaffold() } } }
+        setContent { CompositionLocalProvider(LocalMotion provides motion) { SibianTheme { AppScaffold(AppModel.get(filesDir)) } } }
     }
 }

@@ -62,6 +62,15 @@ AI 层在 `ai/`。首版提供两种来源，直连服务商在 M5：
 - **剧本式标准答案**：`scripts/native-fixtures.ts` 用网页版在演示模式下跑五段剧本（追问的完整闭环、圆桌、知识画布的分支树、一整场辩论、各种边界情况），每一步之后记下规整后的状态、当前快照和复盘用的完整快照。`FlowTest` 按同样的剧本操作，逐步比对。id 和时间戳比较前换成占位符；时间相关的逻辑（间隔复习）另有单测。
 - 剧本里的操作目标（比如“最后一条 AI 发言”）两边用同一套规则推出来。改了剧本，两边的执行器都要跟着改。
 
+## 界面
+
+界面在 `ui/`，照网页版现有的样子做（M4，分几个 PR）。
+
+- `AppModel.kt` 是界面和流程之间的一层：持有状态，状态一变就在后台线程写存档，启动时读回。整个 App 只有一份，转屏、切换深色模式时 Activity 重建，状态和正在进行的请求都不丢。
+- 当前页面由 `state.ui.screen` 决定，和网页版一样；“讨论”“准备”“卡片”是沉浸页，不显示导航。返回键交给流程层的 `goBack()`。
+- 通用部件在 `ui/Components.kt`，对应网页版 `styles.css` 的同名样式（`.primary`、`.chip`、`.mode`、`.banner`、`.dock`……）。
+- 截图测试里，AI 调用在后台线程、结果投递回主线程。Robolectric 下 `waitUntil` 不处理这些投递，要用 `ScreenshotTest` 里的 `awaitState`：每次让真实时间过去一点，再让界面空闲一次。
+
 ## 代码检查
 
 - **ktlint**：管 Kotlin 写法，用 Kotlin 官方编码规范，和 Android Studio 的默认格式一致，设置在 `native/.editorconfig`。它直接调 ktlint 的命令行版本，不用第三方 Gradle 插件，因为那些插件和 AGP 9 自带的 Kotlin 支持不一定兼容。`./gradlew ktlintFormat` 能自动改好大部分问题。

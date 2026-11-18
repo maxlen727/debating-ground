@@ -60,9 +60,9 @@ fun SettingsScreen() = Page {
 
 // 品牌标志：深绿圆角方块里一个衬线“〞”，和网页版 .brand、.brand-mark 一样
 @Composable
-private fun Brand() {
+fun Brand(modifier: Modifier = Modifier) {
     val t = LocalTokens.current
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(
             Modifier.size(30.dp).clip(RoundedCornerShape(topStart = 9.dp, topEnd = 9.dp, bottomEnd = 9.dp, bottomStart = 3.dp)).background(t.brand.color()),
             contentAlignment = Alignment.Center,

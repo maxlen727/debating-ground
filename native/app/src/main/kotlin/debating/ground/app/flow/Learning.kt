@@ -81,6 +81,15 @@ const val STUDENT = "当学生"
 private const val BRANCH_TOPIC_MAX = 40
 private val TONES = listOf("c", "a", "b")
 
+private val PARENT = mapOf(
+    "prepare" to "learn",
+    "session" to "learn",
+    "review" to "session",
+    "card" to "library",
+    "library" to "learn",
+    "settings" to "learn",
+)
+
 data class Quick(val kind: String, val label: String)
 
 val QUICK = listOf(Quick("unclear", "没听懂"), Quick("example", "举个例子"), Quick("disagree", "我不同意"), Quick("fact", "这是事实还是观点？"))
@@ -841,6 +850,29 @@ class Learning(
         update { it.copy(config = it.config.copy(concept = card.concept, mode = card.mode)) }
         prepare(Previous(card.oneLine, weakOf(card)), card.context)
     }
+
+    // 安卓返回键：先关开着的面板，知识画布里先回上一层分支，再回上一页。
+    // 已经在最外层（学习页）时返回 false，由调用方退出 App。和网页版 goBack() 一致
+    fun goBack(): Boolean {
+        val ui = state.ui
+        val s = session
+        if (ui.term != null || ui.explain != null || ui.sheet != null) {
+            this.ui { it.copy(term = null, explain = null, sheet = null) }
+            return true
+        }
+        if (ui.screen == "session" && s?.mode == "canvas" && s.at != null && ui.busy == null) {
+            goToBranch(s.branches?.find { it.id == s.at }?.parent)
+            return true
+        }
+        val to = PARENT[ui.screen] ?: return false
+        // 讨论没开始（或已经结束）时，“复盘”的上一页没有可回的讨论，直接回学习页
+        go(if (to == "session" && s == null) "learn" else to)
+        return true
+    }
+
+    fun clearToast() = ui { it.copy(toast = "") }
+
+    fun clearError() = ui { it.copy(error = "") }
 
     fun openCard(id: String) {
         ui { it.copy(openCard = id) }
