@@ -114,6 +114,18 @@ CI 会把截图作为构建产物上传，审查界面改动时直接下载来�
 
 第一次跑测试时，Robolectric 会从 Maven Central 下载安卓运行库（几百 MB），之后就用本地缓存了。
 
+## 正式签名和升级测试包
+
+原生版的正式包（`assembleRelease`）和套壳版读同样的环境变量（`ANDROID_KEYSTORE_FILE` 等），用同一把签名、同一个包名 `debating.ground.app`。这样手机会把原生版当成套壳版的更新，而不是另一个 App。本地没配签名就构建未签名的 release 包。debug 包的包名带 `.dev`，可以和正式版同时装着。
+
+切换发布之前，要先在真机上试一次“从套壳版升级”，验证知识库迁移：
+
+1. 在 Actions 里手动运行“原生安卓版”工作流。
+2. 下载构建产物里的 `sibian-…-native-test.N`（正式签名，versionCode 排在套壳版最新一次构建之后）。
+3. 直接装在套壳版上面。
+
+这个包只是构建产物，不进 Releases。
+
 ## CI（`.github/workflows/native.yml`）
 
 `native/`、`src/styles.css`、`src/components/ui.tsx` 有改动时运行：代码检查（ktlint、Android Lint），构建 debug 包，跑单元测试和截图测试，上传 debug 包、截图和检查报告（保留 14 天）。不签名、不发 Release。
