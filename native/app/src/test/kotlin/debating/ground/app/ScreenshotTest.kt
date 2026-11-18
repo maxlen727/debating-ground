@@ -77,6 +77,16 @@ class ScreenshotTest {
 
     @Test fun phoneLight() = shoot("phone-light", dark = false)
 
+    // 还没写概念：底部不摆点不了的按钮
+    @Test
+    fun learnEmpty() {
+        compose.setContent { Frame(dark = false, width = 390, height = 844) }
+        model.learning.setConcept("")
+        compose.waitForIdle()
+        compose.onNodeWithText("开始讨论").assertDoesNotExist()
+        save("phone-learn-empty")
+    }
+
     @Test fun phoneDark() = shoot("phone-dark", dark = true)
 
     @Config(qualifiers = "w320dp-h568dp-xxhdpi")
@@ -105,7 +115,7 @@ class ScreenshotTest {
     @Test
     fun preparePage() {
         compose.setContent { Frame(dark = false, width = 390, height = 844) }
-        compose.onNodeWithText("先看看题目和角色").performClick()
+        compose.onNodeWithText("先看题目").performClick()
         awaitState { it.ui.screen == "prepare" }
         compose.onNodeWithText("要弄懂的要点").assertIsDisplayed()
         save("phone-prepare")
@@ -115,7 +125,7 @@ class ScreenshotTest {
     fun preparePageDark() {
         compose.setContent { Frame(dark = true, width = 390, height = 844) }
         model.learning.setMode("roundtable")
-        compose.onNodeWithText("先看看题目和角色").performClick()
+        compose.onNodeWithText("先看题目").performClick()
         awaitState { it.ui.screen == "prepare" }
         compose.onNodeWithText("圆桌嘉宾").assertExists()
         save("phone-prepare-roundtable-dark")
@@ -209,7 +219,7 @@ class ScreenshotTest {
     fun prepareDebate() {
         compose.setContent { Frame(dark = false, width = 390, height = 844) }
         model.learning.setMode("debate")
-        compose.onNodeWithText("先看看题目和角色").performClick()
+        compose.onNodeWithText("先看题目").performClick()
         awaitState { it.ui.screen == "prepare" && it.ui.busy == null }
         compose.onNodeWithText("共 ", substring = true).performScrollTo()
         save("phone-prepare-debate")

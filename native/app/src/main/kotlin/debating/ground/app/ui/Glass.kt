@@ -125,11 +125,15 @@ fun WithFloatingDock(dock: @Composable ColumnScope.() -> Unit, content: @Composa
 /**
  * 能滚动，并且滚动后内容在顶上淡出（iOS 的“滚动边缘效果”）。没滚动时不淡，第一行完整显示；
  * 滚得越多越淡，最多是顶上 20dp 从透明渐到不透明。读滚动位置放在绘制阶段，滚动时不重组。
+ * 页面底下有导航胶囊时，底部也按 [fadeBottom] 淡出。
  */
 @Composable
 fun Modifier.scrollWithEdge(): Modifier {
     val scroll = rememberScrollState()
+    // 底下有悬浮的导航胶囊时，内容快滚到它那里就淡出。只淡滚动的内容，悬浮的按钮层不受影响
+    val nav = LocalNavClearance.current
     return this
+        .fadeBottom(nav)
         .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
         .drawWithContent {
             drawContent()

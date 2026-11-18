@@ -59,7 +59,9 @@ import debating.ground.app.ui.theme.color
 private val R = 14.dp
 
 // 有文字的按钮是胶囊，只有图标的按钮是圆形（参考 iOS 的按钮形状规范）
-private val Capsule = RoundedCornerShape(percent = 50)
+
+/** 胶囊形：有文字的按钮都用它。 */
+val Capsule = RoundedCornerShape(percent = 50)
 
 @Composable
 private fun pressScale(source: MutableInteractionSource, enabled: Boolean): Float {
