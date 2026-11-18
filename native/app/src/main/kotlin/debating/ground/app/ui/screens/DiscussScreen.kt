@@ -1,5 +1,9 @@
 package debating.ground.app.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -42,6 +46,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -59,6 +64,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -77,6 +83,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import debating.ground.app.AppModel
 import debating.ground.app.data.ChatMessage
 import debating.ground.app.data.Entry
@@ -92,7 +99,11 @@ import debating.ground.app.flow.Live
 import debating.ground.app.flow.QUICK
 import debating.ground.app.flow.STUDENT
 import debating.ground.app.flow.TEACHING
+import debating.ground.app.flow.listenReady
 import debating.ground.app.flow.seatName
+import debating.ground.app.flow.voiceReady
+import debating.ground.app.speech.Phase
+import debating.ground.app.speech.Speech
 import debating.ground.app.ui.Appear
 import debating.ground.app.ui.ErrorBanner
 import debating.ground.app.ui.FinePrint
@@ -122,6 +133,7 @@ import debating.ground.app.ui.theme.TextSize
 import debating.ground.app.ui.theme.TextStyles
 import debating.ground.app.ui.theme.color
 import debating.ground.app.ui.theme.toneColors
+import kotlinx.coroutines.delay
 
 // 讨论页：和网页版 src/screens/Session.tsx 一致。顶上是要点进度，中间是讨论记录，底下是输入栏。
 // 知识画布的分支、辩论台面和赛程条在 M4c 加入；这里先让追问、圆桌、讲给 AI 听和辩论的基本发言走通。
@@ -286,6 +298,8 @@ private fun Thread(s: Session, st: AppState, live: Live?, model: AppModel, modif
     val shown = if (s.mode == "canvas") s.levelEntries(s.at) else s.entries
     val lastAi = s.entries.lastOrNull { it is ChatMessage && it.human != true }?.id
     val liveMsg = live?.takeIf { it.kind == "msg" && s.entries.none { e -> e.id == it.id } }
+    // 朗读：后端配好讯飞时才有（从状态算出来往下传，后端状态变了条目才会跟着重画）
+    val voice = model.speech != null && st.voiceReady() && s.room == null
     val list = rememberLazyListState()
     // 打开讨论时已经在的条目不做入场动画；之后新来的淡入、轻轻上浮（翻回去看旧的不重播）
     val seen = remember(s.id) { HashSet<String>().apply { shown.forEach { add(it.id) } } }
@@ -315,7 +329,15 @@ private fun Thread(s: Session, st: AppState, live: Live?, model: AppModel, modif
             }
             item(key = m.id) {
                 RiseIn(m.id, seen) {
-                    EntryView(m, s, showTip = m.id == lastAi && s.learnerTurns == 0 && !s.finished, live = live, busy = ui.busy != null, model = model)
+                    EntryView(
+                        m,
+                        s,
+                        showTip = m.id == lastAi && s.learnerTurns == 0 && !s.finished,
+                        live = live,
+                        busy = ui.busy != null,
+                        model = model,
+                        voice = voice,
+                    )
                 }
             }
             // 辩论：环节变了就画一条分隔线（倒着排，所以放在这条后面）
@@ -329,7 +351,7 @@ private fun Thread(s: Session, st: AppState, live: Live?, model: AppModel, modif
 }
 
 @Composable
-private fun EntryView(m: Entry, s: Session, showTip: Boolean, live: Live?, busy: Boolean, model: AppModel) {
+private fun EntryView(m: Entry, s: Session, showTip: Boolean, live: Live?, busy: Boolean, model: AppModel, voice: Boolean) {
     when (m) {
         is SystemLine -> if (m.back != null) {
             BackLine(m, s, busy, model)
@@ -340,7 +362,7 @@ private fun EntryView(m: Entry, s: Session, showTip: Boolean, live: Live?, busy:
 
         is Reflection -> ReflectCard(m, s, live, busy, model)
 
-        is ChatMessage -> MessageView(m, s, showTip, model)
+        is ChatMessage -> MessageView(m, s, showTip, model, voice)
     }
 }
 
@@ -467,7 +489,7 @@ private fun MessageRow(right: Boolean, avatar: @Composable () -> Unit, body: @Co
 }
 
 @Composable
-private fun MessageView(m: ChatMessage, s: Session, showTip: Boolean, model: AppModel) {
+private fun MessageView(m: ChatMessage, s: Session, showTip: Boolean, model: AppModel, voice: Boolean) {
     val t = LocalTokens.current
     val l = model.learning
     val me = m.human == true
@@ -520,7 +542,11 @@ private fun MessageView(m: ChatMessage, s: Session, showTip: Boolean, model: App
         )
     }) {
         Column(horizontalAlignment = if (look.right) Alignment.End else Alignment.Start, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            MetaLine(label, meta, if (m.skipped == true) "已跳过" else null)
+            MetaLine(label, meta, if (m.skipped == true) "已跳过" else null) {
+                // 朗读：后端配好讯飞时才出现
+                val speech = model.speech
+                if (speech != null && voice && m.skipped != true) VoiceButton(speech, m, label, model)
+            }
             val shape = if (look.right) RoundedCornerShape(16.dp, 4.dp, 16.dp, 16.dp) else RoundedCornerShape(4.dp, 16.dp, 16.dp, 16.dp)
             Box(
                 Modifier
@@ -794,7 +820,10 @@ private fun Composer(s: Session, st: AppState, live: Live?, model: AppModel) {
             s.mode == "teach" || s.teaching == true -> "讲给${s.personas.firstOrNull()?.name ?: "他"}听……"
             else -> "说说你的想法……"
         }
-        DraftInput(s.draft, placeholder, busy, onChange = { l.setDraft(it) }) { model.run { send(s.draft) } }
+        DraftInput(s.draft, placeholder, busy, onChange = { l.setDraft(it) }, mic = {
+            val speech = model.speech
+            if (speech != null && st.listenReady() && s.room == null) MicButton(speech, s.draft, { l.toast(it) }) { l.setDraft(it) }
+        }) { model.run { send(s.draft) } }
     } else {
         PrimaryButton("让 ${turn?.let { seatName(it.role) }.orEmpty()} 发言", { model.run { generateSeat() } }, Modifier.fillMaxWidth(), enabled = !busy)
     }
@@ -879,7 +908,7 @@ private fun HintRow(text: String, streaming: Boolean, onClose: () -> Unit) {
 }
 
 @Composable
-private fun DraftInput(draft: String, placeholder: String, busy: Boolean, onChange: (String) -> Unit, onSend: () -> Unit) {
+private fun DraftInput(draft: String, placeholder: String, busy: Boolean, onChange: (String) -> Unit, mic: @Composable () -> Unit = {}, onSend: () -> Unit) {
     val t = LocalTokens.current
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         BasicTextField(
@@ -899,6 +928,7 @@ private fun DraftInput(draft: String, placeholder: String, busy: Boolean, onChan
                 }
             },
         )
+        mic()
         val enabled = !busy && draft.isNotBlank()
         Box(
             Modifier.size(
@@ -911,6 +941,87 @@ private fun DraftInput(draft: String, placeholder: String, busy: Boolean, onChan
                 .semantics { contentDescription = "发送" },
             contentAlignment = Alignment.Center,
         ) { Icon(lineIcon("send", IconPaths.SEND), null, tint = t.brandInk.color()) }
+    }
+}
+
+/* ---------- 朗读和语音输入（后端配好讯飞时才有） ---------- */
+
+// 朗读按钮：看起来是小字，可点区域有 44dp 高；再点一下停止
+@Composable
+private fun VoiceButton(speech: Speech, m: ChatMessage, label: String, model: AppModel) {
+    val t = LocalTokens.current
+    val playing by speech.voice.playing.collectAsState()
+    val on = playing == m.id
+    Row(
+        Modifier
+            .heightIn(min = 44.dp)
+            .clickable(role = Role.Button) {
+                speech.listen.cancel() // 别一边录一边播
+                speech.voice.toggle(m.id, m.text, model.learning.state.config.voiceName)
+            }
+            .semantics { contentDescription = if (on) "停止朗读${label}的发言" else "朗读${label}的发言" }
+            .padding(horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        val c = if (on) t.brand.color() else t.muted.color()
+        Icon(lineIcon(if (on) "stop" else "volume", if (on) IconPaths.STOP else IconPaths.VOLUME), null, Modifier.size(14.dp), tint = c)
+        Text(if (on) "停止" else "朗读", style = TextStyles.small.copy(fontSize = 12.sp, fontWeight = FontWeight.SemiBold), color = c)
+    }
+}
+
+// 语音输入：点一下开始，再点一下结束；识别出的文字接在已经写好的内容后面，不自动发送。
+// 第一次用时先请求麦克风权限
+@Composable
+private fun MicButton(speech: Speech, draft: String, toast: (String) -> Unit, onText: (String) -> Unit) {
+    val t = LocalTokens.current
+    val context = LocalContext.current
+    val phase by speech.listen.phase.collectAsState()
+    val begin = {
+        speech.voice.stop() // 别把朗读的声音录进去
+        val before = draft
+        val sep = if (Regex("[A-Za-z0-9]$").containsMatchIn(before)) " " else ""
+        speech.listen.start(text = { said -> onText(before + if (said.isEmpty()) "" else sep + said) }, end = { error -> if (error != null) toast(error) })
+    }
+    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) begin() else toast("没有麦克风权限，不能语音输入。可以在系统设置里给思辨场打开。")
+    }
+    // 正在听时每半秒更新一次已录秒数
+    var secs by remember { mutableIntStateOf(0) }
+    LaunchedEffect(phase) {
+        secs = 0
+        while (phase == Phase.Listening) {
+            secs = ((System.currentTimeMillis() - speech.listen.startedAt) / 1000).toInt()
+            delay(500)
+        }
+    }
+    val label = when (phase) {
+        Phase.Listening -> "说完了，结束语音输入（已录 $secs 秒）"
+        Phase.Finishing -> "正在识别最后一句"
+        Phase.Starting -> "正在打开麦克风"
+        null -> "语音输入"
+    }
+    val on = phase != null
+    Box(
+        Modifier
+            .size(46.dp)
+            .then(if (on) Modifier.background(t.brand.color(), CircleShape) else Modifier.glass(CircleShape))
+            .alpha(if (phase == Phase.Starting || phase == Phase.Finishing) 0.7f else 1f)
+            .clickable(enabled = phase != Phase.Finishing, role = Role.Button) {
+                when {
+                    on -> speech.listen.stop()
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED -> begin()
+                    else -> ask.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            }
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (phase == Phase.Listening) {
+            Text("$secs″", style = TextStyles.small.copy(fontSize = 13.sp, fontWeight = FontWeight.SemiBold), color = t.brandInk.color())
+        } else {
+            Icon(lineIcon("mic", IconPaths.MIC), null, Modifier.size(20.dp), tint = if (on) t.brandInk.color() else t.ink.color())
+        }
     }
 }
 

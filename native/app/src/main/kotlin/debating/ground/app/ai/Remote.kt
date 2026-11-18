@@ -96,6 +96,21 @@ class RemoteBackend(private val url: String, private val password: String, priva
         }
     }
 
+    /** 朗读一段（后端用讯飞合成）：返回 base64 的音频和它的类型。前端先按 splitForSpeech 切好，每段不长。 */
+    suspend fun tts(text: String, voice: String): Pair<String, String> {
+        val c = open("/api/tts", "POST")
+        val body = buildJsonObject {
+            put("text", text)
+            put("voice", voice)
+        }.toString()
+        return blocking(c) {
+            val d = readJson(c, connect(c, body))
+            val audio = (d["audio"] as? JsonPrimitive)?.content ?: throw AiFailure(NO_RESPONSE)
+            val mime = (d["mime"] as? JsonPrimitive)?.content ?: "audio/mpeg"
+            audio to mime
+        }
+    }
+
     /** 测试连接：会真的调用一次模型（和网页版“连接并测试”一样）。 */
     suspend fun test(): JsonObject {
         val c = open("/api/test", "POST")

@@ -27,6 +27,9 @@ object IconPaths {
     const val PEOPLE = "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M16 4a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 6"
     const val SWAP = "M7 7h11l-3-3M17 17H6l3 3"
     const val BRANCH = "M6 3v12M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9"
+    const val VOLUME = "M4 9v6h4l5 4V5L8 9zM16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"
+    const val STOP = "M7 7h10v10H7z"
+    const val MIC = "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"
     const val TURN_BACK = "M9 14l-5-5 5-5M4 9h11a5 5 0 0 1 0 10h-3"
 
     // 路径要和网页版逐字一致（IconPathsTest），不拆行：拆成两段拼接会被 Android Lint 误报为漏写空格
