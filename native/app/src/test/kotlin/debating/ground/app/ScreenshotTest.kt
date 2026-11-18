@@ -116,4 +116,56 @@ class ScreenshotTest {
         compose.onNodeWithText("圆桌嘉宾").assertExists()
         save("phone-prepare-roundtable-dark")
     }
+
+    // 演示模式下开始一场讨论，说几句话
+    private fun startAndTalk(lines: List<String>) {
+        compose.onNodeWithText("开始讨论").performClick()
+        awaitState { it.session != null && it.ui.busy == null && it.ui.screen == "session" }
+        for (line in lines) {
+            val before = model.state.value.session!!.entries.size
+            model.run { send(line) }
+            awaitState { it.ui.busy == null && it.session!!.entries.size >= before + 2 }
+        }
+    }
+
+    @Test
+    fun discussPage() {
+        compose.setContent { Frame(dark = false, width = 390, height = 844) }
+        startAndTalk(listOf("机会成本就是做一件事放弃的另一件事最好的价值。", "比如我周末去打工，就放弃了在家复习的收获。"))
+        compose.onNodeWithText("说说你的想法……").assertIsDisplayed()
+        save("phone-discuss")
+    }
+
+    // 第三次发言后出现小结卡
+    @Test
+    fun discussReflectionDark() {
+        compose.setContent { Frame(dark = true, width = 390, height = 844) }
+        startAndTalk(listOf("机会成本是放弃的东西。", "是放弃的选项里最好的那个。", "不只是钱，时间也算。"))
+        compose.onNodeWithText("停一下，用自己的话说说").assertExists()
+        model.learning.setReflectionDraft(model.state.value.session!!.entries.last().id, "机会成本是选了一样以后，放弃的那些选项里最值钱的一个。")
+        compose.waitForIdle()
+        save("phone-discuss-reflect-dark")
+    }
+
+    // 圆桌：点一条发言，打开追问面板
+    @Test
+    fun discussQuickSheet() {
+        compose.setContent { Frame(dark = false, width = 390, height = 844) }
+        model.learning.setMode("roundtable")
+        startAndTalk(listOf("我觉得机会成本只在花钱的时候才有。"))
+        val last = model.state.value.session!!.entries.last { it is debating.ground.app.data.ChatMessage && it.human != true }
+        model.learning.openSheet(last.id)
+        compose.waitForIdle()
+        compose.onNodeWithText("追问这句").assertIsDisplayed()
+        save("phone-discuss-quick")
+    }
+
+    // 平板：讨论页铺满导航右边（讨论页没有导航）
+    @Config(qualifiers = "w1280dp-h800dp-mdpi")
+    @Test
+    fun discussTablet() {
+        compose.setContent { Frame(dark = false, width = 1280, height = 800) }
+        startAndTalk(listOf("机会成本就是做一件事放弃的另一件事最好的价值。"))
+        save("tablet-discuss")
+    }
 }

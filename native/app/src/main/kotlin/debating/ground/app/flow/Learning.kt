@@ -540,6 +540,8 @@ class Learning(
 
     fun closeExplain() = ui { it.copy(explain = null) }
 
+    fun closeHint() = ui { it.copy(hint = null) }
+
     fun proposePoint(raw: String, source: String = "human"): Boolean {
         val s = session
         val text = raw.trim().take(40)

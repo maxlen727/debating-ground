@@ -21,6 +21,7 @@ class IconPathsTest {
             "chat" to IconPaths.CHAT,
             "library" to IconPaths.LIBRARY,
             "settings" to IconPaths.SETTINGS, "close" to IconPaths.CLOSE, "plus" to IconPaths.PLUS, "send" to IconPaths.SEND,
+            "bulb" to IconPaths.BULB, "note" to IconPaths.NOTE, "people" to IconPaths.PEOPLE, "swap" to IconPaths.SWAP,
         )
         for ((name, path) in native) assertEquals("图标 $name", web[name] ?: error("ui.tsx 里没有图标 $name"), path)
     }

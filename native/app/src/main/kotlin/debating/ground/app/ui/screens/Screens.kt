@@ -41,12 +41,6 @@ fun LearnScreen() = Page {
 }
 
 @Composable
-fun DiscussScreen() = Page {
-    Heading("讨论")
-    Note("还没有进行中的讨论。")
-}
-
-@Composable
 fun LibraryScreen() = Page {
     Heading("知识库")
     Note("讨论结束后的复盘会存成知识卡片，按间隔提醒你复习。")

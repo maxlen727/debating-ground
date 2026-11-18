@@ -38,6 +38,7 @@ import debating.ground.app.ui.screens.DiscussScreen
 import debating.ground.app.ui.screens.LearnScreen
 import debating.ground.app.ui.screens.LibraryScreen
 import debating.ground.app.ui.screens.PrepareScreen
+import debating.ground.app.ui.screens.ReviewPlaceholder
 import debating.ground.app.ui.screens.SettingsScreen
 import debating.ground.app.ui.theme.LocalTokens
 import debating.ground.app.ui.theme.TextStyles
@@ -95,7 +96,8 @@ fun AppScaffold(model: AppModel) {
 @Composable
 private fun Page(st: AppState, model: AppModel) = when (st.ui.screen) {
     "prepare" -> PrepareScreen(st, model)
-    "session", "review" -> DiscussScreen()
+    "session" -> DiscussScreen(st, model)
+    "review" -> ReviewPlaceholder(st, model)
     "library", "card" -> LibraryScreen()
     "settings" -> SettingsScreen()
     else -> LearnScreen(st, model, System.currentTimeMillis())
