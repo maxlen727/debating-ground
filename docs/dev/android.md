@@ -1,31 +1,24 @@
 # 安卓 App 与自动发版
 
-App 用 [Capacitor](https://capacitorjs.com/) 把 `dist/` 原样打包进安卓工程（`android/`），不另写一套界面。配置在 `capacitor.config.json`：包名 `debating.ground.app`，页面来源是 `https://localhost`。
+安卓 App 是原生版（`native/`，Kotlin + Jetpack Compose），开发细节见 [原生安卓版](./native.md)。它在 2026 年 11 月替换了原来用 Capacitor 把网页打包的套壳版（#104）：
+
+- **包名、签名都不变**：`debating.ground.app`，同一把签名。
+- **versionCode 接着往上涨**：versionCode 规则不变，手机上看到的是一次普通更新。
+- **知识库自动搬过来**：第一次打开时，从套壳版留下的 WebView 存储里搬过来，旧数据不删。
 
 ## 本地构建
 
-需要 Android Studio（或 Android SDK + JDK 21）。
+需要 Android SDK 和 JDK 21：
 
 ```bash
-npm run android:sync          # 构建界面，并同步到 android/
-npx cap open android          # 用 Android Studio 打开，连手机直接运行
-cd android && ./gradlew assembleDebug   # 或者命令行构建 debug 包
+cd native && ./gradlew assembleDebug   # debug 包，包名带 .dev，能和正式版同时装
 ```
-
-`android/app/src/main/assets/public/` 是同步出来的界面，不进仓库。改了界面后重新 `npm run android:sync`。
-
-## App 里的差异写在哪
-
-- `src/lib/platform.ts`：`isNativeApp()` 判断是否在 App 里（只读 Capacitor 注入的全局对象，测试里也能用），`PUBLIC_APP_URL` 是在线版地址（构建时可用 `VITE_PUBLIC_APP_URL` 覆盖）。
-- `src/lib/native.ts`：只在 App 里按需加载，接管返回键（逻辑在 `actions.ts` 的 `goBack()`）。
-- 本机服务、下载文件在 App 里不可用：设置页不显示“本机服务”，导出改成复制到剪贴板。
-- 图标和启动图由 `scripts/android-icons.py` 从标志生成（深绿圆角方块 + 衬线“〞”）。
 
 ## CI/CD（`.github/workflows/android.yml`）
 
 | 触发 | 做什么 |
 | --- | --- |
-| Pull Request | 构建 debug 包，作为构建产物上传（14 天），可以直接装来试 |
+| Pull Request | 构建 debug 包（包名带 `.dev`），作为构建产物上传（14 天），可以直接装来试 |
 | 合并到 `main` | 构建正式签名的 APK，更新同一个“预览版”Release（标签 `preview` 跟着 main 走） |
 | 推送 `v*` 标签 | 构建正式签名的 APK，发正式 Release，自动生成更新说明 |
 

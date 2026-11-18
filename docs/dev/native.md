@@ -1,6 +1,6 @@
 # 原生安卓版（开发中）
 
-用 Kotlin + Jetpack Compose 重写的安卓 App，代码在 `native/`。它会直接替换现在的 Capacitor App（`android/`）：同一个包名、同一把签名密钥，用户升级后知识库原样还在。路线图和阶段划分见 [issue #70](https://github.com/maxlen727/debating-ground/issues/70)。
+用 Kotlin + Jetpack Compose 重写的安卓 App，代码在 `native/`。它在 2026 年 11 月替换了原来用 Capacitor 打包网页的套壳版（#104）：同一个包名、同一把签名密钥，用户升级后知识库会自动搬过来。路线图和阶段划分见 [issue #70](https://github.com/maxlen727/debating-ground/issues/70)。
 
 开发期间：
 
@@ -131,18 +131,10 @@ CI 会把截图作为构建产物上传，审查界面改动时直接下载来�
 
 第一次跑测试时，Robolectric 会从 Maven Central 下载安卓运行库（几百 MB），之后就用本地缓存了。
 
-## 正式签名和升级测试包
+## 正式签名
 
-原生版的正式包（`assembleRelease`）和套壳版读同样的环境变量（`ANDROID_KEYSTORE_FILE` 等），用同一把签名、同一个包名 `debating.ground.app`。这样手机会把原生版当成套壳版的更新，而不是另一个 App。本地没配签名就构建未签名的 release 包。debug 包的包名带 `.dev`，可以和正式版同时装着。
-
-切换发布之前，要先在真机上试一次“从套壳版升级”，验证知识库迁移：
-
-1. 在 Actions 里手动运行“原生安卓版”工作流。
-2. 下载构建产物里的 `sibian-…-native-test.N`（正式签名，versionCode 排在套壳版最新一次构建之后）。
-3. 直接装在套壳版上面。
-
-这个包只是构建产物，不进 Releases。
+原生版的正式包（`assembleRelease`）用原来套壳版的同一把签名（同样的环境变量 `ANDROID_KEYSTORE_FILE` 等）、同一个包名 `debating.ground.app`，所以手机会把它当成套壳版的更新。本地没配签名就构建未签名的 release 包。debug 包的包名带 `.dev`，可以和正式版同时装着。发版流程和签名密钥的管理见 [安卓 App 与自动发版](./android.md)。
 
 ## CI（`.github/workflows/native.yml`）
 
-`native/`、`src/styles.css`、`src/components/ui.tsx` 有改动时运行：代码检查（ktlint、Android Lint），构建 debug 包，跑单元测试和截图测试，上传 debug 包、截图和检查报告（保留 14 天）。不签名、不发 Release。
+`native/`、`src/styles.css`、`src/components/ui.tsx` 有改动时运行：代码检查（ktlint、Android Lint），构建 debug 包，跑单元测试和截图测试，上传 debug 包、截图和检查报告（保留 14 天）。不签名、不发 Release；发版在 `android.yml`（见 [安卓 App 与自动发版](./android.md)）。

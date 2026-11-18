@@ -1,7 +1,6 @@
 // 与后端通信：本机服务（同源，127.0.0.1:4173）或自己部署的后端（Cloudflare Worker，跨域 + 访问口令）
 import { getState, update } from '../store.ts';
 import type { AiStatus } from '../store.ts';
-import { isNativeApp } from './platform.ts';
 
 export type Target = 'local' | 'remote';
 
@@ -124,28 +123,22 @@ type Public = Pick<AiStatus, 'configured' | 'verified' | 'baseURL' | 'model'> & 
 
 export async function refreshStatus() {
   if (typeof location === 'undefined' || !/^https?:$/.test(location.protocol)) return;
-  // App 里没有本机服务（页面来自 App 自带的文件），不去问它
-  if (isNativeApp())
+  try {
+    const data = await apiRequest<Public>('/api/config');
+    update(s => {
+      s.ai = {
+        ...s.ai,
+        ...data,
+        ttsConfigured: !!data.ttsConfigured,
+        sttConfigured: !!data.sttConfigured,
+        available: true,
+      };
+    });
+  } catch {
     update(s => {
       s.ai.available = false;
     });
-  else
-    try {
-      const data = await apiRequest<Public>('/api/config');
-      update(s => {
-        s.ai = {
-          ...s.ai,
-          ...data,
-          ttsConfigured: !!data.ttsConfigured,
-          sttConfigured: !!data.sttConfigured,
-          available: true,
-        };
-      });
-    } catch {
-      update(s => {
-        s.ai.available = false;
-      });
-    }
+  }
   // 读取后端状态不调用模型，不产生费用
   const { aiMode, remote } = getState().config;
   if (aiMode === 'remote' && remote.url) {

@@ -2,7 +2,7 @@
 import sys, glob
 from playwright.sync_api import sync_playwright
 from PIL import Image, ImageDraw
-# 用法：python3 scripts/android-icons.py android/app/src/main/res '#E8E7DE'（启动图底色用 --page）
+# 用法：python3 scripts/android-icons.py native/app/src/main/res '#E8E7DE'（启动图底色用 --page）
 import os, tempfile
 RES, PAGE = sys.argv[1], sys.argv[2]
 GLYPH = os.path.join(tempfile.gettempdir(), 'sibian-glyph.png')

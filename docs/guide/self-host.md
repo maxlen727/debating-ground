@@ -26,7 +26,7 @@
    - **API_BASE_URL**：服务商的 Base URL，例如 `https://api.example.com/v1`。
    - **MODEL**：模型 ID。
    - **ACCESS_PASSWORD**：自己设一个访问口令，越长越好。
-   - **ALLOWED_ORIGINS**：用在线版思辨场和安卓 App 就保持 `https://maxlen727.github.io,https://localhost` 不变（`https://localhost` 是 App 的页面来源）。
+   - **ALLOWED_ORIGINS**：用在线版思辨场就保持 `https://maxlen727.github.io,https://localhost` 不变。`https://localhost` 是旧版（网页套壳版）安卓 App 的页面来源；新的原生版 App 直接发请求，不需要它。等不再有人用旧版 App，可以把它删掉。
 4. 点 **创建并部署**，等一两分钟。完成后页面上会显示后端地址，类似 `https://debating-ground-api.你的子域.workers.dev`。
 
 之后想换模型或换 Key，在 Cloudflare 控制台里改：**Workers 和 Pages → 你的后端 → 设置 → 变量和机密**。

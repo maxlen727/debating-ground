@@ -8,7 +8,10 @@
 
 思辨场是一个学习应用：用户写下一个概念，和 AI 讨论、追问、辩论，把它真正弄懂；结束后生成理解复盘，存成知识卡片并按间隔复习。**目标是学懂概念，不是练口才**，所有设计决定都服务于这一点。
 
-最终产物是 Android App（计划用 Capacitor 打包 `dist/`）。当前形态是“Web 界面 + 两种后端：本机 Node 服务，或用户自己部署的 Cloudflare Worker”，都使用用户自己的 API Key。
+产品有两种形态，都使用用户自己的 API Key：
+
+- **网页版**：Web 界面加两种后端，本机 Node 服务，或用户自己部署的 Cloudflare Worker。
+- **原生安卓 App**（`native/`，Kotlin + Compose）：演示模式、连接自己部署的后端，或直接连接 AI 服务商。
 
 ## 仓库地图
 
@@ -26,8 +29,7 @@
 | `src/styles.css` | 全部样式与设计令牌 | 颜色只用令牌，见“界面规范” |
 | `tests/` | `node:test` 测试 | |
 | `docs/` | 产品文档站（VitePress），截图在 `docs/public/screenshots/` | 用户可见的行为变了，同一个 PR 里更新对应文档页 |
-| `android/`、`capacitor.config.json` | 安卓 App（Capacitor 打包 `dist/`）；App 里的差异在 `src/lib/platform.ts`、`src/lib/native.ts` | 签名密钥只在 CI Secrets 里，永远不进仓库；`android/app/src/main/assets/public` 是生成的，不提交；见 `docs/dev/android.md` |
-| `native/` | 原生安卓版（Kotlin + Compose，开发中，路线图见 #70），将替换 `android/` | 颜色令牌、图标、导航规则和网页版一致，由 `TokensTest` 等测试把关，改网页版的 `styles.css` 或图标时也要跑原生版测试；存档检查和导出用网页版生成的标准答案逐字比对（`npm run fixtures:native`、`FixturesTest`）；新增依赖写进 `gradle/libs.versions.toml` 并在 PR 里说明；`app/src/main/assets/sibian-ai.js` 是 `npm run bundle:native` 生成的，不要手改；见 `docs/dev/native.md` |
+| `native/` | 安卓 App（Kotlin + Compose，路线图见 #70），替换了原来的网页套壳版（#104）；发版在 `.github/workflows/android.yml`，签名密钥只在 CI Secrets 里，永远不进仓库（见 `docs/dev/android.md`） | 颜色令牌、图标、导航规则和网页版一致，由 `TokensTest` 等测试把关，改网页版的 `styles.css` 或图标时也要跑原生版测试；存档检查和导出用网页版生成的标准答案逐字比对（`npm run fixtures:native`、`FixturesTest`）；新增依赖写进 `gradle/libs.versions.toml` 并在 PR 里说明；`app/src/main/assets/sibian-ai.js` 是 `npm run bundle:native` 生成的，不要手改；见 `docs/dev/native.md` |
 
 ## 命令
 
@@ -45,7 +47,6 @@ npm run sync:worker  # 改了 server/ai.ts 或 shared/ 后，同步到 worker/sr
 npm run fixtures:native # 改了存档结构、src/lib/restore.ts 或导出后，重新生成原生版的标准答案
 npm run bundle:native   # 改了 server/ai.ts 或 shared/ 后，重新打包原生版“直接连接”用的提示词（native/app/src/main/assets/sibian-ai.js）
 npm run eval:prompts # 提示词回归评测：用真实模型和模拟学习者聊几场（见脚本开头的说明）
-npm run android:sync # 构建界面并同步到安卓工程（之后 npx cap open android，或 cd android && ./gradlew assembleDebug）
 cd native && ./gradlew ktlintCheck lintDebug assembleDebug testDebugUnitTest   # 原生安卓版：代码检查、构建、单元测试和截图测试（截图在 app/build/screenshots/）；./gradlew ktlintFormat 自动整理写法
 cd worker && npm install && npm run dev   # 本地运行后端（先把 .dev.vars.example 复制为 .dev.vars）
 ```

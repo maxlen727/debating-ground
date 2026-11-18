@@ -747,23 +747,6 @@ test('back (Android back button): close the sheet, then leave the branch, then g
   assert.equal(getState().ui.screen, 'library');
 });
 
-test('in the Android app, invite links point at the public web app and the local server is not offered', async () => {
-  const { inviteLink } = await import('../src/lib/room.ts');
-  const { isNativeApp, PUBLIC_APP_URL } = await import('../src/lib/platform.ts');
-  const link = { backend: 'https://api.example.workers.dev', roomId: 'r1', invite: 'c1' };
-  assert.equal(isNativeApp(), false);
-  (globalThis as Record<string, unknown>).location = { origin: 'https://localhost', pathname: '/' };
-  (globalThis as Record<string, unknown>).Capacitor = { isNativePlatform: () => true };
-  try {
-    assert.equal(isNativeApp(), true);
-    assert.ok(inviteLink(link).startsWith(PUBLIC_APP_URL + '#join='));
-    assert.ok(!inviteLink(link).includes('localhost'));
-  } finally {
-    delete (globalThis as Record<string, unknown>).Capacitor;
-    delete (globalThis as Record<string, unknown>).location;
-  }
-});
-
 test('one-sentence start (#39): write a concept and go straight into the discussion; the prepare page is optional', async () => {
   update(s => {
     s.config.concept = '机会成本';

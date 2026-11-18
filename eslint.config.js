@@ -11,7 +11,6 @@ export default tseslint.config(
       'dist/',
       'docs/.vitepress/dist/',
       'docs/.vitepress/cache/',
-      'android/',
       'native/',
       'worker/src/vendor/',
       '**/node_modules/',
