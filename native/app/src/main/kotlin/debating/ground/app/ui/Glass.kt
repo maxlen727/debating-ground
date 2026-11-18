@@ -2,6 +2,7 @@ package debating.ground.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,7 +12,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
@@ -21,6 +27,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.BlendMode
@@ -31,6 +39,9 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import debating.ground.app.ui.theme.LocalTokens
@@ -52,7 +63,7 @@ fun Modifier.glass(shape: Shape, elevation: Dp = 8.dp): Modifier {
 
 /**
  * 内容滚到悬浮控件附近时淡出（只改内容自己的透明度，不铺底色，背景氛围照样透出来）。
- * [height] 是底部悬浮控件占掉的高度：从它上方一点开始变淡，到控件顶上就看不见了，文字不会和按钮叠在一起。
+ * [height] 是底部悬浮控件占掉的高度：从它上方 48dp 开始变淡，到控件顶上就看不见了，文字不会和按钮叠在一起。
  */
 fun Modifier.fadeBottom(height: Dp): Modifier = if (height <= 0.dp) {
     this
@@ -66,9 +77,8 @@ fun Modifier.fadeBottom(height: Dp): Modifier = if (height <= 0.dp) {
                 Brush.verticalGradient(
                     0f to Color.Black,
                     1f to Color.Transparent,
-                    startY = size.height - h - 36.dp.toPx(),
-                    endY =
-                    size.height - h + 28.dp.toPx(),
+                    startY = size.height - h - 48.dp.toPx(),
+                    endY = size.height - h + 4.dp.toPx(),
                 ),
                 blendMode = BlendMode.DstIn,
             )
@@ -111,3 +121,68 @@ fun WithFloatingDock(dock: @Composable ColumnScope.() -> Unit, content: @Composa
         }
     }
 }
+
+/**
+ * 能滚动，并且滚动后内容在顶上淡出（iOS 的“滚动边缘效果”）。没滚动时不淡，第一行完整显示；
+ * 滚得越多越淡，最多是顶上 20dp 从透明渐到不透明。读滚动位置放在绘制阶段，滚动时不重组。
+ */
+@Composable
+fun Modifier.scrollWithEdge(): Modifier {
+    val scroll = rememberScrollState()
+    return this
+        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+        .drawWithContent {
+            drawContent()
+            val h = 20.dp.toPx()
+            val k = (scroll.value / h).coerceIn(0f, 1f)
+            if (k > 0f) {
+                drawRect(
+                    Brush.verticalGradient(0f to Color.Black.copy(alpha = 1f - k), 1f to Color.Black, startY = 0f, endY = h),
+                    blendMode = BlendMode.DstIn,
+                )
+            }
+        }
+        .verticalScroll(scroll)
+}
+
+/** 只有图标的按钮：圆形磨砂（返回、导出、关闭……）。可点区域 44dp。 */
+@Composable
+fun GlassIconButton(path: String, label: String, onClick: () -> Unit, enabled: Boolean = true) {
+    val t = LocalTokens.current
+    Box(
+        Modifier
+            .size(44.dp)
+            .glass(CircleShape, 4.dp)
+            .clip(CircleShape)
+            .alpha(if (enabled) 1f else 0.45f)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) { Icon(lineIcon(path, path), null, Modifier.size(20.dp), tint = t.ink.color()) }
+}
+
+/** 上下都有悬浮控件时（讨论页）：内容滚到顶上的栏和底下的输入栏附近都淡出。规则和 [fadeBottom] 一样，上下对称。 */
+fun Modifier.fadeUnder(top: Dp, bottom: Dp): Modifier = this
+    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithContent {
+        drawContent()
+        val tp = top.toPx()
+        if (tp > 0f) {
+            drawRect(
+                Brush.verticalGradient(0f to Color.Transparent, 1f to Color.Black, startY = tp - 4.dp.toPx(), endY = tp + 40.dp.toPx()),
+                blendMode = BlendMode.DstIn,
+            )
+        }
+        val bp = bottom.toPx()
+        if (bp > 0f) {
+            drawRect(
+                Brush.verticalGradient(
+                    0f to Color.Black,
+                    1f to Color.Transparent,
+                    startY = size.height - bp - 48.dp.toPx(),
+                    endY = size.height - bp + 4.dp.toPx(),
+                ),
+                blendMode = BlendMode.DstIn,
+            )
+        }
+    }

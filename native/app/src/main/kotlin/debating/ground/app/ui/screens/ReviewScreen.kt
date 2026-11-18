@@ -68,6 +68,7 @@ import debating.ground.app.flow.AppState
 import debating.ground.app.ui.BusyStrip
 import debating.ground.app.ui.ErrorBanner
 import debating.ground.app.ui.FinePrint
+import debating.ground.app.ui.GlassIconButton
 import debating.ground.app.ui.IconPaths
 import debating.ground.app.ui.LocalMotion
 import debating.ground.app.ui.Panel
@@ -77,6 +78,7 @@ import debating.ground.app.ui.SectionLabel
 import debating.ground.app.ui.TopBar
 import debating.ground.app.ui.WithFloatingDock
 import debating.ground.app.ui.lineIcon
+import debating.ground.app.ui.scrollWithEdge
 import debating.ground.app.ui.theme.LINE_HEIGHT_SERIF
 import debating.ground.app.ui.theme.LocalTokens
 import debating.ground.app.ui.theme.Serif
@@ -93,12 +95,7 @@ fun shareMarkdown(context: Context, title: String, text: String) {
 }
 
 @Composable
-fun ExportButton(label: String, onClick: () -> Unit) {
-    val t = LocalTokens.current
-    Box(Modifier.size(44.dp).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = label }, contentAlignment = Alignment.Center) {
-        Icon(lineIcon("download", IconPaths.DOWNLOAD), null, tint = t.ink.color())
-    }
-}
+fun ExportButton(label: String, onClick: () -> Unit) = GlassIconButton(IconPaths.DOWNLOAD, label, onClick)
 
 @Composable
 fun ReviewScreen(st: AppState, model: AppModel) {
@@ -132,7 +129,7 @@ fun ReviewScreen(st: AppState, model: AppModel) {
                 ExportButton("导出讨论记录和复盘") { shareMarkdown(context, "${s.concept} · 讨论记录", sessionMarkdown(s)) }
             }
             Column(
-                Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+                Modifier.weight(1f).scrollWithEdge().padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 if (r == null) {

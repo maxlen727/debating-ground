@@ -61,6 +61,7 @@ import debating.ground.app.ui.Stepper
 import debating.ground.app.ui.TopBar
 import debating.ground.app.ui.WithFloatingDock
 import debating.ground.app.ui.lineIcon
+import debating.ground.app.ui.scrollWithEdge
 import debating.ground.app.ui.theme.LocalTokens
 import debating.ground.app.ui.theme.TextStyles
 import debating.ground.app.ui.theme.color
@@ -98,7 +99,7 @@ fun PrepareScreen(st: AppState, model: AppModel) {
         Column(Modifier.fillMaxSize()) {
             TopBar(plan.concept, MODES[plan.mode]?.name, onBack = { l.go("learn") })
             Column(
-                Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+                Modifier.weight(1f).scrollWithEdge().padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Text(
