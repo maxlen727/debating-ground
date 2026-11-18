@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -72,6 +73,7 @@ fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifi
             .heightIn(min = if (small) 40.dp else 48.dp)
             .scale(pressScale(src, enabled))
             .alpha(if (enabled) 1f else 0.45f)
+            .then(if (LocalFloating.current) Modifier.shadow(10.dp, RoundedCornerShape(R), spotColor = t.brand.color().copy(alpha = 0.45f)) else Modifier)
             .background(t.brand.color(), RoundedCornerShape(R))
             .clickable(src, null, enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = if (small) 14.dp else 20.dp),
@@ -95,8 +97,15 @@ fun SecondaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modi
             .heightIn(min = if (small) 40.dp else 48.dp)
             .scale(pressScale(src, enabled))
             .alpha(if (enabled) 1f else 0.45f)
-            .background(t.raised.color(), RoundedCornerShape(R))
-            .border(1.dp, t.line.color(), RoundedCornerShape(R))
+            .then(
+                if (LocalFloating.current) {
+                    Modifier.glass(
+                        RoundedCornerShape(R),
+                    )
+                } else {
+                    Modifier.background(t.raised.color(), RoundedCornerShape(R)).border(1.dp, t.line.color(), RoundedCornerShape(R))
+                },
+            )
             .clickable(src, null, enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = if (small) 14.dp else 20.dp),
         contentAlignment = Alignment.Center,
@@ -125,12 +134,15 @@ fun GhostButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier
 @Composable
 fun QuietLink(text: String, onClick: () -> Unit, enabled: Boolean = true) {
     val t = LocalTokens.current
+    // 悬浮时带一层小小的磨砂胶囊，文字不会和滚到下面的内容叠在一起
+    val floating = LocalFloating.current
     Box(
         Modifier
             .heightIn(min = 44.dp)
+            .then(if (floating) Modifier.glass(RoundedCornerShape(22.dp), 4.dp) else Modifier)
             .alpha(if (enabled) 1f else 0.45f)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = if (floating) 18.dp else 12.dp),
         contentAlignment = Alignment.Center,
     ) { Text(text, color = t.muted.color(), style = TextStyles.small) }
 }
@@ -356,20 +368,6 @@ fun StatusTag(text: String, tone: String = "") {
     )
 }
 
-/** 底部操作区（.dock）：主要操作单手可达。上沿渐隐到透明，背景氛围透得出来。 */
-@Composable
-fun Dock(content: @Composable () -> Unit) {
-    val t = LocalTokens.current
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .background(Brush.verticalGradient(0f to Color.Transparent, 0.25f to t.surface.color().copy(alpha = 0.92f), 1f to t.surface.color()))
-            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) { content() }
-}
-
 /** 出错时的原因（AI 失败、连不上……）：写原因和办法，可以关掉。 */
 @Composable
 fun ErrorBanner(text: String, onDismiss: () -> Unit) {
@@ -394,7 +392,11 @@ fun ErrorBanner(text: String, onDismiss: () -> Unit) {
 fun BusyStrip(label: String?, onCancel: () -> Unit) {
     if (label == null) return
     val t = LocalTokens.current
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(
+        Modifier.fillMaxWidth().then(if (LocalFloating.current) Modifier.glass(RoundedCornerShape(14.dp), 4.dp).padding(start = 14.dp) else Modifier),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         Text("$label…", color = t.muted.color(), style = TextStyles.small, modifier = Modifier.weight(1f))
         Box(Modifier.heightIn(min = 44.dp).clickable(role = Role.Button, onClick = onCancel).padding(horizontal = 8.dp), contentAlignment = Alignment.Center) {
             Text("取消", color = t.accent.color(), style = TextStyles.small.copy(fontWeight = FontWeight.SemiBold))

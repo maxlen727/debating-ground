@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -39,15 +40,16 @@ import debating.ground.app.data.dueLabel
 import debating.ground.app.data.libraryMarkdown
 import debating.ground.app.flow.AppState
 import debating.ground.app.ui.BusyStrip
-import debating.ground.app.ui.Dock
 import debating.ground.app.ui.ErrorBanner
 import debating.ground.app.ui.GhostButton
+import debating.ground.app.ui.NavSpacer
 import debating.ground.app.ui.Panel
 import debating.ground.app.ui.PrimaryButton
 import debating.ground.app.ui.SecondaryButton
 import debating.ground.app.ui.SectionLabel
 import debating.ground.app.ui.Segmented
 import debating.ground.app.ui.TopBar
+import debating.ground.app.ui.WithFloatingDock
 import debating.ground.app.ui.mix
 import debating.ground.app.ui.theme.LocalTokens
 import debating.ground.app.ui.theme.Serif
@@ -94,6 +96,7 @@ fun LibraryScreen(st: AppState, model: AppModel, now: Long) {
                     for (c in list) CardItem(c, now) { l.openCard(c.id) }
                 }
             }
+            NavSpacer()
         }
     }
 }
@@ -178,34 +181,36 @@ fun CardScreen(st: AppState, model: AppModel) {
     var showReview by rememberSaveable(c.id) { mutableStateOf(false) }
     val open = showReview || c.quiz.isEmpty() || picks.size >= c.quiz.size
     val busy = st.ui.busy != null
-    Column(Modifier.fillMaxSize()) {
-        TopBar(c.concept, "${MODES[c.mode]?.name.orEmpty()} · 已复习 ${c.reviews.size} 次", onBack = { l.go("library") })
-        Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Text(c.topic, style = TextStyles.knowledge, color = t.ink.color())
-            if (c.quiz.isNotEmpty()) {
-                Panel {
-                    SectionLabel("先凭记忆作答")
-                    Quiz(c.quiz, picks) { q, o -> l.pickAnswer(key, q, o) }
-                }
-            }
-            if (open) {
-                Text(c.oneLine, style = DisplaySm, color = t.ink.color())
-                ReviewBody(c.points, c.misconceptions, c.stances, c.terms)
-            } else {
-                GhostButton("先看上次的复盘", { showReview = true }, Modifier.fillMaxWidth())
-            }
-            GhostButton("从薄弱点再讨论一次", { model.run { discussAgain(c) } }, Modifier.fillMaxWidth(), enabled = !busy)
+    WithFloatingDock(dock = {
+        ErrorBanner(st.ui.error) { l.clearError() }
+        BusyStrip(st.ui.busy) { l.cancelAI() }
+        Text("这次回顾得怎么样？", style = TextStyles.small.copy(fontSize = 13.sp), color = t.muted.color())
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SecondaryButton("还有点模糊", { l.rateCard(c.id, false) }, Modifier.weight(1f))
+            PrimaryButton("记得很清楚", { l.rateCard(c.id, true) }, Modifier.weight(1f))
         }
-        Dock {
-            ErrorBanner(st.ui.error) { l.clearError() }
-            BusyStrip(st.ui.busy) { l.cancelAI() }
-            Text("这次回顾得怎么样？", style = TextStyles.small.copy(fontSize = 13.sp), color = t.muted.color())
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SecondaryButton("还有点模糊", { l.rateCard(c.id, false) }, Modifier.weight(1f))
-                PrimaryButton("记得很清楚", { l.rateCard(c.id, true) }, Modifier.weight(1f))
+    }) { bottom ->
+        Column(Modifier.fillMaxSize()) {
+            TopBar(c.concept, "${MODES[c.mode]?.name.orEmpty()} · 已复习 ${c.reviews.size} 次", onBack = { l.go("library") })
+            Column(
+                Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Text(c.topic, style = TextStyles.knowledge, color = t.ink.color())
+                if (c.quiz.isNotEmpty()) {
+                    Panel {
+                        SectionLabel("先凭记忆作答")
+                        Quiz(c.quiz, picks) { q, o -> l.pickAnswer(key, q, o) }
+                    }
+                }
+                if (open) {
+                    Text(c.oneLine, style = DisplaySm, color = t.ink.color())
+                    ReviewBody(c.points, c.misconceptions, c.stances, c.terms)
+                } else {
+                    GhostButton("先看上次的复盘", { showReview = true }, Modifier.fillMaxWidth())
+                }
+                GhostButton("从薄弱点再讨论一次", { model.run { discussAgain(c) } }, Modifier.fillMaxWidth(), enabled = !busy)
+                Spacer(Modifier.height(bottom))
             }
         }
     }

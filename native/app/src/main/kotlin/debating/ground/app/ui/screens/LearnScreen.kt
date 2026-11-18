@@ -8,8 +8,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -35,13 +37,13 @@ import debating.ground.app.flow.AppState
 import debating.ground.app.ui.Banner
 import debating.ground.app.ui.BusyStrip
 import debating.ground.app.ui.Chip
-import debating.ground.app.ui.Dock
 import debating.ground.app.ui.ErrorBanner
 import debating.ground.app.ui.FinePrint
 import debating.ground.app.ui.Input
 import debating.ground.app.ui.PrimaryButton
 import debating.ground.app.ui.QuietLink
 import debating.ground.app.ui.SectionLabel
+import debating.ground.app.ui.WithFloatingDock
 import debating.ground.app.ui.theme.LocalTokens
 import debating.ground.app.ui.theme.TextSize
 import debating.ground.app.ui.theme.TextStyles
@@ -59,100 +61,102 @@ fun LearnScreen(st: AppState, model: AppModel, now: Long) {
     val busy = ui.busy != null
     val due = library.filter { it.due <= now }
     val canStart = !busy && config.concept.trim().isNotEmpty() && (ui.context == null || ui.context.text.trim().isNotEmpty())
-    Column(Modifier.fillMaxSize()) {
-        Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Brand(Modifier.weight(1f))
-                val label = when (config.aiMode) {
-                    "remote" -> if (config.remote.url.isNotEmpty()) "我的后端" else "后端未连接"
-                    "api" -> "直接连接"
-                    else -> "演示模式"
+    WithFloatingDock(dock = {
+        ErrorBanner(ui.error) { l.clearError() }
+        BusyStrip(ui.busy) { l.cancelAI() }
+        // 一句话开始：写下概念就进讨论；想先看看题目、要点和角色，走准备页
+        PrimaryButton(
+            if (ui.context !=
+                null
+            ) {
+                "按这个经过开始讨论"
+            } else {
+                "开始讨论"
+            },
+            { model.run { prepare(null, null, "start") } },
+            Modifier.fillMaxWidth(),
+            enabled = canStart,
+        )
+        QuietLink("先看看题目和角色", { model.run { prepare() } }, enabled = canStart)
+    }) { bottom ->
+        Column(Modifier.fillMaxSize()) {
+            Column(
+                Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Brand(Modifier.weight(1f))
+                    val label = when (config.aiMode) {
+                        "remote" -> if (config.remote.url.isNotEmpty()) "我的后端" else "后端未连接"
+                        "api" -> "直接连接"
+                        else -> "演示模式"
+                    }
+                    Box(Modifier.heightIn(min = 44.dp).clickable(role = Role.Button) { l.go("settings") }, contentAlignment = Alignment.Center) {
+                        Text(
+                            label,
+                            color = t.muted.color(),
+                            style = TextStyles.small.copy(fontSize = 12.sp),
+                            modifier = Modifier
+                                .background(t.bg.color(), RoundedCornerShape(20.dp))
+                                .border(1.dp, t.line.color(), RoundedCornerShape(20.dp))
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                        )
+                    }
                 }
-                Box(Modifier.heightIn(min = 44.dp).clickable(role = Role.Button) { l.go("settings") }, contentAlignment = Alignment.Center) {
-                    Text(
-                        label,
-                        color = t.muted.color(),
-                        style = TextStyles.small.copy(fontSize = 12.sp),
-                        modifier = Modifier
-                            .background(t.bg.color(), RoundedCornerShape(20.dp))
-                            .border(1.dp, t.line.color(), RoundedCornerShape(20.dp))
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                if (session != null && !session.finished) {
+                    Banner("继续讨论", "${session.concept} · 已点亮 ${session.covered.size}/${session.keyPoints.size}") { l.go("session") }
+                }
+                if (due.isNotEmpty()) {
+                    Banner("今天有 ${due.size} 张卡片要复习", due.take(3).joinToString("、") { it.concept }, warm = true) {
+                        if (due.size == 1) l.openCard(due[0].id) else l.go("library")
+                    }
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(top = 8.dp)) {
+                    Text("今天想弄懂\n什么？", style = TextStyles.display, color = t.ink.color(), modifier = Modifier.semantics { heading() })
+                    Input(
+                        config.concept,
+                        { l.setConcept(it) },
+                        "想弄懂的概念",
+                        placeholder = "写下一个概念，比如：机会成本",
+                        maxLength = 80,
+                        enabled = !busy,
+                        style = TextStyles.title.copy(fontSize = TextSize.xl),
+                        big = true,
+                        onDone = { if (canStart) model.run { prepare(null, null, "start") } },
                     )
-                }
-            }
-            if (session != null && !session.finished) {
-                Banner("继续讨论", "${session.concept} · 已点亮 ${session.covered.size}/${session.keyPoints.size}") { l.go("session") }
-            }
-            if (due.isNotEmpty()) {
-                Banner("今天有 ${due.size} 张卡片要复习", due.take(3).joinToString("、") { it.concept }, warm = true) {
-                    if (due.size == 1) l.openCard(due[0].id) else l.go("library")
-                }
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(top = 8.dp)) {
-                Text("今天想弄懂\n什么？", style = TextStyles.display, color = t.ink.color(), modifier = Modifier.semantics { heading() })
-                Input(
-                    config.concept,
-                    { l.setConcept(it) },
-                    "想弄懂的概念",
-                    placeholder = "写下一个概念，比如：机会成本",
-                    maxLength = 80,
-                    enabled = !busy,
-                    style = TextStyles.title.copy(fontSize = TextSize.xl),
-                    big = true,
-                    onDone = { if (canStart) model.run { prepare(null, null, "start") } },
-                )
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    EXAMPLES.forEach { c -> Chip(c, config.concept == c, { l.setConcept(c) }, enabled = !busy) }
-                }
-                // 写的是一件具体的事：AI 先请你交代经过，再出题
-                ui.context?.let { ask ->
-                    Column(
-                        Modifier.fillMaxWidth().background(t.accentSoft.color(), RoundedCornerShape(16.dp)).padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(ask.ask, color = t.ink.color(), style = TextStyles.small)
-                        Input(ask.text, {
-                            l.setContextDraft(it)
-                        }, "事情的经过", placeholder = "用一两句话说说经过：发生了什么、谁怎么想", singleLine = false, minLines = 3, maxLength = 600, enabled = !busy)
-                        FinePrint("AI 只按你写的经过来讨论，不会自己编细节。")
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        EXAMPLES.forEach { c -> Chip(c, config.concept == c, { l.setConcept(c) }, enabled = !busy) }
+                    }
+                    // 写的是一件具体的事：AI 先请你交代经过，再出题
+                    ui.context?.let { ask ->
+                        Column(
+                            Modifier.fillMaxWidth().background(t.accentSoft.color(), RoundedCornerShape(16.dp)).padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(ask.ask, color = t.ink.color(), style = TextStyles.small)
+                            Input(ask.text, {
+                                l.setContextDraft(it)
+                            }, "事情的经过", placeholder = "用一两句话说说经过：发生了什么、谁怎么想", singleLine = false, minLines = 3, maxLength = 600, enabled = !busy)
+                            FinePrint("AI 只按你写的经过来讨论，不会自己编细节。")
+                        }
                     }
                 }
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SectionLabel("怎么讨论")
-                MODE_ORDER.chunked(2).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        row.forEach { m -> ModeCard(m, config.mode == m, !busy, Modifier.weight(1f)) { l.setMode(m) } }
-                        if (row.size == 1) Box(Modifier.weight(1f))
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SectionLabel("怎么讨论")
+                    MODE_ORDER.chunked(2).forEach { row ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            row.forEach { m -> ModeCard(m, config.mode == m, !busy, Modifier.weight(1f)) { l.setMode(m) } }
+                            if (row.size == 1) Box(Modifier.weight(1f))
+                        }
                     }
                 }
+                if (library.isEmpty()) FinePrint("讨论结束后会生成理解复盘，存成知识卡片，按 1、3、7、14 天的间隔提醒你回顾。")
+                if (config.aiMode == "demo") {
+                    FinePrint("当前是演示模式：“机会成本”有完整示例，其他概念用通用模板。要让 AI 真正参与讨论，在设置里连接你自己部署的后端。")
+                }
+                Box(Modifier.size(8.dp))
+                Spacer(Modifier.height(bottom))
             }
-            if (library.isEmpty()) FinePrint("讨论结束后会生成理解复盘，存成知识卡片，按 1、3、7、14 天的间隔提醒你回顾。")
-            if (config.aiMode == "demo") {
-                FinePrint("当前是演示模式：“机会成本”有完整示例，其他概念用通用模板。要让 AI 真正参与讨论，在设置里连接你自己部署的后端。")
-            }
-            Box(Modifier.size(8.dp))
-        }
-        Dock {
-            ErrorBanner(ui.error) { l.clearError() }
-            BusyStrip(ui.busy) { l.cancelAI() }
-            // 一句话开始：写下概念就进讨论；想先看看题目、要点和角色，走准备页
-            PrimaryButton(
-                if (ui.context !=
-                    null
-                ) {
-                    "按这个经过开始讨论"
-                } else {
-                    "开始讨论"
-                },
-                { model.run { prepare(null, null, "start") } },
-                Modifier.fillMaxWidth(),
-                enabled = canStart,
-            )
-            QuietLink("先看看题目和角色", { model.run { prepare() } }, enabled = canStart)
         }
     }
 }
