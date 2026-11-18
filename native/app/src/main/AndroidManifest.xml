@@ -1,9 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- 后续连接后端和服务商要用网络；M0 先声明，免得以后漏掉 -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- JS 引擎要求 Android 8（API 26）以上；更旧的系统上不提供“直接连接”，其余功能照常（见 ai/Prompts.kt）。
+         不为它提高整个 App 的最低版本：旧 App 的用户要能原样升级 -->
+    <uses-sdk tools:overrideLibrary="androidx.javascriptengine" />
+
+    <!-- 连接自己部署的后端、直接连接服务商都要用网络 -->
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- allowBackup 先和现在的 App 保持一致；直连模式（M5）保存密钥时，再把密钥排除在备份之外 -->
+    <!-- allowBackup 和现在的 App 保持一致（知识库能随系统备份）。直接连接用的 API Key 存在 noBackupFilesDir，
+         不进备份；而且它用 Android Keystore 里不能导出的密钥加密，就算文件被拷走也解不开 -->
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"

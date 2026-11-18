@@ -40,6 +40,8 @@ class Ai(
     private val demoTypingMs: Long = 40,
     private val timeoutMs: Long = 100_000,
     private val remoteFor: (Config) -> RemoteBackend = { RemoteBackend(it.remote.url, it.remote.password) },
+    /** 直接连接服务商；没有（测试、或系统不支持）时选了“直接连接”会说明原因。 */
+    val direct: DirectAccess? = null,
 ) {
     private val current = AtomicReference<Deferred<JsonObject>?>(null)
     private var cancelled = false
@@ -70,13 +72,17 @@ class Ai(
 
             "demo" -> Unit
 
-            // 直接连接服务商在 M5 才有：明确告诉用户，不悄悄换成演示
-            else -> return AiOutcome.Failed("这个版本还不能直接连接服务商。请在“设置”里改用自己部署的后端，或切换到演示模式。")
+            // 没设置好就明确告诉用户，不悄悄换成演示（约定 2）
+            else -> if (direct?.settings() == null) {
+                return AiOutcome.Failed("还没有设置直接连接。请在“设置”里填写接口地址、模型和 API Key，或切换到演示模式。")
+            }
         }
         val job = scope.async(start = kotlinx.coroutines.CoroutineStart.LAZY) {
             withTimeout(timeoutMs) {
                 if (config.aiMode == "remote") {
                     remoteFor(config).generate(purpose, payload, live)
+                } else if (config.aiMode != "demo") {
+                    direct!!.backend()!!.generate(purpose, payload, live)
                 } else {
                     val out = demoRun(purpose, payload, session)
                     demoStep = out.demoStep

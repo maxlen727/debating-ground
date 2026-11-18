@@ -252,4 +252,13 @@ class ScreenshotTest {
         compose.onNodeWithText("连接并测试").assertExists()
         save("phone-settings")
     }
+
+    @Test
+    fun settingsDirectDark() {
+        compose.setContent { Frame(dark = true, width = 390, height = 844) }
+        compose.onNodeWithText("设置").performClick()
+        compose.onNodeWithText("直接连接").performClick()
+        compose.onNodeWithText("连接 AI 服务商").assertExists()
+        save("phone-settings-direct-dark")
+    }
 }

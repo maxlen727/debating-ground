@@ -3,6 +3,7 @@ package debating.ground.app.flow
 import debating.ground.app.ai.Ai
 import debating.ground.app.ai.AiFailure
 import debating.ground.app.ai.AiOutcome
+import debating.ground.app.ai.DirectSettings
 import debating.ground.app.ai.checkRemoteUrl
 import debating.ground.app.data.Branch
 import debating.ground.app.data.Card
@@ -64,11 +65,19 @@ data class Ui(
     val context: ContextAsk? = null,
     // 自己部署的后端：这次打开 App 以后有没有测试通过、用的是什么模型。不存档（和网页版 ai.remoteVerified 一样）
     val remote: RemoteStatus = RemoteStatus(),
+    // 直接连接：存了哪个接口和模型、这次打开 App 以后有没有测试通过。API Key 不在这里（只在加密文件和内存里）
+    val direct: DirectStatus = DirectStatus(),
     // 检验题选了哪个选项：键是 "s:讨论 id" 或 "c:卡片 id"，值是题号 → 选项。不存档
     val quiz: Map<String, Map<Int, Int>> = emptyMap(),
 )
 
 data class RemoteStatus(val verified: Boolean = false, val model: String = "")
+
+data class DirectStatus(val saved: Boolean = false, val baseURL: String = "", val model: String = "", val verified: Boolean = false) {
+    companion object {
+        fun of(s: DirectSettings?) = if (s == null) DirectStatus() else DirectStatus(true, s.baseURL, s.model)
+    }
+}
 
 data class Explain(val kind: String, val label: String, val quote: String, val text: String)
 
@@ -935,6 +944,62 @@ class Learning(
             )
         }
         toast("已从这台设备上删除后端地址和访问口令。")
+    }
+
+    /* ---------- 设置：直接连接服务商 ---------- */
+
+    /**
+     * 连接并测试：检查地址、模型和 API Key，加密保存，再调用一次模型。测试通过才切换到“直接连接”；
+     * 失败时设置仍然保存，显示原因。[key] 留空表示沿用已保存的。密钥只经过这里，不写进状态、存档或提示。
+     */
+    suspend fun connectDirect(baseURL: String, model: String, key: String): Boolean {
+        val direct = ai.direct
+        if (state.ui.busy != null) return false
+        if (direct == null) {
+            ui { it.copy(error = "这个版本不能直接连接服务商。请改用自己部署的后端，或切换到演示模式。") }
+            return false
+        }
+        if (baseURL.isBlank() || model.isBlank() || (key.isBlank() && direct.settings() == null)) {
+            toast("请填写接口地址、模型名称和 API Key。")
+            return false
+        }
+        ui { it.copy(busy = "正在连接服务商并测试", error = "") }
+        connecting = currentCoroutineContext()[Job]
+        val error = try {
+            val m = withTimeout(CONNECT_TIMEOUT_MS) { direct.connect(baseURL, model, key) }
+            update {
+                it.copy(
+                    config = it.config.copy(aiMode = "api"),
+                    ui = it.ui.copy(busy = null, direct = DirectStatus.of(direct.settings()).copy(verified = true, model = m)),
+                )
+            }
+            toast("连接成功，可以开始学习。")
+            return true
+        } catch (e: TimeoutCancellationException) {
+            "服务商很久没有回应，请稍后再试。"
+        } catch (e: CancellationException) {
+            ui { it.copy(busy = null, direct = DirectStatus.of(direct.settings())) }
+            toast("已取消。")
+            throw e
+        } catch (e: AiFailure) {
+            e.message.orEmpty()
+        } finally {
+            connecting = null
+        }
+        ui { it.copy(busy = null, error = error, direct = DirectStatus.of(direct.settings())) }
+        return false
+    }
+
+    /** 从这台设备上删除直接连接的设置（包括 API Key）；正在用它的话换回演示模式。 */
+    fun forgetDirect() {
+        ai.direct?.clear()
+        update {
+            it.copy(
+                config = it.config.copy(aiMode = if (it.config.aiMode == "api") "demo" else it.config.aiMode),
+                ui = it.ui.copy(direct = DirectStatus()),
+            )
+        }
+        toast("已从这台设备上删除接口设置和 API Key。")
     }
 
     /** 检验题选一个选项（选过就定了）。 */

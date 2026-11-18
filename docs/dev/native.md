@@ -45,10 +45,14 @@ cd native
 
 ## AI 层
 
-AI 层在 `ai/`。首版提供两种来源，直连服务商在 M5：
+AI 层在 `ai/`，提供三种来源：
 
 - **演示模式**（`Demo.kt`）：照 `src/lib/demo.ts` 移植，没有网络和密钥也能走完“机会成本”（约定 3）。网页版直接读改全局状态，这里改成输入讨论、输出结果和新的 `demoStep`。标准答案里的 `demo-cases.json` 记下了网页版在十几种讨论状态下、每种用途的调用结果，`DemoTest` 逐条比对。
 - **自己部署的后端**（`Remote.kt`）：和 Worker 的 `/api/config`、`/api/test`、`/api/generate` 对接，访问口令放在请求头里，不跟随重定向。流式输出解析 SSE；后端不认识流式时按普通请求处理。
+- **直接连接服务商**（`Direct.kt`、`Prompts.kt`、`DirectStore.kt`）：App 自己调用服务商的 Chat Completions 接口，不需要部署后端。
+  - **提示词只有一份**：`server/ai.ts` 的 `buildRequest` 和 `finalize` 由 `npm run bundle:native` 打包成 `assets/sibian-ai.js`（入口是 `scripts/native-ai-entry.ts`），在 `androidx.javascriptengine` 的独立沙箱里执行。沙箱不是网页，没有网络和存储；Android 8 以下或 WebView 太旧时，说明原因，不换成别的来源。`tests/native-ai.test.ts` 检查打包文件没有过期，并在一个只有语言本身的环境里跑一遍，确认结果和后端一样。
+  - **网络请求在 Kotlin 里**：`normalizeDirect`、`visibleText` 和 `DirectBackend.complete` 照 `server/ai.ts` 移植。标准答案里的 `direct-cases.json` 是网页版对一批地址、流式片段和服务商响应（成功、截断、空回复、401/403/404/429/500、重定向、流式报错……）跑出的结果，`DirectTest` 逐条比对显示过的文字和错误文案。
+  - **API Key**：AGENTS.md 约定 1 的唯一例外。用 Android Keystore 里不能导出的 AES 密钥加密，存在 `noBackupFilesDir`，只用来设置请求头；不传进 JS，不进存档、导出、界面状态和错误信息（`DirectTest` 检查），设置页可以一键删除。Robolectric 没有 Android Keystore，`KeystoreDirectStore` 只能在真机上试，测试里用 `MemoryDirectStore`。
 - **统一入口**（`Ai.kt`）：和网页版 `lib/ai.ts` 一样，同一时间只有一个请求，100 秒超时，可以取消。失败只给出原因，不换成演示模板、不编造回复（约定 2）。错误文案和网页版一致，只有“连不上”那句把浏览器才有的 `ALLOWED_ORIGINS` 换成了“手机能不能上网”。
 
 网络读取是阻塞调用，协程的超时和取消管不到它，所以请求放在单独的线程里跑，超时或取消时直接断开连接。`AiTest` 里有计时断言，确认后端卡住时超时、取消会立刻生效。

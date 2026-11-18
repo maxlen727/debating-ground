@@ -1,11 +1,16 @@
 package debating.ground.app
 
+import android.content.Context
 import debating.ground.app.ai.Ai
+import debating.ground.app.ai.DirectAccess
+import debating.ground.app.ai.KeystoreDirectStore
+import debating.ground.app.ai.SandboxPrompts
 import debating.ground.app.data.SavedState
 import debating.ground.app.data.SibianJson
 import debating.ground.app.data.Storage
 import debating.ground.app.data.loadState
 import debating.ground.app.flow.AppState
+import debating.ground.app.flow.DirectStatus
 import debating.ground.app.flow.Learning
 import debating.ground.app.flow.Live
 import debating.ground.app.flow.Ui
@@ -21,7 +26,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 // 界面和学习流程之间的一层：持有状态，状态一变就在后台写存档，启动时读回。
 // 流程代码（flow/）不碰界面和存储，界面只读状态、调用这里的操作。
-class AppModel(dir: File, private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)) {
+class AppModel(dir: File, private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate), direct: DirectAccess? = null) {
     private val storage = Storage(dir)
 
     // 写存档放在单独的线程：不卡界面，而且一次只写一份，后写的不会被先写的覆盖
@@ -39,11 +44,11 @@ class AppModel(dir: File, private val scope: CoroutineScope = CoroutineScope(Sup
 
     init {
         val saved = runCatching { loadState(storage.read(), null, System.currentTimeMillis()) }.getOrElse { SavedState() }
-        val initial = AppState(saved.config, saved.plan, saved.session, saved.library, Ui(screen = saved.screen))
+        val initial = AppState(saved.config, saved.plan, saved.session, saved.library, Ui(screen = saved.screen, direct = DirectStatus.of(direct?.settings())))
         _state = MutableStateFlow(initial)
         learning = Learning(
             initial,
-            Ai(),
+            Ai(direct = direct),
             onChange = { st ->
                 _state.value = st
                 save(st)
@@ -72,6 +77,12 @@ class AppModel(dir: File, private val scope: CoroutineScope = CoroutineScope(Sup
         @Volatile private var instance: AppModel? = null
 
         // 整个 App 只有一份：转屏、深色模式切换时 Activity 会重建，状态和正在进行的请求不能丢
-        fun get(dir: File): AppModel = instance ?: synchronized(this) { instance ?: AppModel(dir).also { instance = it } }
+        fun get(context: Context): AppModel = instance ?: synchronized(this) {
+            instance ?: AppModel(
+                context.filesDir,
+                // 直接连接的设置加密存在不进备份的目录里；提示词在 JS 沙箱里组装
+                direct = DirectAccess(KeystoreDirectStore(context.noBackupFilesDir), SandboxPrompts(context.applicationContext)),
+            ).also { instance = it }
+        }
     }
 }

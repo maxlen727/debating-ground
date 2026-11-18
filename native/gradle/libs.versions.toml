@@ -9,6 +9,7 @@ junit = "4.13.2"
 robolectric = "4.18"
 ktlint = "1.8.0"
 serialization = "1.13.0"
+javascriptengine = "1.1.1"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -23,6 +24,8 @@ compose-material3 = { module = "androidx.compose.material3:material3" }
 junit = { module = "junit:junit", version.ref = "junit" }
 # 存档是 JSON，格式和网页版的 sibian-v3 一致
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
+# 直接连接服务商时执行共用的提示词（server/ai.ts 打包成的 JS），在系统 WebView 提供的独立沙箱里跑，不是网页
+javascriptengine = { module = "androidx.javascriptengine:javascriptengine", version.ref = "javascriptengine" }
 # 没有模拟器也能检查界面：在 JVM 里渲染 Compose 页面并截图（见 docs/dev/native.md）
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }

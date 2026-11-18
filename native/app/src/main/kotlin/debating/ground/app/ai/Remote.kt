@@ -40,7 +40,7 @@ data class BackendStatus(val model: String, val ttsConfigured: Boolean, val sttC
 // 阻塞的读取立刻抛错退出，调用方马上拿到“已取消”“超时”（网页版用 AbortController 做同样的事）
 private val io = Executors.newCachedThreadPool { r -> Thread(r, "sibian-http").apply { isDaemon = true } }
 
-private suspend fun <T> blocking(c: HttpURLConnection, work: () -> T): T = suspendCancellableCoroutine { cont ->
+internal suspend fun <T> blocking(c: HttpURLConnection, work: () -> T): T = suspendCancellableCoroutine { cont ->
     cont.invokeOnCancellation { c.disconnect() }
     io.execute {
         val result = runCatching(work)

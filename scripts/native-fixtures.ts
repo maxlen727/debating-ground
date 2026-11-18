@@ -312,6 +312,7 @@ export async function generate(): Promise<Record<string, string>> {
   out['flow-scripts.json'] = JSON.stringify(await recordFlows(S, A)) + '\n';
 
   // 原生测试读回存档时用同一个“现在”和时区
+  out['direct-cases.json'] = JSON.stringify(await directCases()) + '\n';
   out['meta.json'] = JSON.stringify({ now: NOW, timeZone: TIME_ZONE }, null, 2) + '\n';
   return out;
 }
@@ -435,6 +436,173 @@ const graphShape = (s: Parameters<typeof graphOf>[0]) => {
   const { rows, lanes, edges, width } = graphOf(s);
   return { rows, lanes, edges, width };
 };
+
+/* ---------- 直接连接服务商：原生版移植的部分（地址检查、流式显示过滤、调用和错误文案） ---------- */
+export const DIRECT_KEY = 'sk-test-0123456789';
+const chat = (content: string, finish = 'stop') =>
+  JSON.stringify({ choices: [{ message: { content }, finish_reason: finish }] });
+const sse = (...events: unknown[]) =>
+  events.map(e => 'data: ' + (typeof e === 'string' ? e : JSON.stringify(e)) + '\n\n').join('');
+const delta = (content: string, finish: string | null = null) => ({
+  choices: [{ delta: { content }, finish_reason: finish }],
+});
+// 服务商可能返回的几种情况。stream：这次是不是请求了流式输出
+export const HTTP_CASES: {
+  name: string;
+  stream: boolean;
+  status: number;
+  type: string;
+  body: string;
+}[] = [
+  {
+    name: 'json',
+    stream: false,
+    status: 200,
+    type: 'application/json',
+    body: chat('  机会成本是放弃的最好选择。  '),
+  },
+  {
+    name: 'json-key',
+    stream: false,
+    status: 200,
+    type: 'application/json',
+    body: chat(`密钥是 ${DIRECT_KEY} 哦`),
+  },
+  {
+    name: 'truncated',
+    stream: false,
+    status: 200,
+    type: 'application/json',
+    body: chat('半截', 'length'),
+  },
+  { name: 'empty', stream: false, status: 200, type: 'application/json', body: chat('   ') },
+  { name: 'not-json', stream: false, status: 200, type: 'text/html', body: '<html>出错了</html>' },
+  {
+    name: 'too-long',
+    stream: false,
+    status: 200,
+    type: 'application/json',
+    body: chat('长'.repeat(20001)),
+  },
+  ...[401, 403, 404, 429, 500].map(status => ({
+    name: 'status-' + status,
+    stream: false,
+    status,
+    type: 'application/json',
+    body: '{"error":{"message":"nope"}}',
+  })),
+  { name: 'redirect', stream: false, status: 302, type: 'text/plain', body: '' },
+  {
+    name: 'stream',
+    stream: true,
+    status: 200,
+    type: 'text/event-stream',
+    body: sse(
+      delta('机会'),
+      delta('成本是'),
+      delta(`放弃的 ${DIRECT_KEY.slice(0, 5)}`),
+      delta(DIRECT_KEY.slice(5) + ' 最好选择。\n['),
+      delta('[要点:1]]'),
+      { comment: 'ignored' },
+      'not json',
+      delta('', 'stop'),
+      '[DONE]',
+    ),
+  },
+  {
+    name: 'stream-error',
+    stream: true,
+    status: 200,
+    type: 'text/event-stream',
+    body: sse(delta('说到一半'), { error: { message: 'overloaded' } }),
+  },
+  {
+    name: 'stream-truncated',
+    stream: true,
+    status: 200,
+    type: 'text/event-stream',
+    body: sse(delta('说到一半'), delta('', 'length')),
+  },
+  // 请求了流式，服务商却直接回了 JSON：按普通请求处理
+  {
+    name: 'stream-as-json',
+    stream: true,
+    status: 200,
+    type: 'application/json',
+    body: chat('一次说完。[[术语:稀缺性]]'),
+  },
+];
+
+async function directCases() {
+  const { visibleText, normalizeConfig, complete } = await import('../server/ai.ts');
+  const visible = [
+    ['你好', ''],
+    ['你好[[要点:1]]', ''],
+    ['你好\n[', ''],
+    ['  前后有空格  ', ''],
+    ['说到 [半截', ''],
+    [`泄露 ${DIRECT_KEY} 了`, DIRECT_KEY],
+    [`末尾是密钥开头 ${DIRECT_KEY.slice(0, 6)}`, DIRECT_KEY],
+    [`两次 ${DIRECT_KEY}${DIRECT_KEY}`, DIRECT_KEY],
+    ['没有密钥', DIRECT_KEY],
+    ['[[术语:稀缺性]] 开头就是标记', DIRECT_KEY],
+  ].map(([raw, key]) => ({ raw, key, out: visibleText(raw, key) }));
+  const configs = [
+    { baseURL: 'https://api.example.com/v1', model: 'm1', apiKey: DIRECT_KEY },
+    { baseURL: 'https://api.example.com/v1/', model: ' m1 ', apiKey: ` ${DIRECT_KEY} ` },
+    { baseURL: 'https://api.example.com/v1/chat/completions', model: 'm1', apiKey: 'k' },
+    { baseURL: 'https://api.example.com', model: 'm1', apiKey: 'k' },
+    { baseURL: 'http://localhost:11434/v1', model: 'm1', apiKey: 'k' },
+    { baseURL: 'http://127.0.0.1:8080', model: 'm1', apiKey: 'k' },
+    { baseURL: 'http://api.example.com/v1', model: 'm1', apiKey: 'k' },
+    { baseURL: 'https://user:pw@api.example.com/v1', model: 'm1', apiKey: 'k' },
+    { baseURL: 'https://api.example.com/v1?key=1', model: 'm1', apiKey: 'k' },
+    { baseURL: 'https://api.example.com/v1#x', model: 'm1', apiKey: 'k' },
+    { baseURL: 'api.example.com', model: 'm1', apiKey: 'k' },
+    { baseURL: '', model: 'm1', apiKey: 'k' },
+    { baseURL: 'https://api.example.com/v1', model: 'm1', apiKey: '' },
+    { baseURL: 'https://api.example.com/v1', model: 'm1', apiKey: 'a\nb' },
+    { baseURL: 'https://api.example.com/v1', model: '', apiKey: 'k' },
+    { baseURL: 'https://api.example.com/v1', model: 'm'.repeat(201), apiKey: 'k' },
+    { baseURL: 'https://API.Example.com:443/v1', model: 'm1', apiKey: 'k' },
+  ].map(input => {
+    try {
+      const c = normalizeConfig(input);
+      return { input, endpoint: c.endpoint, model: c.model };
+    } catch (e) {
+      return { input, error: (e as Error).message };
+    }
+  });
+  const http = [];
+  for (const c of HTTP_CASES) {
+    const shown: string[] = [];
+    const fetchImpl = (async () =>
+      new Response(c.status === 302 ? null : c.body, {
+        status: c.status,
+        headers: {
+          'Content-Type': c.type,
+          ...(c.status === 302 ? { Location: 'https://evil.example' } : {}),
+        },
+      })) as typeof fetch;
+    let outcome: { text?: string; error?: string };
+    try {
+      const r = await complete(
+        {
+          endpoint: 'https://api.example.com/v1/chat/completions',
+          apiKey: DIRECT_KEY,
+          model: 'm1',
+        },
+        [{ role: 'user', content: '你好' }],
+        { fetchImpl, onText: c.stream ? v => shown.push(v) : undefined },
+      );
+      outcome = { text: r.text };
+    } catch (e) {
+      outcome = { error: (e as Error).message };
+    }
+    http.push({ ...c, shown, ...outcome });
+  }
+  return { key: DIRECT_KEY, visible, configs, http };
+}
 
 // 按同一套规则从状态里找操作的目标（原生版 FlowTest 用同样的规则）
 type St = ReturnType<typeof import('../src/store.ts').getState>;
