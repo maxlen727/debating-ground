@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.PathEffect
@@ -46,6 +47,7 @@ import debating.ground.app.data.Session
 import debating.ground.app.flow.seatName
 import debating.ground.app.ui.LocalMotion
 import debating.ground.app.ui.Sheet
+import debating.ground.app.ui.glass
 import debating.ground.app.ui.mix
 import debating.ground.app.ui.theme.LocalTokens
 import debating.ground.app.ui.theme.TextStyles
@@ -126,9 +128,10 @@ fun DebateBoard(s: Session, model: AppModel) {
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, bottom = 10.dp)
-            .background(t.bg.color(), RoundedCornerShape(14.dp))
-            .border(1.dp, t.line.color(), RoundedCornerShape(14.dp))
+            .padding(horizontal = 12.dp)
+            // 台面也是悬浮的控件层：磨砂底
+            .glass(RoundedCornerShape(20.dp), 6.dp)
+            .clip(RoundedCornerShape(20.dp))
             .clickable(role = Role.Button) { model.learning.openSheet("roster") }
             .semantics {
                 contentDescription = if (over) "比赛结束，查看双方阵容" else "${stage?.name.orEmpty()}，第 ${s.cursor + 1} 次发言，共 ${s.turns.size} 次。查看双方阵容"

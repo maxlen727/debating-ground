@@ -41,6 +41,7 @@ import debating.ground.app.ui.Segmented
 import debating.ground.app.ui.StatusTag
 import debating.ground.app.ui.TopBar
 import debating.ground.app.ui.WithFloatingDock
+import debating.ground.app.ui.scrollWithEdge
 import debating.ground.app.ui.theme.LocalTokens
 import debating.ground.app.ui.theme.TextStyles
 import debating.ground.app.ui.theme.color
@@ -64,7 +65,7 @@ fun SettingsScreen(st: AppState, model: AppModel) {
         Column(Modifier.fillMaxSize()) {
             TopBar("设置", "AI 来源与连接")
             Column(
-                Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+                Modifier.weight(1f).scrollWithEdge().padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Panel {

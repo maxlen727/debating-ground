@@ -51,6 +51,7 @@ import debating.ground.app.ui.Segmented
 import debating.ground.app.ui.TopBar
 import debating.ground.app.ui.WithFloatingDock
 import debating.ground.app.ui.mix
+import debating.ground.app.ui.scrollWithEdge
 import debating.ground.app.ui.theme.LocalTokens
 import debating.ground.app.ui.theme.Serif
 import debating.ground.app.ui.theme.TextStyles
@@ -75,7 +76,7 @@ fun LibraryScreen(st: AppState, model: AppModel, now: Long) {
             if (library.isNotEmpty()) ExportButton("导出知识库") { shareMarkdown(context, "思辨场知识库", libraryMarkdown(library)) }
         }
         Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+            Modifier.weight(1f).scrollWithEdge().padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             if (library.isEmpty()) {
@@ -193,7 +194,7 @@ fun CardScreen(st: AppState, model: AppModel) {
         Column(Modifier.fillMaxSize()) {
             TopBar(c.concept, "${MODES[c.mode]?.name.orEmpty()} · 已复习 ${c.reviews.size} 次", onBack = { l.go("library") })
             Column(
-                Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+                Modifier.weight(1f).scrollWithEdge().padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Text(c.topic, style = TextStyles.knowledge, color = t.ink.color())

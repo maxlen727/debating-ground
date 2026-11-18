@@ -44,6 +44,7 @@ import debating.ground.app.ui.PrimaryButton
 import debating.ground.app.ui.QuietLink
 import debating.ground.app.ui.SectionLabel
 import debating.ground.app.ui.WithFloatingDock
+import debating.ground.app.ui.scrollWithEdge
 import debating.ground.app.ui.theme.LocalTokens
 import debating.ground.app.ui.theme.TextSize
 import debating.ground.app.ui.theme.TextStyles
@@ -81,7 +82,7 @@ fun LearnScreen(st: AppState, model: AppModel, now: Long) {
     }) { bottom ->
         Column(Modifier.fillMaxSize()) {
             Column(
-                Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+                Modifier.weight(1f).scrollWithEdge().padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {

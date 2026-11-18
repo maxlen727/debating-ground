@@ -107,7 +107,7 @@ import debating.ground.app.ui.SecondaryButton
 import debating.ground.app.ui.SectionLabel
 import debating.ground.app.ui.Sheet
 import debating.ground.app.ui.TopBar
-import debating.ground.app.ui.fadeBottom
+import debating.ground.app.ui.fadeUnder
 import debating.ground.app.ui.glass
 import debating.ground.app.ui.lineIcon
 import debating.ground.app.ui.mix
@@ -137,16 +137,17 @@ fun DiscussScreen(st: AppState, model: AppModel) {
     // 辩论赛程没走完就结束，会跳过剩下的环节（包括总结陈词），先确认一下
     val onFinish = { if (debate && s.cursor < s.turns.size) l.openSheet("finish") else model.run { finish() } }
     Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize()) {
-            SessionTop(s, busy, onFinish, model)
-            // 输入栏悬浮在讨论记录上：记录可以滚到它下面，最新的一条停在它上方
-            val density = LocalDensity.current
-            var composer by remember { mutableStateOf(0.dp) }
-            Box(Modifier.weight(1f)) {
-                Thread(s, st, live, model, Modifier.fillMaxSize().fadeBottom(composer), composer)
-                Box(Modifier.align(Alignment.BottomCenter).onSizeChanged { composer = with(density) { it.height.toDp() } }) {
-                    ComposerArea(s, st, live, model)
-                }
+        // 顶栏和输入栏都悬浮在讨论记录上：记录可以滚到它们下面，滚到附近时淡出，不垫整条底色
+        val density = LocalDensity.current
+        var top by remember { mutableStateOf(0.dp) }
+        var composer by remember { mutableStateOf(0.dp) }
+        Box(Modifier.fillMaxSize()) {
+            Thread(s, st, live, model, Modifier.fillMaxSize().fadeUnder(top, composer), top, composer)
+            Box(Modifier.align(Alignment.TopCenter).onSizeChanged { top = with(density) { it.height.toDp() } }) {
+                SessionTop(s, busy, onFinish, model)
+            }
+            Box(Modifier.align(Alignment.BottomCenter).onSizeChanged { composer = with(density) { it.height.toDp() } }) {
+                ComposerArea(s, st, live, model)
             }
         }
         Sheets(s, st, live, model)
@@ -177,13 +178,7 @@ private fun EmptyDiscuss(onStart: () -> Unit) {
 private fun SessionTop(s: Session, busy: Boolean, onFinish: () -> Unit, model: AppModel) {
     val t = LocalTokens.current
     val l = model.learning
-    val line = t.line.color()
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .background(t.surface.color().copy(alpha = 0.9f))
-            .drawBehind { drawLine(line, Offset(0f, size.height), Offset(size.width, size.height), 1.dp.toPx()) },
-    ) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         TopBar(s.concept, "${MODES[s.mode]?.name ?: ""} · ${s.topic}", onBack = { l.go("learn") }) {
             if (s.finished) {
                 SecondaryButton("看复盘", { l.go("review") }, small = true)
@@ -204,8 +199,9 @@ private fun PointsProgress(s: Session, model: AppModel) {
     // 新点亮的要点滚到看得见的地方
     val lit = s.covered.lastOrNull()
     LaunchedEffect(s.covered.size) { if (lit != null) row.animateScrollToItem(lit) }
+    // 要点进度是一条悬浮的磨砂胶囊
     Row(
-        Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, bottom = 6.dp),
+        Modifier.padding(horizontal = 12.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp), 6.dp).padding(start = 14.dp, end = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -278,7 +274,7 @@ private fun PointChip(text: String, lit: Boolean) {
 /* ---------- 讨论记录 ---------- */
 
 @Composable
-private fun Thread(s: Session, st: AppState, live: Live?, model: AppModel, modifier: Modifier, bottom: Dp) {
+private fun Thread(s: Session, st: AppState, live: Live?, model: AppModel, modifier: Modifier, top: Dp, bottom: Dp) {
     val l = model.learning
     val ui = st.ui
     val debate = s.mode == "debate"
@@ -293,7 +289,7 @@ private fun Thread(s: Session, st: AppState, live: Live?, model: AppModel, modif
         modifier.fillMaxWidth(),
         state = list,
         reverseLayout = true,
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 12.dp + bottom),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 18.dp + top, bottom = 12.dp + bottom),
         verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.Bottom),
     ) {
         when {

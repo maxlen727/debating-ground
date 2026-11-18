@@ -24,6 +24,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -57,6 +58,9 @@ import debating.ground.app.ui.theme.color
 
 private val R = 14.dp
 
+// 有文字的按钮是胶囊，只有图标的按钮是圆形（参考 iOS 的按钮形状规范）
+private val Capsule = RoundedCornerShape(percent = 50)
+
 @Composable
 private fun pressScale(source: MutableInteractionSource, enabled: Boolean): Float {
     val pressed by source.collectIsPressedAsState()
@@ -73,8 +77,8 @@ fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifi
             .heightIn(min = if (small) 40.dp else 48.dp)
             .scale(pressScale(src, enabled))
             .alpha(if (enabled) 1f else 0.45f)
-            .then(if (LocalFloating.current) Modifier.shadow(10.dp, RoundedCornerShape(R), spotColor = t.brand.color().copy(alpha = 0.45f)) else Modifier)
-            .background(t.brand.color(), RoundedCornerShape(R))
+            .then(if (LocalFloating.current) Modifier.shadow(10.dp, Capsule, spotColor = t.brand.color().copy(alpha = 0.45f)) else Modifier)
+            .background(t.brand.color(), Capsule)
             .clickable(src, null, enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = if (small) 14.dp else 20.dp),
         contentAlignment = Alignment.Center,
@@ -100,10 +104,10 @@ fun SecondaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modi
             .then(
                 if (LocalFloating.current) {
                     Modifier.glass(
-                        RoundedCornerShape(R),
+                        Capsule,
                     )
                 } else {
-                    Modifier.background(t.raised.color(), RoundedCornerShape(R)).border(1.dp, t.line.color(), RoundedCornerShape(R))
+                    Modifier.background(t.raised.color(), Capsule).border(1.dp, t.line.color(), Capsule)
                 },
             )
             .clickable(src, null, enabled = enabled, role = Role.Button, onClick = onClick)
@@ -408,13 +412,14 @@ fun BusyStrip(label: String?, onCancel: () -> Unit) {
 @Composable
 fun TopBar(title: String, sub: String? = null, onBack: (() -> Unit)? = null, right: @Composable RowScope.() -> Unit = {}) {
     val t = LocalTokens.current
-    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (onBack != null) {
-            Box(Modifier.size(44.dp).clickable(role = Role.Button, onClick = onBack), contentAlignment = Alignment.Center) {
-                Icon(lineIcon("back", IconPaths.BACK), "返回", tint = t.ink.color())
-            }
-        }
-        Column(Modifier.weight(1f).padding(horizontal = 6.dp)) {
+    // 顶栏不垫底色：返回是圆形磨砂按钮，右边的操作也悬浮（磨砂胶囊），标题直接写在页面上
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        if (onBack != null) GlassIconButton(IconPaths.BACK, "返回", onBack)
+        Column(Modifier.weight(1f).padding(start = if (onBack == null) 4.dp else 0.dp)) {
             Text(
                 title,
                 style = TextStyles.title,
@@ -427,7 +432,9 @@ fun TopBar(title: String, sub: String? = null, onBack: (() -> Unit)? = null, rig
             )
             if (sub != null) Text(sub, style = TextStyles.small.copy(fontSize = 12.sp), color = t.muted.color(), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        right()
+        CompositionLocalProvider(LocalFloating provides true) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) { right() }
+        }
     }
 }
 
