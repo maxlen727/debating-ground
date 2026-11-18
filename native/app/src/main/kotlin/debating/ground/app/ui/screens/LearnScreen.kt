@@ -62,6 +62,7 @@ import debating.ground.app.ui.Chip
 import debating.ground.app.ui.EaseOut
 import debating.ground.app.ui.ErrorBanner
 import debating.ground.app.ui.FinePrint
+import debating.ground.app.ui.GhostButton
 import debating.ground.app.ui.IconPaths
 import debating.ground.app.ui.Input
 import debating.ground.app.ui.LocalMotion
@@ -171,6 +172,8 @@ fun LearnScreen(st: AppState, model: AppModel, now: Long) {
                         }
                     }
                 }
+                // 同学发来了邀请链接：在 App 里加入
+                GhostButton("加入同学的讨论", { l.go("join") }, Modifier.fillMaxWidth(), small = true, icon = IconPaths.PEOPLE)
                 if (library.isEmpty()) FinePrint("讨论结束后会生成理解复盘，存成知识卡片，按 1、3、7、14 天的间隔提醒你回顾。")
                 if (config.aiMode == "demo") {
                     FinePrint("当前是演示模式：“机会成本”有完整示例，其他概念用通用模板。要让 AI 真正参与讨论，在设置里连接你自己部署的后端。")

@@ -74,6 +74,7 @@ import debating.ground.app.AppModel
 import debating.ground.app.flow.AppState
 import debating.ground.app.ui.screens.CardScreen
 import debating.ground.app.ui.screens.DiscussScreen
+import debating.ground.app.ui.screens.JoinScreen
 import debating.ground.app.ui.screens.LearnScreen
 import debating.ground.app.ui.screens.LibraryScreen
 import debating.ground.app.ui.screens.PrepareScreen
@@ -177,6 +178,7 @@ private fun Page(screen: String, st: AppState, model: AppModel) = when (screen) 
     "library" -> LibraryScreen(st, model, System.currentTimeMillis())
     "card" -> CardScreen(st, model)
     "settings" -> SettingsScreen(st, model)
+    "join" -> JoinScreen(st, model)
     else -> LearnScreen(st, model, System.currentTimeMillis())
 }
 

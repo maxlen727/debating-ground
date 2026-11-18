@@ -50,7 +50,75 @@ class ScreenshotTest {
                 debating.ground.app.speech.Voice(scope, { _, _ -> ByteArray(0) to "audio/mpeg" }, out) {},
                 debating.ground.app.speech.Listen(scope, { error("截图里不连") }, { error("截图里不录") }) { "" },
             )
-        })
+        }, roomDialer = fakeRoom)
+    }
+
+    // 多人房间：假的连接，测试里直接模拟后端发来的消息
+    private val fakeRoom = object : debating.ground.app.room.RoomDialer {
+        var events: debating.ground.app.room.RoomEvents? = null
+
+        override fun dial(url: String, events: debating.ground.app.room.RoomEvents): debating.ground.app.room.RoomSocket {
+            this.events = events
+            return object : debating.ground.app.room.RoomSocket {
+                override fun send(text: String) = true
+                override fun close() {}
+            }
+        }
+    }
+
+    private fun roomView(mode: String, status: String, me: String, host: Boolean) = """
+        {"id":"${"r".repeat(22)}","status":"$status","setup":{"mode":"$mode","concept":"机会成本","topic":"周末去打工赚 300 元，真正的代价是什么？",
+        "keyPoints":["放弃的最佳选择","包含隐性代价","区别于沉没成本"],"personas":[{"id":"p1","name":"苏珩","title":"追问者","tone":"a"}],"opening":"",
+        "seats":[{"id":"A1","team":"A","index":0,"type":"human","name":"正方 1 辩"},{"id":"B1","team":"B","index":0,"type":"ai","name":"反方 1 辩"},{"id":"A2","team":"A","index":1,"type":"peer","name":"正方 2 辩"},{"id":"B2","team":"B","index":1,"type":"ai","name":"反方 2 辩"}],
+        "stages":[{"name":"开篇立论","kind":"opening","rounds":1}],
+        "turns":[{"role":{"id":"A1","team":"A","index":0,"type":"human"},"action":"立论","stage":0,"round":0},{"role":{"id":"B1","team":"B","index":0,"type":"ai"},"action":"立论","stage":0,"round":0}],"turnSeconds":60},
+        "members":[{"id":"host","name":"小明","host":true,"online":true,"seat":"A1"},{"id":"u2","name":"小红","host":false,"online":true,"typing":true},{"id":"u3","name":"阿杰","host":false,"online":false}],
+        "entries":[{"id":"s0","kind":"sys","text":"讨论题：周末去打工赚 300 元，真正的代价是什么？"},
+        {"id":"m1","kind":"msg","who":"learner","name":"小明","text":"我觉得代价就是那一天本来可以休息。","source":"human","memberId":"host"},
+        {"id":"m2","kind":"msg","who":"learner","name":"小红","text":"还有本来可以复习的时间，考试可能会因此少几分。","source":"human","memberId":"u2"},
+        {"id":"m3","kind":"msg","who":"p1","name":"苏珩","text":"你们都提到了时间。那如果那天你本来可以去做家教赚 500 元，打工的代价又是什么？","source":"api","model":"m"}],
+        "covered":[0],"cursor":0,"speaker":null,"aiBusy":null,"error":"","aiCalls":3,"expiresAt":${System.currentTimeMillis() + 3_600_000},"now":0,"turnStartedAt":0}
+    """.trimIndent().let {
+        if (status ==
+            "lobby"
+        ) {
+            it.replace("\"entries\":[", "\"entries\":[{\"id\":\"s0\",\"kind\":\"sys\",\"text\":\"讨论题\"}],\"x\":[")
+        } else {
+            it
+        }
+    }
+
+    private fun enterRoom(view: String, me: String) {
+        model.learning.rooms.openJoin(debating.ground.app.room.inviteLink("https://api.example.dev", "r".repeat(22), "inv"))
+        model.learning.rooms.join("小明")
+        fakeRoom.events!!.opened()
+        fakeRoom.events!!.message("""{"type":"welcome","memberId":"$me","token":"t","room":$view}""")
+        compose.waitForIdle()
+    }
+
+    @Test
+    fun roomRoundtableLive() {
+        compose.setContent { Frame(dark = false, width = 390, height = 844) }
+        enterRoom(roomView("roundtable", "live", "host", true), "host")
+        compose.onNodeWithText("想说就说，大家停下来几秒后 AI 嘉宾会接话").assertExists()
+        save("phone-room-live")
+    }
+
+    @Test
+    fun roomDebateLobbyDark() {
+        compose.setContent { Frame(dark = true, width = 390, height = 844) }
+        enterRoom(roomView("debate", "lobby", "u3", false), "u3")
+        compose.onNodeWithText("等房主开始讨论……").assertExists()
+        save("phone-room-lobby-dark")
+    }
+
+    @Test
+    fun joinPage() {
+        compose.setContent { Frame(dark = false, width = 390, height = 844) }
+        model.learning.rooms.openJoin(debating.ground.app.room.inviteLink("https://api.example.dev", "r".repeat(22), "inv"))
+        compose.waitForIdle()
+        compose.onNodeWithText("同学邀请你一起讨论").assertExists()
+        save("phone-join")
     }
 
     private fun shoot(name: String, dark: Boolean, width: Int = 390, height: Int = 844) {

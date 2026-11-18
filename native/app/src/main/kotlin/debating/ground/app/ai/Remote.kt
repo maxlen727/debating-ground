@@ -1,6 +1,8 @@
 package debating.ground.app.ai
 
 import debating.ground.app.data.SibianJson
+import debating.ground.app.room.CreatedRoom
+import debating.ground.app.room.RoomSetup
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -108,6 +110,19 @@ class RemoteBackend(private val url: String, private val password: String, priva
             val audio = (d["audio"] as? JsonPrimitive)?.content ?: throw AiFailure(NO_RESPONSE)
             val mime = (d["mime"] as? JsonPrimitive)?.content ?: "audio/mpeg"
             audio to mime
+        }
+    }
+
+    /** 开一个多人房间：后端保存题目和角色，返回房间号、邀请码和房主凭据。 */
+    suspend fun createRoom(setup: RoomSetup, hostName: String): CreatedRoom {
+        val c = open("/api/rooms", "POST")
+        val body = buildJsonObject {
+            put("setup", SibianJson.encodeToJsonElement(RoomSetup.serializer(), setup))
+            put("hostName", hostName)
+        }.toString()
+        return blocking(c) {
+            val d = readJson(c, connect(c, body))
+            runCatching { SibianJson.decodeFromJsonElement(CreatedRoom.serializer(), d) }.getOrElse { throw AiFailure(NO_RESPONSE) }
         }
     }
 

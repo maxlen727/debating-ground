@@ -70,7 +70,8 @@ class Listen(private val scope: CoroutineScope, private val connect: ListenConne
     private var onEnd: ((String?) -> Unit)? = null
     private val timers = mutableListOf<Job>()
 
-    fun start(text: (String) -> Unit, end: (String?) -> Unit) {
+    /** 开始听。[via]：换一种连接（多人房间里经房间转发），不给就连自己的后端。 */
+    fun start(text: (String) -> Unit, end: (String?) -> Unit, via: ListenConnect? = null) {
         if (_phase.value != null) return
         _phase.value = Phase.Starting
         startedAt = System.currentTimeMillis()
@@ -78,7 +79,7 @@ class Listen(private val scope: CoroutineScope, private val connect: ListenConne
         onText = text
         onEnd = end
         try {
-            val l = connect.open { scope.launch { heard(it) } }
+            val l = (via ?: connect).open { scope.launch { heard(it) } }
             link = l
             // 访问口令放在第一条消息里（和网页版一样，不放进地址）
             l.send(

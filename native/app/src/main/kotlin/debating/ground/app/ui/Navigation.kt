@@ -18,7 +18,7 @@ fun activeTab(screen: String): Tab? = when (screen) {
 }
 
 /** 沉浸页占满整屏，不显示导航（和网页版 App.tsx 的 immersive 一致）。 */
-fun immersive(screen: String) = screen in setOf("session", "prepare", "card")
+fun immersive(screen: String) = screen in setOf("session", "prepare", "card", "join")
 
 enum class NavStyle { BottomBar, Rail }
 

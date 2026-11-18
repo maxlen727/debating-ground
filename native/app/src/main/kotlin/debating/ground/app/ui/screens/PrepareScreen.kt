@@ -26,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,6 +81,8 @@ fun PrepareScreen(st: AppState, model: AppModel) {
     }
     val debate = plan.mode == "debate"
     val busy = st.ui.busy != null
+    var inviting by rememberSaveable { mutableStateOf(false) }
+    if (inviting) InviteFriendsSheet(st, model) { inviting = false }
     WithFloatingDock(dock = {
         ErrorBanner(st.ui.error) { l.clearError() }
         BusyStrip(st.ui.busy) { l.cancelAI() }
@@ -94,6 +97,10 @@ fun PrepareScreen(st: AppState, model: AppModel) {
                 enabled = !busy,
             )
             PrimaryButton("开始讨论", { l.startSession() }, Modifier.weight(1f), enabled = !busy)
+        }
+        // 圆桌和辩论可以邀请同学一起（多人房间在房主自己的后端上）
+        if (plan.mode == "roundtable" || plan.mode == "debate") {
+            GhostButton("邀请同学一起讨论", { inviting = true }, Modifier.fillMaxWidth(), enabled = !busy, small = true, icon = IconPaths.PEOPLE)
         }
     }) { bottom ->
         Column(Modifier.fillMaxSize()) {

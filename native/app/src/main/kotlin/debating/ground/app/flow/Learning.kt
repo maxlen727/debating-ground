@@ -31,6 +31,14 @@ import debating.ground.app.data.Stance
 import debating.ground.app.data.SystemLine
 import debating.ground.app.data.TermCard
 import debating.ground.app.data.schedule
+import debating.ground.app.room.JoinTarget
+import debating.ground.app.room.RoomDialer
+import debating.ground.app.room.RoomLink
+import debating.ground.app.room.RoomView
+import debating.ground.app.room.link
+import debating.ground.app.room.mySpeakingTurn
+import debating.ground.app.room.setupFrom
+import debating.ground.app.room.toSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
@@ -69,6 +77,9 @@ data class Ui(
     val direct: DirectStatus = DirectStatus(),
     // 检验题选了哪个选项：键是 "s:讨论 id" 或 "c:卡片 id"，值是题号 → 选项。不存档
     val quiz: Map<String, Map<Int, Int>> = emptyMap(),
+    // 多人讨论：正要加入的房间（打开邀请链接后，写名字之前）、邀请面板开着没有。不存档
+    val join: JoinTarget? = null,
+    val invite: Boolean = false,
 )
 
 /** 朗读能不能用：连着自己部署的后端，而且后端配好了讯飞（演示模式和直接连接都没有）。 */
@@ -121,6 +132,7 @@ private val PARENT = mapOf(
     "card" to "library",
     "library" to "learn",
     "settings" to "learn",
+    "join" to "learn",
 )
 
 data class Quick(val kind: String, val label: String)
@@ -136,18 +148,27 @@ class Learning(
     private val onChange: (AppState) -> Unit = {},
     /** 边生成边显示的文字。 */
     private val onLive: (Live?) -> Unit = {},
+    /** 多人讨论的连接（测试里没有）。 */
+    roomDialer: RoomDialer? = null,
+    /** 在后台跑一件要等的事（房间结束后生成复盘、重连的延时）。 */
+    launch: (suspend () -> Unit) -> Unit = {},
 ) {
     var state: AppState = initial
         private set
 
-    private fun update(fn: (AppState) -> AppState) {
+    /** 多人讨论。 */
+    val rooms = Rooms(this, roomDialer, now, uid, launch)
+
+    internal fun live(x: Live?) = onLive(x)
+
+    internal fun update(fn: (AppState) -> AppState) {
         state = fn(state)
         onChange(state)
     }
 
-    private fun updateSession(fn: (Session) -> Session) = update { st -> st.session?.let { st.copy(session = fn(it)) } ?: st }
+    internal fun updateSession(fn: (Session) -> Session) = update { st -> st.session?.let { st.copy(session = fn(it)) } ?: st }
 
-    private fun ui(fn: (Ui) -> Ui) = update { it.copy(ui = fn(it.ui)) }
+    internal fun ui(fn: (Ui) -> Ui) = update { it.copy(ui = fn(it.ui)) }
 
     fun toast(text: String) = ui { it.copy(toast = text) }
 
@@ -190,6 +211,7 @@ class Learning(
 
     fun cancelAI() {
         ai.cancel()
+        rooms.cancelAsk()
         connecting?.cancel()
     }
 
@@ -325,19 +347,75 @@ class Learning(
 
     fun editPlan(fn: (Plan) -> Plan) = update { st -> st.plan?.let { st.copy(plan = fn(it)) } ?: st }
 
-    private fun planProblem(): String {
+    private fun planProblem(multiplayer: Boolean = false): String {
         val plan = state.plan ?: return "还没有准备好讨论。"
         if (plan.topic.trim().isEmpty()) return "请填写讨论题。"
         if (plan.keyPoints.map { it.trim() }.count { it.isNotEmpty() } < 2) return "至少保留两个要点。"
         if (plan.mode == "debate") {
             if (state.config.stages.any { it.name.trim().isEmpty() }) return "请为每个环节填写名称。"
-            if (slots(state.config).none { it.type == "human" }) return "至少安排一个“我”的席位，你才能参与交锋。"
+            // 多人辩论里大家在房间里自己选席位，不需要事先安排
+            if (!multiplayer && slots(state.config).none { it.type == "human" }) return "至少安排一个“我”的席位，你才能参与交锋。"
         }
         return ""
     }
 
-    private fun endOld() {
+    /* ---------- 多人讨论：房主开房间 ---------- */
+
+    /**
+     * 邀请同学：用准备好的题目和角色在房主的后端开一个房间（只支持圆桌和辩论），进入讨论页并打开邀请面板。
+     * 同学凭邀请链接加入，拿不到访问口令（约定 9）。
+     */
+    suspend fun inviteFriends(rawName: String) {
+        val plan = state.plan ?: return
+        if (state.ui.busy != null) return
+        if (plan.mode != "roundtable" && plan.mode != "debate") return toast("多人讨论支持圆桌讨论和正反辩论。")
+        val c = state.config
+        if (c.aiMode != "remote" || c.remote.url.isEmpty()) return toast("多人讨论需要先在“设置”里连接你的后端。")
+        if (!rooms.available) return toast("这个版本不能开多人讨论。")
+        val problem = planProblem(true)
+        if (problem.isNotEmpty()) return toast(problem)
+        val name = rawName.trim()
+        if (name.isEmpty()) return toast("写下你在讨论里显示的名字。")
+        update { it.copy(config = it.config.copy(name = name)) }
+        endOld()
+        val setup = setupFrom(plan, state.config)
+        ui { it.copy(busy = "正在创建房间", error = "") }
+        connecting = currentCoroutineContext()[Job]
+        val created = try {
+            ai.remote(state.config).createRoom(setup, name)
+        } catch (e: CancellationException) {
+            ui { it.copy(busy = null) }
+            throw e
+        } catch (e: AiFailure) {
+            // v0.8 之前的后端不认识“同学”席位
+            val msg = e.message.orEmpty()
+            ui { it.copy(busy = null, error = if (msg.contains("辩论席位无效")) "你的后端版本较旧，不支持“同学”席位。请按文档“怎么更新后端”更新后再试。" else msg) }
+            return
+        } finally {
+            connecting = null
+        }
+        rooms.leave()
+        // 先放一个占位的讨论，连上房间后用后端的状态替换
+        val view = RoomView(id = created.roomId, setup = setup, expiresAt = created.expiresAt)
+        val base = RoomLink(backend = state.config.remote.url, roomId = created.roomId, token = created.hostToken, invite = created.invite, host = true)
+        update { st ->
+            st.copy(
+                session = toSession(view, null, base, now()),
+                ui = st.ui.copy(screen = "session", invite = true, hint = null, explain = null, sheet = null, error = "", busy = null),
+            )
+        }
+        rooms.connect()
+    }
+
+    /** 离开房间：这场讨论在这台设备上结束，回学习页（房间里的其他人不受影响）。 */
+    fun leaveRoom() {
+        rooms.leave()
+        update { it.copy(session = null, ui = it.ui.copy(screen = "learn", invite = false, sheet = null)) }
+    }
+
+    internal fun endOld() {
         val old = session
+        if (old?.room != null) rooms.leave()
         if (old != null && !old.finished && old.entries.any { it is ChatMessage && it.human == true }) toast("上一次讨论没有复盘，已结束。")
     }
 
@@ -389,7 +467,10 @@ class Learning(
 
     /* ---------- 讨论 ---------- */
 
-    fun setDraft(text: String) = updateSession { it.copy(draft = text) }
+    fun setDraft(text: String) {
+        updateSession { it.copy(draft = text) }
+        rooms.noteTyping()
+    }
 
     private fun markCovered(s: Session, list: List<Int>): Session {
         val covered = s.covered.toMutableList()
@@ -425,6 +506,14 @@ class Learning(
         val text = raw.trim()
         if (s == null || s.finished || state.ui.busy != null) return
         if (text.isEmpty()) return toast("先写下你的想法，再发送。")
+        if (s.link != null) {
+            if (!mySpeakingTurn(s)) return toast("还没轮到你发言。")
+            if (rooms.say(text)) {
+                update { it.copy(session = it.session!!.copy(draft = ""), ui = it.ui.copy(hint = null)) }
+                rooms.stopTyping()
+            }
+            return
+        }
         if (s.mode == "debate") return submitSeat(text)
         pushLearner(text)
         val role = s.personas[s.nextRole % s.personas.size]
@@ -481,6 +570,10 @@ class Learning(
     fun submitSeat(text: String, skipped: Boolean = false) {
         val s = session ?: return
         val t = currentTurn(s) ?: return
+        if (s.link != null) {
+            if (skipped) rooms.pass() else rooms.say(text)
+            return
+        }
         val human = t.role.type == "human"
         update { st ->
             val ss = st.session!!
@@ -517,6 +610,10 @@ class Learning(
         val s = session ?: return
         val t = currentTurn(s) ?: return
         if (state.ui.busy != null) return
+        if (s.link != null) {
+            rooms.aiTakeover()
+            return
+        }
         val id = uid()
         val label = "${seatName(t.role)}正在组织发言"
         val res = runAI("debate", buildJsonObject { put("session", snapshot(s)) }, label, Live(id, "msg", label, "", t.role.id))
@@ -558,8 +655,30 @@ class Learning(
         ui { it.copy(sheet = null) }
         val quote = if (m.text.length > 26) m.text.take(26) + "…" else m.text
         if (kind == "disagree") {
-            if (s.mode == "debate" && currentTurn(s)?.role?.type != "human") return toast("轮到你的席位时，再在发言里反驳这一点。")
+            if (s.link != null && !mySpeakingTurn(s)) return toast("轮到你发言时，再在发言里回应这一点。")
+            if (s.link == null && s.mode == "debate" && currentTurn(s)?.role?.type != "human") return toast("轮到你的席位时，再在发言里反驳这一点。")
             updateSession { it.copy(draft = "我不同意「$quote」，因为") }
+            return
+        }
+        if (s.link != null) {
+            // 多人讨论不打断别人的轮次：解释只给自己看
+            val label = QUICK.first { it.kind == kind }.label
+            ui { it.copy(explain = Explain(kind, label, quote, "")) }
+            val body = buildJsonObject {
+                put("purpose", "explain")
+                put("entryId", m.id)
+                put("kind", kind)
+            }
+            val res = rooms.ask(body, "讲解助手正在看这句话")
+            ui { u ->
+                if (res != null &&
+                    u.explain != null
+                ) {
+                    u.copy(explain = u.explain.copy(text = res.result.str("text").orEmpty()))
+                } else {
+                    u.copy(explain = null)
+                }
+            }
             return
         }
         if (s.mode != "debate") {
@@ -595,6 +714,7 @@ class Learning(
         val s = session
         val text = raw.trim().take(40)
         if (s == null || text.isEmpty()) return false
+        if (s.link != null) return rooms.propose(text, source)
         val pending = s.proposedPoints.orEmpty()
         if (s.keyPoints.size + pending.size >= MAX_POINTS) {
             toast("讨论要点最多 6 个。")
@@ -615,7 +735,16 @@ class Learning(
         return true
     }
 
-    fun decidePoint(id: String, accept: Boolean) = updateSession { ss ->
+    fun decidePoint(id: String, accept: Boolean) {
+        val r = session?.link
+        if (r != null) {
+            if (r.host) rooms.decidePoint(id, accept)
+            return
+        }
+        decideLocally(id, accept)
+    }
+
+    private fun decideLocally(id: String, accept: Boolean) = updateSession { ss ->
         val p = ss.proposedPoints?.find { it.id == id } ?: return@updateSession ss
         val rest = ss.proposedPoints.filter { it.id != id }
         ss.copy(proposedPoints = rest, keyPoints = if (accept && ss.keyPoints.size < MAX_POINTS) ss.keyPoints + p.text else ss.keyPoints)
@@ -626,13 +755,28 @@ class Learning(
         if (state.ui.busy != null) return
         if (s.keyPoints.size >= MAX_POINTS) return toast("讨论要点最多 6 个。")
         val label = if (s.mode == "debate") "AI 正在找一个值得交锋的争点" else "AI 正在找一个还没讲到的要点"
-        val res = runAI("point", buildJsonObject { put("session", snapshot(s)) }, label) ?: return
+        val res =
+            (
+                if (s.link !=
+                    null
+                ) {
+                    rooms.ask(buildJsonObject { put("purpose", "point") }, label)
+                } else {
+                    runAI("point", buildJsonObject { put("session", snapshot(s)) }, label)
+                }
+                )
+                ?: return
         (res.result["data"] as? JsonObject)?.str("point")?.takeIf { it.isNotEmpty() }?.let { proposePoint(it, "ai") }
     }
 
     suspend fun hint() {
         val s = session ?: return
         if (state.ui.busy != null) return
+        if (s.link != null) {
+            val res = rooms.ask(buildJsonObject { put("purpose", "hint") }, "正在想一条提示")
+            if (res != null) ui { it.copy(hint = res.result.str("text")) }
+            return
+        }
         val t = currentTurn(s)
         val payload = buildJsonObject {
             put("session", snapshot(s))
@@ -655,16 +799,31 @@ class Learning(
             if (!auto) toast("先完成上面那张小结卡。")
             return
         }
-        updateSession { it.copy(entries = it.entries + Reflection(uid(), "", "", "", s.at)) }
+        val card = Reflection(uid(), "", "", "", s.at)
+        updateSession { it.copy(entries = it.entries + card) }
+        // 多人讨论：小结只留在自己的设备上，记在房间的 reflections 里，跟着房间状态一起显示
+        if (s.link != null) rooms.addReflection(card, s.entries.lastOrNull { it !is Reflection }?.id.orEmpty())
     }
 
-    private fun editReflection(id: String, fn: (Reflection) -> Reflection) = updateSession { ss ->
-        ss.copy(entries = ss.entries.map { if (it is Reflection && it.id == id) fn(it) else it })
+    private fun editReflection(id: String, fn: (Reflection) -> Reflection) {
+        updateSession { ss -> ss.copy(entries = ss.entries.map { if (it is Reflection && it.id == id) fn(it) else it }) }
+        syncRoomReflection(id)
+    }
+
+    // 讨论记录里一份，房间的 reflections 里一份：两份一起改
+    private fun syncRoomReflection(id: String) {
+        val s = session ?: return
+        if (s.link == null) return
+        val e = s.entries.find { it.id == id } as? Reflection ?: return
+        rooms.editReflection(id, e.text, e.feedback, e.draft)
     }
 
     fun setReflectionDraft(id: String, draft: String) = editReflection(id) { it.copy(draft = draft) }
 
-    fun dropReflection(id: String) = updateSession { ss -> ss.copy(entries = ss.entries.filter { it.id != id }) }
+    fun dropReflection(id: String) {
+        updateSession { ss -> ss.copy(entries = ss.entries.filter { it.id != id }) }
+        if (session?.link != null) rooms.dropReflection(id)
+    }
 
     suspend fun submitReflection(id: String) {
         val s = session ?: return
@@ -672,6 +831,15 @@ class Learning(
         val m = s.entries.find { it.id == id } as? Reflection ?: return
         val answer = m.draft.trim()
         if (answer.isEmpty()) return toast("用一两句话写下你的理解。")
+        if (s.link != null) {
+            val body = buildJsonObject {
+                put("purpose", "reflect")
+                put("answer", answer)
+            }
+            val res = rooms.ask(body, "正在看你的小结") ?: return
+            editReflection(id) { it.copy(text = answer, feedback = res.result.str("text").orEmpty()) }
+            return
+        }
         val payload = buildJsonObject {
             put("session", snapshot(s))
             put("answer", answer)
@@ -793,7 +961,18 @@ class Learning(
             put("term", term)
             put("quote", m.text.take(400))
         }
-        val res = runAI("term", payload, "正在查「$term」")
+        val res = if (s.link != null) {
+            rooms.ask(
+                buildJsonObject {
+                    put("purpose", "term")
+                    put("entryId", messageId)
+                    put("term", term)
+                },
+                "正在查「$term」",
+            )
+        } else {
+            runAI("term", payload, "正在查「$term」")
+        }
         update { st ->
             if (res == null) return@update st.copy(ui = st.ui.copy(term = null))
             val d = res.result["data"] as? JsonObject
@@ -817,6 +996,12 @@ class Learning(
 
     suspend fun finish() {
         if (state.ui.busy != null) return
+        val r = session?.link
+        if (r != null) {
+            // 多人讨论由房主结束；房间结束后每个人各自生成复盘
+            if (r.host) rooms.finish()
+            return
+        }
         update { st ->
             st.copy(
                 session = st.session!!.copy(finished = true, awaitingReview = false, draft = ""),
@@ -827,12 +1012,25 @@ class Learning(
         if (s.entries.any { (it is ChatMessage && it.human == true) || (it is Reflection && it.text.isNotEmpty()) }) generateReview()
     }
 
-    fun resume() = update { st -> st.copy(session = st.session!!.copy(finished = false), ui = st.ui.copy(screen = "session")) }
+    fun resume() {
+        if (session?.link != null) return
+        update { st -> st.copy(session = st.session!!.copy(finished = false), ui = st.ui.copy(screen = "session")) }
+    }
 
     /** 复盘只依据学习者本人的发言和小结（约定 4），快照里是整场讨论。 */
     suspend fun generateReview() {
         val s = session ?: return
-        val res = runAI("review", buildJsonObject { put("session", snapshot(s, true)) }, "正在复盘整场讨论") ?: return
+        val r = s.link
+        val res = if (r != null) {
+            // 多人讨论：后端只依据我自己的发言和小结来复盘（约定 4、9）
+            val body = buildJsonObject {
+                put("purpose", "review")
+                put("reflections", JsonArray(r.reflections.filter { it.text.isNotEmpty() }.map { JsonPrimitive(it.text) }))
+            }
+            rooms.ask(body, "正在复盘你在这场讨论里的理解")
+        } else {
+            runAI("review", buildJsonObject { put("session", snapshot(s, true)) }, "正在复盘整场讨论")
+        } ?: return
         if (session?.id != s.id) return
         val d = res.result["data"] as JsonObject
         val review = SibianJson.decodeFromJsonElement(
@@ -1040,8 +1238,8 @@ class Learning(
     fun goBack(): Boolean {
         val ui = state.ui
         val s = session
-        if (ui.term != null || ui.explain != null || ui.sheet != null) {
-            this.ui { it.copy(term = null, explain = null, sheet = null) }
+        if (ui.term != null || ui.explain != null || ui.sheet != null || ui.invite) {
+            this.ui { it.copy(term = null, explain = null, sheet = null, invite = false) }
             return true
         }
         if (ui.screen == "session" && s?.mode == "canvas" && s.at != null && ui.busy == null) {
