@@ -2,8 +2,10 @@ package debating.ground.app
 
 import debating.ground.app.ai.Ai
 import debating.ground.app.data.ChatMessage
+import debating.ground.app.data.Graph
 import debating.ground.app.data.Reflection
 import debating.ground.app.data.SibianJson
+import debating.ground.app.data.graph
 import debating.ground.app.flow.AppState
 import debating.ground.app.flow.Learning
 import debating.ground.app.flow.snapshot
@@ -51,6 +53,10 @@ class FlowTest {
                 val s = flow.state.session
                 assertEquals("$label 发给 AI 的快照", text(expected.getValue("snapshot")), text(s?.let { canonical(snapshot(it)) } ?: JsonNull))
                 assertEquals("$label 复盘用的完整快照", text(expected.getValue("whole")), text(s?.let { canonical(snapshot(it, true)) } ?: JsonNull))
+                val graph = expected["graph"]
+                if (graph != null && graph !is JsonNull) {
+                    assertEquals("$label 之后的分支图", text(graph), text(canonical(SibianJson.encodeToJsonElement(Graph.serializer(), s!!.graph()))))
+                }
                 // 提示只算这一步的
                 flow.toast("")
             }

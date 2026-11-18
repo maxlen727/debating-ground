@@ -5,6 +5,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { graphOf } from '../src/lib/canvas.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const FIXTURE_DIR = join(root, 'native', 'app', 'src', 'test', 'resources', 'fixtures');
@@ -430,6 +431,11 @@ export const FLOW_SCRIPTS: { name: string; ops: Op[] }[] = [
   },
 ];
 
+const graphShape = (s: Parameters<typeof graphOf>[0]) => {
+  const { rows, lanes, edges, width } = graphOf(s);
+  return { rows, lanes, edges, width };
+};
+
 // 按同一套规则从状态里找操作的目标（原生版 FlowTest 用同样的规则）
 type St = ReturnType<typeof import('../src/store.ts').getState>;
 const lastAi = (st: St) => st.session!.entries.findLast(e => e.kind === 'msg' && !e.human)!;
@@ -615,6 +621,8 @@ async function recordFlows(
         }),
         snapshot: now.session ? canonical(A.snapshot(now.session)) : null,
         whole: now.session ? canonical(A.snapshot(now.session, true)) : null,
+        // 知识画布的分支图（laneOf 的键是原始 id，不比；同样的信息在 rows 里）
+        graph: now.session?.mode === 'canvas' ? canonical(graphShape(now.session)) : null,
       });
       // 提示只算这一步的
       S.update(s => {

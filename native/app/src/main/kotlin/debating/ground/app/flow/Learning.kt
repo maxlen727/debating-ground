@@ -22,6 +22,7 @@ import debating.ground.app.data.SeatConfig
 import debating.ground.app.data.Session
 import debating.ground.app.data.SessionReview
 import debating.ground.app.data.SibianJson
+import debating.ground.app.data.Stage
 import debating.ground.app.data.Stance
 import debating.ground.app.data.SystemLine
 import debating.ground.app.data.TermCard
@@ -164,6 +165,19 @@ class Learning(
     fun setMode(mode: String) = update { it.copy(config = it.config.copy(mode = mode)) }
 
     fun editConfig(fn: (Config) -> Config) = update { it.copy(config = fn(it.config)) }
+
+    /** 辩论一方的人数：新席位用这次按论题生成的背景，没有（演示或旧后端）才用通用的一句。和网页版 Seats 的 setCount 一致。 */
+    fun setTeamCount(team: String, n: Int) = update { st ->
+        val c = st.config
+        val generated = st.plan?.debaters?.get(team).orEmpty()
+        val list = c.seats[team].orEmpty().toMutableList()
+        while (list.size < n) list += SeatConfig("ai", generated.getOrNull(list.size) ?: "从实际案例出发，关注论证的适用条件。")
+        for (i in 0 until n) if (list[i].bg.isBlank()) generated.getOrNull(i)?.let { list[i] = list[i].copy(bg = it) }
+        st.copy(config = c.copy(counts = c.counts + (team to n), seats = c.seats + (team to list)))
+    }
+
+    /** 辩论的比赛流程：最多 6 个环节，至少 1 个。 */
+    fun editStages(fn: (List<Stage>) -> List<Stage>) = editConfig { c -> fn(c.stages).takeIf { it.size in 1..6 }?.let { c.copy(stages = it) } ?: c }
 
     fun setContextDraft(text: String) = ui { u -> u.context?.let { u.copy(context = it.copy(text = text)) } ?: u }
 

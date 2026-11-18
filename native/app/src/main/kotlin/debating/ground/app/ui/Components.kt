@@ -272,6 +272,29 @@ fun Input(
     )
 }
 
+/** 加减数字（网页版 Stepper）：减号、数字、加号，按钮可点区域 44dp。 */
+@Composable
+fun Stepper(value: Int, min: Int, max: Int, label: String, onChange: (Int) -> Unit) {
+    val t = LocalTokens.current
+    Row(Modifier.semantics { contentDescription = "$label：$value" }, verticalAlignment = Alignment.CenterVertically) {
+        StepButton(IconPaths.MINUS, "减少$label", value > min) { onChange(value - 1) }
+        Text("$value", color = t.ink.color(), style = TextStyles.body.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.padding(horizontal = 2.dp))
+        StepButton(IconPaths.PLUS, "增加$label", value < max) { onChange(value + 1) }
+    }
+}
+
+@Composable
+private fun StepButton(path: String, label: String, enabled: Boolean, onClick: () -> Unit) {
+    val t = LocalTokens.current
+    Box(
+        Modifier.size(44.dp).alpha(if (enabled) 1f else 0.35f).clickable(enabled = enabled, role = Role.Button, onClick = onClick).semantics {
+            contentDescription =
+                label
+        },
+        contentAlignment = Alignment.Center,
+    ) { Icon(lineIcon(path, path), null, Modifier.size(16.dp), tint = t.ink.color()) }
+}
+
 /** 底部操作区（.dock）：主要操作单手可达。上沿渐隐到透明，背景氛围透得出来。 */
 @Composable
 fun Dock(content: @Composable () -> Unit) {

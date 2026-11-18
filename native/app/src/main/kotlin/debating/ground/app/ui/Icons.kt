@@ -15,6 +15,8 @@ object IconPaths {
     const val CHEVRON = "M9 6l6 6-6 6"
     const val CLOSE = "M6 6l12 12M18 6L6 18"
     const val PLUS = "M12 5v14M5 12h14"
+    const val MINUS = "M5 12h14"
+    const val UP = "M12 19V5M5 12l7-7 7 7"
     const val SEND = "M5 12h13M12 5l7 7-7 7"
     const val LEARN = "M4 19V6a2 2 0 0 1 2-2h12v15H6a2 2 0 0 0-2 2zM8 8h6"
     const val CHAT = "M5 5h14v10H9l-4 4z"
@@ -23,6 +25,8 @@ object IconPaths {
     const val NOTE = "M5 4h10l4 4v12H5zM14 4v5h5M8 13h8M8 17h5"
     const val PEOPLE = "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M16 4a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 6"
     const val SWAP = "M7 7h11l-3-3M17 17H6l3 3"
+    const val BRANCH = "M6 3v12M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9"
+    const val TURN_BACK = "M9 14l-5-5 5-5M4 9h11a5 5 0 0 1 0 10h-3"
 
     // 路径要和网页版逐字一致（IconPathsTest），不拆行：拆成两段拼接会被 Android Lint 误报为漏写空格
     @Suppress("ktlint:standard:max-line-length")

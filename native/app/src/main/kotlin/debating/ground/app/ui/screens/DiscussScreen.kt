@@ -79,6 +79,8 @@ import debating.ground.app.data.MODES
 import debating.ground.app.data.Reflection
 import debating.ground.app.data.Session
 import debating.ground.app.data.SystemLine
+import debating.ground.app.data.branchById
+import debating.ground.app.data.branchesFrom
 import debating.ground.app.data.levelEntries
 import debating.ground.app.flow.AppState
 import debating.ground.app.flow.Live
@@ -175,6 +177,8 @@ private fun SessionTop(s: Session, busy: Boolean, onFinish: () -> Unit, model: A
             }
         }
         PointsProgress(s, model)
+        if (s.mode == "debate") DebateBoard(s, model)
+        if (s.mode == "canvas") CanvasPath(s, busy, model)
     }
 }
 
@@ -280,9 +284,14 @@ private fun Thread(s: Session, st: AppState, live: Live?, model: AppModel, modif
         when {
             liveMsg != null -> item(key = "live") { LiveMessage(s, liveMsg) { l.cancelAI() } }
             ui.busy != null -> item(key = "busy") { Typing(ui.busy) { l.cancelAI() } }
+            debate -> item(key = "lectern") { NextLectern(s) }
         }
         val rev = shown.asReversed()
         for ((k, m) in rev.withIndex()) {
+            // 知识画布：从这句话展开过的分支挂在它下面（倒着排，所以先放）
+            if (s.mode == "canvas" && m is ChatMessage && s.branchesFrom(m.id).isNotEmpty()) {
+                item(key = "chips-${m.id}") { BranchChips(s, m.id, m.human == true, ui.busy != null, model) }
+            }
             item(key = m.id) {
                 EntryView(m, s, showTip = m.id == lastAi && s.learnerTurns == 0 && !s.finished, live = live, busy = ui.busy != null, model = model)
             }
@@ -292,13 +301,16 @@ private fun Thread(s: Session, st: AppState, live: Live?, model: AppModel, modif
                 if (m.stage != prev) item(key = "stage-${m.id}") { StageDivider(s.stages.getOrNull(m.stage)?.name.orEmpty()) }
             }
         }
+        if (s.mode == "canvas" && s.at != null) item(key = "fork-head-${s.at}") { ForkHeader(s) }
     }
 }
 
 @Composable
 private fun EntryView(m: Entry, s: Session, showTip: Boolean, live: Live?, busy: Boolean, model: AppModel) {
     when (m) {
-        is SystemLine -> {
+        is SystemLine -> if (m.back != null) {
+            BackLine(m, s, busy, model)
+        } else {
             val topic = Regex("^(讨论题|辩题)：([\\s\\S]+)$").find(m.text)
             if (topic != null) TopicLine(topic.groupValues[1], topic.groupValues[2]) else SysLine(m.text)
         }
@@ -744,6 +756,10 @@ private fun Composer(s: Session, st: AppState, live: Live?, model: AppModel) {
         }
         if (!debate && s.personas.size > 1) Tool("请下一位", IconPaths.PEOPLE, enabled = !busy) { model.run { nextSpeaker() } }
         if (debate) Tool("跳过本席", null, enabled = !busy) { l.skipSeat() }
+        if (s.mode == "canvas" && s.at != null) {
+            val up = if (s.branchById(s.at)?.parent != null) "上一层" else "主干"
+            Tool("带回$up", IconPaths.TURN_BACK, enabled = !busy) { l.openSheet("back") }
+        }
     }
     if (humanTurn) {
         val placeholder = when {
@@ -780,16 +796,21 @@ private fun Tool(text: String, icon: String?, enabled: Boolean, on: Boolean = fa
     ) {
         Row(
             Modifier.background(
-                if (on) t.lit.color() else t.bg.color(),
+                if (on) t.brand.color().mix(0.12f, t.bg.color()) else t.bg.color(),
                 RoundedCornerShape(18.dp),
-            ).border(1.dp, if (on) t.litInk.color().copy(alpha = 0.4f) else t.line.color(), RoundedCornerShape(18.dp))
+            ).border(1.dp, if (on) t.brand.color().mix(0.45f, t.line.color()) else t.line.color(), RoundedCornerShape(18.dp))
                 .padding(horizontal = 11.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-            val fg = if (on) t.litInk.color() else t.ink.color()
+            val fg = if (on) t.brand.color() else t.ink.color()
             if (icon != null) Icon(lineIcon(icon, icon), null, Modifier.size(16.dp), tint = fg)
-            Text(text, style = TextStyles.small.copy(fontSize = 13.sp), color = fg, maxLines = 1)
+            Text(
+                text,
+                style = TextStyles.small.copy(fontSize = 13.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal),
+                color = fg,
+                maxLines = 1,
+            )
         }
     }
 }
@@ -862,9 +883,12 @@ private fun Sheets(s: Session, st: AppState, live: Live?, model: AppModel) {
     when {
         ui.explain != null -> ExplainSheet(ui.explain.label, ui.explain.quote, ui.explain.text, live, s.room != null) { l.closeExplain() }
         ui.term != null -> TermSheet(s, st, model)
-        sheetMsg != null -> QuickSheet(s, sheetMsg, model)
+        sheetMsg != null -> QuickSheet(s, sheetMsg, ui.busy != null, model)
         ui.sheet == "points" -> PointsSheet(s, st, model)
         ui.sheet == "finish" -> FinishSheet(s, model)
+        ui.sheet == "roster" && s.mode == "debate" -> RosterSheet(s, model)
+        ui.sheet == "tree" && s.mode == "canvas" -> GraphSheet(s, ui.busy != null, model)
+        ui.sheet == "back" && s.mode == "canvas" -> BackSheet(s, model)
     }
 }
 
@@ -887,7 +911,7 @@ private val SheetText = TextStyles.body.copy(fontSize = 15.5.sp, lineHeight = 1.
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun QuickSheet(s: Session, m: ChatMessage, model: AppModel) {
+private fun QuickSheet(s: Session, m: ChatMessage, busy: Boolean, model: AppModel) {
     val t = LocalTokens.current
     val l = model.learning
     val debate = s.mode == "debate"
@@ -913,6 +937,7 @@ private fun QuickSheet(s: Session, m: ChatMessage, model: AppModel) {
                 m.terms.forEach { term -> debating.ground.app.ui.Chip(term, on = false, onClick = { model.run { openTerm(term, m.id) } }) }
             }
         }
+        if (s.mode == "canvas" && !s.finished) ForkForm(m, busy, model)
         if (debate) FinePrint("辩论中，解释由讲解助手单独给出，不打断赛程。")
     }
 }
@@ -936,6 +961,15 @@ private fun TermSheet(s: Session, st: AppState, model: AppModel) {
                 }
             }
             FinePrint((if (s.review != null) "已存进这次的知识卡片。" else "已记下，复盘后会和这次的知识卡片存在一起。") + "查词不占用发言轮次。")
+            if (s.mode == "canvas" && !s.finished) {
+                SecondaryButton(
+                    "展开一个分支，聊聊「${term.term}」",
+                    { model.run { openBranch(term.messageId, term.term) } },
+                    Modifier.fillMaxWidth(),
+                    enabled =
+                    st.ui.busy == null,
+                )
+            }
         } else {
             Text("正在查这个词……", style = TextStyles.knowledge, color = t.muted.color())
         }
