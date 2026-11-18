@@ -374,8 +374,7 @@ fun StatusTag(text: String, tone: String = "") {
 
 /** 出错时的原因（AI 失败、连不上……）：写原因和办法，可以关掉。 */
 @Composable
-fun ErrorBanner(text: String, onDismiss: () -> Unit) {
-    if (text.isEmpty()) return
+fun ErrorBanner(text: String, onDismiss: () -> Unit) = Appear(text.ifEmpty { null }) { shown ->
     val t = LocalTokens.current
     Row(
         Modifier
@@ -384,7 +383,7 @@ fun ErrorBanner(text: String, onDismiss: () -> Unit) {
             .padding(start = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text, color = t.bad.color(), style = TextStyles.small, modifier = Modifier.weight(1f).padding(vertical = 10.dp))
+        Text(shown, color = t.bad.color(), style = TextStyles.small, modifier = Modifier.weight(1f).padding(vertical = 10.dp))
         Box(Modifier.size(44.dp).clickable(role = Role.Button, onClick = onDismiss), contentAlignment = Alignment.Center) {
             Icon(lineIcon("close", IconPaths.CLOSE), "关闭", Modifier.size(16.dp), tint = t.bad.color())
         }
@@ -393,15 +392,14 @@ fun ErrorBanner(text: String, onDismiss: () -> Unit) {
 
 /** 正在做什么（.busy-strip），可以取消。 */
 @Composable
-fun BusyStrip(label: String?, onCancel: () -> Unit) {
-    if (label == null) return
+fun BusyStrip(label: String?, onCancel: () -> Unit) = Appear(label) { shown ->
     val t = LocalTokens.current
     Row(
         Modifier.fillMaxWidth().then(if (LocalFloating.current) Modifier.glass(RoundedCornerShape(14.dp), 4.dp).padding(start = 14.dp) else Modifier),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("$label…", color = t.muted.color(), style = TextStyles.small, modifier = Modifier.weight(1f))
+        Text("$shown…", color = t.muted.color(), style = TextStyles.small, modifier = Modifier.weight(1f))
         Box(Modifier.heightIn(min = 44.dp).clickable(role = Role.Button, onClick = onCancel).padding(horizontal = 8.dp), contentAlignment = Alignment.Center) {
             Text("取消", color = t.accent.color(), style = TextStyles.small.copy(fontWeight = FontWeight.SemiBold))
         }

@@ -1,10 +1,15 @@
 package debating.ground.app.ui
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
@@ -75,6 +80,9 @@ fun Sheet(title: String, onClose: () -> Unit, titleStyle: TextStyle? = null, con
     val scope = rememberCoroutineScope()
     val rise = remember { Animatable(if (motion) 0f else 1f) }
     LaunchedEffect(Unit) { rise.animateTo(1f, tween(280, easing = CubicBezierEasing(0.2f, 0.8f, 0.2f, 1f))) }
+    // 关上时：托管它的 SheetHost 等它沉下去、遮罩淡出，再移除（没有托管时直接消失）
+    val host = LocalSheetScope.current
+    fun leaving(exit: ExitTransition) = host?.run { Modifier.animateEnterExit(EnterTransition.None, if (motion) exit else ExitTransition.None) } ?: Modifier
     // 往下拖了多少（像素）：跟着手指走，松手后弹回或关掉
     val drag = remember { Animatable(0f) }
     var expanded by remember { mutableStateOf(false) }
@@ -167,6 +175,7 @@ fun Sheet(title: String, onClose: () -> Unit, titleStyle: TextStyle? = null, con
         Box(
             Modifier
                 .fillMaxSize()
+                .then(leaving(fadeOut(tween(240))))
                 .graphicsLayer { alpha = rise.value * (1f - (drag.value / (dismissAt * 3)).coerceIn(0f, 0.6f)) }
                 .background(Color.Black.copy(alpha = 0.35f))
                 .clickable(remember { MutableInteractionSource() }, null, onClick = onClose),
@@ -175,6 +184,15 @@ fun Sheet(title: String, onClose: () -> Unit, titleStyle: TextStyle? = null, con
         Column(
             Modifier
                 .align(if (wide) Alignment.Center else Alignment.BottomCenter)
+                .then(
+                    leaving(
+                        if (wide) {
+                            fadeOut(tween(180)) + scaleOut(tween(220), 0.96f)
+                        } else {
+                            slideOutVertically(tween(260, easing = CubicBezierEasing(0.4f, 0f, 1f, 1f))) { it } + fadeOut(tween(200, 60))
+                        },
+                    ),
+                )
                 .padding(if (wide) 0.dp else 8.dp)
                 .widthIn(max = if (wide) 560.dp else 520.dp)
                 .fillMaxWidth()
