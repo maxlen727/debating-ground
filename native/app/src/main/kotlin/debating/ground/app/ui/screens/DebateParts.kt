@@ -45,6 +45,8 @@ import debating.ground.app.AppModel
 import debating.ground.app.data.Seat
 import debating.ground.app.data.Session
 import debating.ground.app.flow.seatName
+import debating.ground.app.room.link
+import debating.ground.app.room.seatOwner
 import debating.ground.app.ui.LocalMotion
 import debating.ground.app.ui.Sheet
 import debating.ground.app.ui.glass
@@ -60,8 +62,16 @@ import debating.ground.app.ui.theme.toneColors
 private val SIDE = mapOf("A" to "正方", "B" to "反方")
 private val STANCE = mapOf("A" to "支持", "B" to "反对")
 
-/** 这个席位由谁说：我 / AI（单人模式；多人房间不在原生版第一版里）。 */
-fun seatWho(seat: Seat): Pair<String, String> = if (seat.type == "human") "我" to "你" else "AI" to "AI"
+/** 这个席位由谁说：短的放在席位牌上，长的写在讲台和阵容里。多人房间看谁坐在这个席位上（和网页版 seatWho 一致）。 */
+fun seatWho(s: Session, seat: Seat): Pair<String, String> {
+    val room = s.link
+    if (room != null) {
+        val owner = seatOwner(s, seat.id)
+        if (owner != null) return if (owner.id == room.memberId) "我" to "你" else owner.name.take(1) to owner.name
+        return if (seat.type == "ai") "AI" to "AI" else "空" to "等同学入座"
+    }
+    return if (seat.type == "human") "我" to "你" else "AI" to "AI"
+}
 
 @Composable
 private fun teamColors(team: String) = toneColors(if (team == "A") "a" else "b")
@@ -96,7 +106,7 @@ fun DebateBoard(s: Session, model: AppModel) {
             ) {
                 val seats = s.seats.filter { it.team == team }
                 for (seat in if (right) seats.reversed() else seats) {
-                    val (short, _) = seatWho(seat)
+                    val (short, _) = seatWho(s, seat)
                     val on = !over && turn.role.id == seat.id
                     val mine = short == "我"
                     Box(Modifier.padding(top = 4.dp, end = 4.dp)) {
@@ -186,8 +196,14 @@ fun NextLectern(s: Session) {
     val seat = s.seats.find { it.id == turn.role.id } ?: return
     if (s.finished || s.awaitingReview == true) return
     val target = turn.target?.let { id -> s.seats.find { it.id == id } }
-    val (_, who) = seatWho(seat)
-    val waiting = if (seat.type == "human") "轮到你" else "AI 待发言"
+    val (short, who) = seatWho(s, seat)
+    val waiting = when {
+        short == "我" -> "轮到你"
+        s.link == null -> "AI 待发言"
+        short == "AI" -> "AI 准备中"
+        short == "空" -> "等同学入座"
+        else -> "等${who}发言"
+    }
     val fg = teamColors(seat.team).second
     val right = seat.team == "B"
     val border = fg.mix(0.45f, t.line.color())
@@ -233,7 +249,7 @@ fun RosterSheet(s: Session, model: AppModel) {
                     Column {
                         Row(verticalAlignment = Alignment.Bottom) {
                             Text(seatName(seat), style = TextStyles.small.copy(fontWeight = FontWeight.Bold), color = t.ink.color())
-                            Text(" · ${seatWho(seat).second}", style = TextStyles.small, color = t.muted.color())
+                            Text(" · ${seatWho(s, seat).second}", style = TextStyles.small, color = t.muted.color())
                         }
                         if (seat.type != "human" && seat.bg.isNotEmpty()) {
                             Text(

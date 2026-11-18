@@ -316,7 +316,165 @@ export async function generate(): Promise<Record<string, string>> {
   out['direct-cases.json'] = JSON.stringify(await directCases()) + '\n';
   // 朗读的分段：原生版按同样的规则切，一段一段请求后端合成
   out['speech-cases.json'] = JSON.stringify(speechCases()) + '\n';
+  // 多人房间：状态映射、邀请链接、倒计时、轮到谁、建房间时提交的内容
+  out['room-cases.json'] = JSON.stringify(await roomCases()) + '\n';
   out['meta.json'] = JSON.stringify({ now: NOW, timeZone: TIME_ZONE }, null, 2) + '\n';
+  return out;
+}
+
+async function roomCases() {
+  const R = await import('../src/lib/room.ts');
+  const { defaultConfig } = await import('../src/store.ts');
+  const ticking = Date.now;
+  Date.now = () => NOW;
+  const persona = { id: 'p1', name: '苏珩', title: '追问者', persona: '…', tone: 'a' as const };
+  const roundtable = {
+    mode: 'roundtable' as const,
+    concept: '机会成本',
+    topic: '周末打工的代价是什么？',
+    keyPoints: ['放弃的最佳选择', '包含隐性代价'],
+    personas: [persona],
+    opening: '我们开始吧。',
+    seats: [],
+    stages: [],
+    turns: [],
+    model: 'm',
+    turnSeconds: 60,
+  };
+  const config = { ...defaultConfig(), counts: { A: 2, B: 1 }, turnSeconds: 90 };
+  const plan = {
+    mode: 'debate' as const,
+    concept: '边际效用',
+    topic: '  辩题  ',
+    keyPoints: [' a ', '', 'b', 'c', 'd', 'e', 'f', 'g'],
+    opening: '',
+    personas: [],
+    source: 'api' as const,
+    model: 'm',
+    previous: null,
+    context: '  经过  ',
+  };
+  const debateSetup = R.setupFrom(plan, { ...config, remote: { url: 'https://x' } });
+  const members = [
+    { id: 'me', name: '小明', host: true, online: true, seat: 'A1' },
+    { id: 'u2', name: '小红', host: false, online: false, seat: 'B1', typing: true },
+  ];
+  const msg = (id: string, memberId: string | undefined, skipped = false) => ({
+    id,
+    kind: 'msg' as const,
+    who: memberId ? 'learner' : 'p1',
+    name: memberId ? '同学' : '苏珩',
+    text: '发言 ' + id,
+    source: memberId ? ('human' as const) : ('api' as const),
+    memberId,
+    skipped: skipped || undefined,
+  });
+  const view = (setup: typeof roundtable | typeof debateSetup, extra: Record<string, unknown>) => ({
+    id: 'r'.repeat(22),
+    status: 'live' as const,
+    setup,
+    members,
+    entries: [
+      { id: 's0', kind: 'sys' as const, text: '讨论题：…' },
+      msg('m1', 'me'),
+      msg('m2', 'u2'),
+      msg('m3', undefined),
+      msg('m4', 'me', true),
+    ],
+    covered: [1],
+    cursor: 1,
+    speaker: { kind: 'member' as const, id: 'u2' },
+    aiBusy: null,
+    error: '',
+    aiCalls: 3,
+    expiresAt: NOW + 3_600_000,
+    now: NOW + 5000,
+    turnStartedAt: NOW,
+    voiceAvailable: true,
+    ...extra,
+  });
+  const link = {
+    backend: 'https://api.example.dev',
+    roomId: 'r'.repeat(22),
+    token: 'tok',
+    invite: 'inv',
+    memberId: 'me',
+    host: true,
+    connected: true,
+    closed: '',
+    reflections: [
+      { id: 'rf', kind: 'reflect' as const, text: '小结', feedback: '好', draft: '', after: 'm2' },
+    ],
+  };
+  const views = [
+    view(roundtable, {}),
+    view(roundtable, {
+      status: 'finished',
+      speaker: { kind: 'ai', id: 'p1' },
+      aiBusy: '苏珩正在发言',
+      aiPaused: true,
+    }),
+    view(debateSetup, {
+      status: 'lobby',
+      speaker: null,
+      proposals: [{ id: 'q', text: '新要点', source: 'ai', proposer: 'AI', by: '' }],
+    }),
+    view(debateSetup, { cursor: 0, error: 'AI 发言失败', listenAvailable: true }),
+    view(debateSetup, { cursor: 1 }),
+    view(debateSetup, { cursor: 2, members: [members[0]] }),
+  ];
+  const prev = { ...R.toSession(views[0], null, link), draft: '草稿', created: NOW - 999 };
+  const sessions = views.map((v, i) => {
+    const s = R.toSession(v, i === 1 ? prev : null, link);
+    return {
+      view: v,
+      prev: i === 1 ? prev : null,
+      session: s,
+      mySpeakingTurn: R.mySpeakingTurn(s),
+      speakerLabel: R.speakerLabel(s),
+      deadline: R.deadlineOf(v, NOW + 100_000),
+    };
+  });
+  const hashes = [
+    '#join=' +
+      Buffer.from(
+        JSON.stringify({ b: 'https://api.example.dev/', r: 'r'.repeat(22), c: 'inv' }),
+      ).toString('base64url'),
+    '#join=' +
+      Buffer.from(JSON.stringify({ b: 'http://localhost:8787', r: 'x', c: 'y' })).toString(
+        'base64url',
+      ),
+    '#join=' +
+      Buffer.from(JSON.stringify({ b: 'http://example.com', r: 'x', c: 'y' })).toString(
+        'base64url',
+      ),
+    '#join=' +
+      Buffer.from(JSON.stringify({ b: 'https://a.dev', r: 1, c: 'y' })).toString('base64url'),
+    '#join=不是',
+    '#other',
+  ];
+  const out = {
+    sessions,
+    invites: hashes.map(hash => ({ hash, parsed: R.parseInvite(hash) })),
+    links: [
+      {
+        link: { backend: 'https://api.example.dev', roomId: 'r'.repeat(22), invite: 'inv' },
+        base: 'https://maxlen727.github.io/debating-ground/app/',
+      },
+    ].map(c => ({ ...c, url: R.inviteLink(c.link, c.base) })),
+    setups: [
+      { plan, config, setup: debateSetup },
+      {
+        plan: { ...plan, mode: 'roundtable', personas: [persona], opening: '开场' },
+        config: { ...config, turnSeconds: 45 },
+        setup: R.setupFrom(
+          { ...plan, mode: 'roundtable', personas: [persona], opening: '开场' } as never,
+          { ...config, turnSeconds: 45, remote: { url: '' } },
+        ),
+      },
+    ],
+  };
+  Date.now = ticking;
   return out;
 }
 

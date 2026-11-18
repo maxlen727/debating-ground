@@ -82,7 +82,53 @@ class Voice(private val scope: CoroutineScope, private val synth: Synthesize, pr
         })
     }
 
+    /* ---------- 多人房间：音频由后端一段段推过来 ---------- */
+
+    private val arrived = HashMap<Int, Pair<ByteArray, String>>()
+    private var nextSeq = 0
+
+    /** 在点击时调用：开始等这一条的音频（房间里由后端合成后推过来）。30 秒没动静就放弃。 */
+    fun await(id: String) {
+        stop()
+        _playing.value = id
+        allFetched = false
+        nextSeq = 0
+        arrived.clear()
+        job = scope.launch {
+            kotlinx.coroutines.delay(30_000)
+            if (_playing.value == id && !sounding && ready.isEmpty() && nextSeq == 0) {
+                toast("朗读没有响应，请稍后再试。")
+                stop()
+            }
+        }
+    }
+
+    /** 收到一段音频；不是正在等的那一条就丢掉（用户已经停了或换了一条）。按 seq 顺序排好再播。 */
+    fun push(id: String, seq: Int, last: Boolean, audio: ByteArray, mime: String) {
+        if (_playing.value != id || seq < nextSeq) return
+        arrived[seq] = audio to mime
+        if (last) lastSeq = seq
+        while (true) {
+            val a = arrived.remove(nextSeq) ?: break
+            ready.addLast(a)
+            nextSeq++
+        }
+        if (lastSeq >= 0 && nextSeq > lastSeq) allFetched = true
+        pump(id)
+    }
+
+    private var lastSeq = -1
+
+    /** 后端拒绝了朗读（例如次数用完）：还没开始播就放弃，播到一半就播完收到的部分。 */
+    fun failed() {
+        val id = _playing.value ?: return
+        allFetched = true
+        if (!sounding && ready.isEmpty()) stop() else pump(id)
+    }
+
     fun stop() {
+        lastSeq = -1
+        arrived.clear()
         job?.cancel()
         job = null
         ready.clear()

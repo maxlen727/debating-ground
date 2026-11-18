@@ -38,7 +38,7 @@ import androidx.compose.ui.unit.dp
 // 底部导航切标签按标签顺序左右滑；知识卡片从列表里放大成整页，返回时缩回去。
 
 /** 页面的层级：越深越“往里走”（和网页版 DEPTH 一致）。 */
-private val DEPTH = mapOf("learn" to 0, "library" to 0, "settings" to 0, "prepare" to 1, "card" to 1, "session" to 2, "review" to 3)
+private val DEPTH = mapOf("learn" to 0, "library" to 0, "settings" to 0, "prepare" to 1, "card" to 1, "join" to 1, "session" to 2, "review" to 3)
 
 enum class Nav { Forward, Back, Left, Right, Expand, Collapse }
 

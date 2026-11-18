@@ -102,6 +102,7 @@ import debating.ground.app.flow.TEACHING
 import debating.ground.app.flow.listenReady
 import debating.ground.app.flow.seatName
 import debating.ground.app.flow.voiceReady
+import debating.ground.app.room.link
 import debating.ground.app.speech.Phase
 import debating.ground.app.speech.Speech
 import debating.ground.app.ui.Appear
@@ -199,10 +200,15 @@ private fun SessionTop(s: Session, busy: Boolean, onFinish: () -> Unit, model: A
             if (s.finished) {
                 SecondaryButton("看复盘", { l.go("review") }, small = true)
             } else if (s.awaitingReview != true) {
-                SecondaryButton("结束复盘", onFinish, enabled = !busy, small = true)
+                // 多人讨论由房主结束；还在等人时不能结束
+                val room = s.link
+                if (room == null || (room.host && room.status != "lobby")) {
+                    SecondaryButton(if (room != null) "结束讨论" else "结束复盘", onFinish, enabled = !busy && room?.aiBusy == null, small = true)
+                }
             }
         }
         PointsProgress(s, model)
+        if (s.link != null) RoomBar(s, model)
         if (s.mode == "debate") DebateBoard(s, model)
         if (s.mode == "canvas") CanvasPath(s, busy, model)
     }
@@ -299,7 +305,7 @@ private fun Thread(s: Session, st: AppState, live: Live?, model: AppModel, modif
     val lastAi = s.entries.lastOrNull { it is ChatMessage && it.human != true }?.id
     val liveMsg = live?.takeIf { it.kind == "msg" && s.entries.none { e -> e.id == it.id } }
     // 朗读：后端配好讯飞时才有（从状态算出来往下传，后端状态变了条目才会跟着重画）
-    val voice = model.speech != null && st.voiceReady() && s.room == null
+    val voice = model.speech != null && (s.link?.voiceAvailable ?: st.voiceReady())
     val list = rememberLazyListState()
     // 打开讨论时已经在的条目不做入场动画；之后新来的淡入、轻轻上浮（翻回去看旧的不重播）
     val seen = remember(s.id) { HashSet<String>().apply { shown.forEach { add(it.id) } } }
@@ -315,7 +321,7 @@ private fun Thread(s: Session, st: AppState, live: Live?, model: AppModel, modif
     ) {
         when {
             // 生成中的气泡和完成后的正式发言用同一个 key：衔接时不会再淡入一次
-            liveMsg != null -> item(key = liveMsg.id) { RiseIn(liveMsg.id, seen) { LiveMessage(s, liveMsg) { l.cancelAI() } } }
+            liveMsg != null -> item(key = liveMsg.id) { RiseIn(liveMsg.id, seen) { LiveMessage(s, liveMsg) { if (s.room == null) l.cancelAI() } } }
 
             ui.busy != null -> item(key = "busy") { RiseIn("busy-${s.entries.size}", seen) { Typing(ui.busy) { l.cancelAI() } } }
 
@@ -520,6 +526,8 @@ private fun MessageView(m: ChatMessage, s: Session, showTip: Boolean, model: App
         } else {
             ""
         },
+        // 多人讨论：同学的发言
+        if (m.memberId != null && !me && !debate) "同学" else "",
     ).filter { it.isNotEmpty() }.joinToString(" · ")
     val (avBg, avFg) = when {
         debate -> toneColors(if (m.team == "B") "b" else "a")
@@ -545,7 +553,7 @@ private fun MessageView(m: ChatMessage, s: Session, showTip: Boolean, model: App
             MetaLine(label, meta, if (m.skipped == true) "已跳过" else null) {
                 // 朗读：后端配好讯飞时才出现
                 val speech = model.speech
-                if (speech != null && voice && m.skipped != true) VoiceButton(speech, m, label, model)
+                if (speech != null && voice && m.skipped != true) VoiceButton(speech, m, s, label, model)
             }
             val shape = if (look.right) RoundedCornerShape(16.dp, 4.dp, 16.dp, 16.dp) else RoundedCornerShape(4.dp, 16.dp, 16.dp, 16.dp)
             Box(
@@ -758,6 +766,8 @@ private fun ComposerArea(s: Session, st: AppState, live: Live?, model: AppModel)
 
                 s.finished -> DoneRow("这次讨论已结束。") { PrimaryButton("看复盘", { l.go("review") }, small = true) }
 
+                s.room != null -> RoomComposer(s, st, live, model)
+
                 else -> Composer(s, st, live, model)
             }
         }
@@ -830,7 +840,7 @@ private fun Composer(s: Session, st: AppState, live: Live?, model: AppModel) {
 }
 
 @Composable
-private fun TurnBanner(dot: Color, text: AnnotatedString.Builder.() -> Unit) {
+internal fun TurnBanner(dot: Color, text: AnnotatedString.Builder.() -> Unit) {
     val t = LocalTokens.current
     // 小小的磨砂胶囊，压在讨论记录上也看得清
     Row(
@@ -844,7 +854,7 @@ private fun TurnBanner(dot: Color, text: AnnotatedString.Builder.() -> Unit) {
 }
 
 @Composable
-private fun Tool(text: String, icon: String?, enabled: Boolean, on: Boolean = false, onClick: () -> Unit) {
+internal fun Tool(text: String, icon: String?, enabled: Boolean, on: Boolean = false, onClick: () -> Unit) {
     val t = LocalTokens.current
     // 看起来是小胶囊，可点区域有 44dp 高
     Box(
@@ -877,7 +887,7 @@ private fun Tool(text: String, icon: String?, enabled: Boolean, on: Boolean = fa
 }
 
 @Composable
-private fun HintCard(hint: String?, live: Live?, onClose: () -> Unit) {
+internal fun HintCard(hint: String?, live: Live?, onClose: () -> Unit) {
     val t = LocalTokens.current
     val streaming = live?.takeIf { it.kind == "hint" && it.text.isNotEmpty() }
     Appear(streaming?.text ?: hint) { text -> HintRow(text, streaming != null, onClose) }
@@ -908,7 +918,7 @@ private fun HintRow(text: String, streaming: Boolean, onClose: () -> Unit) {
 }
 
 @Composable
-private fun DraftInput(draft: String, placeholder: String, busy: Boolean, onChange: (String) -> Unit, mic: @Composable () -> Unit = {}, onSend: () -> Unit) {
+internal fun DraftInput(draft: String, placeholder: String, busy: Boolean, onChange: (String) -> Unit, mic: @Composable () -> Unit = {}, onSend: () -> Unit) {
     val t = LocalTokens.current
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         BasicTextField(
@@ -948,7 +958,7 @@ private fun DraftInput(draft: String, placeholder: String, busy: Boolean, onChan
 
 // 朗读按钮：看起来是小字，可点区域有 44dp 高；再点一下停止
 @Composable
-private fun VoiceButton(speech: Speech, m: ChatMessage, label: String, model: AppModel) {
+private fun VoiceButton(speech: Speech, m: ChatMessage, s: Session, label: String, model: AppModel) {
     val t = LocalTokens.current
     val playing by speech.voice.playing.collectAsState()
     val on = playing == m.id
@@ -957,7 +967,16 @@ private fun VoiceButton(speech: Speech, m: ChatMessage, label: String, model: Ap
             .heightIn(min = 44.dp)
             .clickable(role = Role.Button) {
                 speech.listen.cancel() // 别一边录一边播
-                speech.voice.toggle(m.id, m.text, model.learning.state.config.voiceName)
+                val voiceName = model.learning.state.config.voiceName
+                if (s.link == null) {
+                    speech.voice.toggle(m.id, m.text, voiceName)
+                } else if (playing == m.id) {
+                    speech.voice.stop()
+                } else {
+                    // 房间里由房主的后端合成，音频推过来；同一条合成过一次后再听不重复计数
+                    speech.voice.await(m.id)
+                    if (!model.learning.rooms.speak(m.id, voiceName)) speech.voice.stop()
+                }
             }
             .semantics { contentDescription = if (on) "停止朗读${label}的发言" else "朗读${label}的发言" }
             .padding(horizontal = 6.dp),
@@ -973,7 +992,13 @@ private fun VoiceButton(speech: Speech, m: ChatMessage, label: String, model: Ap
 // 语音输入：点一下开始，再点一下结束；识别出的文字接在已经写好的内容后面，不自动发送。
 // 第一次用时先请求麦克风权限
 @Composable
-private fun MicButton(speech: Speech, draft: String, toast: (String) -> Unit, onText: (String) -> Unit) {
+internal fun MicButton(
+    speech: Speech,
+    draft: String,
+    toast: (String) -> Unit,
+    via: debating.ground.app.speech.ListenConnect? = null,
+    onText: (String) -> Unit,
+) {
     val t = LocalTokens.current
     val context = LocalContext.current
     val phase by speech.listen.phase.collectAsState()
@@ -981,7 +1006,13 @@ private fun MicButton(speech: Speech, draft: String, toast: (String) -> Unit, on
         speech.voice.stop() // 别把朗读的声音录进去
         val before = draft
         val sep = if (Regex("[A-Za-z0-9]$").containsMatchIn(before)) " " else ""
-        speech.listen.start(text = { said -> onText(before + if (said.isEmpty()) "" else sep + said) }, end = { error -> if (error != null) toast(error) })
+        speech.listen.start(text = { said -> onText(before + if (said.isEmpty()) "" else sep + said) }, end = { error ->
+            if (error !=
+                null
+            ) {
+                toast(error)
+            }
+        }, via = via)
     }
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) begin() else toast("没有麦克风权限，不能语音输入。可以在系统设置里给思辨场打开。")
@@ -1052,6 +1083,12 @@ private fun Sheets(s: Session, st: AppState, live: Live?, model: AppModel) {
 
         ui.sheet == "back" && s.mode == "canvas" -> SheetSpec("back") { BackSheet(s, model) }
 
+        s.link != null && ui.sheet == "seats" && s.mode == "debate" -> SheetSpec("seats") { SeatSheet(s, model) }
+
+        s.link != null && ui.sheet == "callon" -> SheetSpec("callon") { CallOnSheet(s, model) }
+
+        s.link?.host == true && ui.invite -> SheetSpec("invite") { InviteSheet(s, model) }
+
         else -> null
     }
     SheetHost(spec)
@@ -1103,7 +1140,11 @@ private fun QuickSheet(s: Session, m: ChatMessage, busy: Boolean, model: AppMode
             }
         }
         if (s.mode == "canvas" && !s.finished) ForkForm(m, busy, model)
-        if (debate) FinePrint("辩论中，解释由讲解助手单独给出，不打断赛程。")
+        if (s.room != null) {
+            FinePrint("解释由讲解助手单独给你，不打断别人的发言。")
+        } else if (debate) {
+            FinePrint("辩论中，解释由讲解助手单独给出，不打断赛程。")
+        }
     }
 }
 
@@ -1171,8 +1212,11 @@ private fun PointsSheet(s: Session, st: AppState, model: AppModel) {
                         Text(p.text, style = TextStyles.knowledge.copy(lineHeight = 1.6.em), color = t.ink.color())
                         Text(if (p.source == "ai") "AI 提议" else "${p.proposer}提议", style = TextStyles.small.copy(fontSize = 12.sp), color = t.muted.color())
                     }
-                    GhostButton("忽略", { l.decidePoint(p.id, false) }, small = true)
-                    SecondaryButton("采纳", { l.decidePoint(p.id, true) }, enabled = !full, small = true)
+                    // 多人讨论里由房主决定
+                    if (s.link?.host != false) {
+                        GhostButton("忽略", { l.decidePoint(p.id, false) }, small = true)
+                        SecondaryButton("采纳", { l.decidePoint(p.id, true) }, enabled = !full, small = true)
+                    }
                 }
             }
         }
@@ -1192,7 +1236,15 @@ private fun PointsSheet(s: Session, st: AppState, model: AppModel) {
             }
             GhostButton("让 AI 提议一条", { model.run { suggestPoint() } }, Modifier.fillMaxWidth(), enabled = st.ui.busy == null, icon = IconPaths.BULB)
         }
-        FinePrint(if (debate) "争点是交锋的方向，不改变赛程；采纳后会点亮追踪，并进入复盘。" else "采纳后会点亮追踪，并进入复盘。")
+        FinePrint(
+            if (s.link?.host == false) {
+                "你的提议会给房主确认，采纳后大家的要点都会更新。"
+            } else if (debate) {
+                "争点是交锋的方向，不改变赛程；采纳后会点亮追踪，并进入复盘。"
+            } else {
+                "采纳后会点亮追踪，并进入复盘。"
+            },
+        )
     }
 }
 
@@ -1201,7 +1253,7 @@ private fun FinishSheet(s: Session, model: AppModel) {
     val t = LocalTokens.current
     val l = model.learning
     Sheet("现在结束比赛？", { l.openSheet(null) }) {
-        Text("还有 ${s.turns.size - s.cursor} 次发言没有进行，包括后面的总结陈词。结束后你只能按已有的发言复盘。", style = SheetText, color = t.ink.color())
+        Text("还有 ${s.turns.size - s.cursor} 次发言没有进行，包括后面的总结陈词。结束后${if (s.room != null) "每个人" else "你"}只能按已有的发言复盘。", style = SheetText, color = t.ink.color())
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GhostButton("继续比赛", { l.openSheet(null) }, Modifier.weight(1f))
             PrimaryButton(
