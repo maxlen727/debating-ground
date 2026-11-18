@@ -10,40 +10,46 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.ImageShader
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.res.imageResource
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import debating.ground.app.R
+import debating.ground.app.ui.theme.DarkTokens
 import debating.ground.app.ui.theme.LocalTokens
-import debating.ground.app.ui.theme.Tokens
 import debating.ground.app.ui.theme.color
 import kotlinx.coroutines.delay
-import kotlin.math.PI
-import kotlin.math.cos
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlin.random.Random
 
 // 背景氛围：几团很大、边缘渐隐的色块，像隔着磨砂玻璃看到的光，再叠一层很淡的噪点。
-// 和网页版 styles.css 的“背景氛围”一节是同一套参数（位置、半径、颜色、浓度、周期、漂移距离）。
-// 不做实时模糊（旧手机耗电、安卓 12 以下不支持）：径向渐变渐隐到透明，看起来就是模糊过的样子。
+// 色块是 scripts/atmosphere.py 离线渲染好的高斯模糊图（和网页版同一组图，颜色取自令牌），
+// 实时画径向渐变会有折痕和色带。整张图比屏幕每边大 6%，沿着和网页版 @keyframes drift 一样的路线极慢地漂。
 
-/** 一团色块。位置是屏幕宽高的比例，半径和漂移距离是长边的比例；周期是走一个来回的秒数。 */
-data class Glow(val x: Float, val y: Float, val r: Float, val color: (Tokens) -> Long, val alpha: Float, val periodSeconds: Int, val dx: Float, val dy: Float)
+/** 图片比屏幕每边多出的比例，和 src/assets/atmosphere/atmosphere.json 的 overscan 一致。 */
+const val OVERSCAN = 0.06f
 
-val Glows = listOf(
-    Glow(0.78f, 0.12f, 0.75f, { it.accentSoft }, 0.85f, 97, -0.04f, 0.03f), // 右上：暖
-    Glow(0.10f, 0.42f, 0.70f, { it.lit }, 0.70f, 113, 0.05f, -0.03f), // 左中：绿
-    Glow(0.85f, 0.70f, 0.65f, { it.cBg }, 0.55f, 83, -0.03f, -0.04f), // 右下：冷
-    Glow(0.30f, 0.95f, 0.60f, { it.bBg }, 0.50f, 127, 0.04f, -0.02f), // 底部：暖
-)
+/** 漂移路线：从原位出发依次经过这几个点（图片宽高的比例），走完一程 [DRIFT_SECONDS] 秒，再原路返回。 */
+val DriftPath = listOf(0f to 0f, -0.03f to 0.02f, 0.01f to 0.04f, 0.03f to -0.02f)
+const val DRIFT_SECONDS = 200
 
-/** 漂到哪了：0 到 1，在两端放慢（和网页版的 ease-in-out、alternate 一样）。 */
-fun driftPhase(elapsedMillis: Long, periodSeconds: Int): Float {
-    val cycle = elapsedMillis % (periodSeconds * 2000L) / (periodSeconds * 2000f)
-    return ((1 - cos(cycle * 2 * PI)) / 2).toFloat()
+/** 漂到哪了：按经过的时间在路线上线性插值（和网页版一样，往返走）。 */
+fun driftAt(elapsedMillis: Long): Pair<Float, Float> {
+    val leg = DRIFT_SECONDS * 1000L
+    val cycle = elapsedMillis % (leg * 2)
+    val p = (if (cycle < leg) cycle else leg * 2 - cycle).toFloat() / leg // 0 → 1 → 0
+    val segs = DriftPath.size - 1
+    val i = minOf((p * segs).toInt(), segs - 1)
+    val f = p * segs - i
+    val (ax, ay) = DriftPath[i]
+    val (bx, by) = DriftPath[i + 1]
+    return (ax + (bx - ax) * f) to (ay + (by - ay) * f)
 }
 
 /** 能不能动：系统“移除动画”时为 false，截图测试里也设成 false，画面才固定。 */
@@ -52,6 +58,9 @@ val LocalMotion = staticCompositionLocalOf { true }
 @Composable
 fun Atmosphere(modifier: Modifier = Modifier) {
     val t = LocalTokens.current
+    val dark = t == DarkTokens
+    val portrait = ImageBitmap.imageResource(if (dark) R.drawable.atmosphere_dark_portrait else R.drawable.atmosphere_light_portrait)
+    val landscape = ImageBitmap.imageResource(if (dark) R.drawable.atmosphere_dark_landscape else R.drawable.atmosphere_light_landscape)
     val grain = remember { grainTile() }
     val elapsed = remember { mutableLongStateOf(0L) }
     if (LocalMotion.current) {
@@ -65,29 +74,30 @@ fun Atmosphere(modifier: Modifier = Modifier) {
         }
     }
     Canvas(modifier.fillMaxSize()) {
-        // 在绘制阶段读时间：只重画这一层，不触发重组
-        val now = elapsed.longValue
         drawRect(t.surface.color())
-        val base = maxOf(size.width, size.height)
-        for (g in Glows) {
-            val c = g.color(t).color()
-            val p = driftPhase(now, g.periodSeconds)
-            drawRect(
-                Brush.radialGradient(
-                    colors = listOf(c.copy(alpha = g.alpha), c.copy(alpha = g.alpha * 0.4f), Color.Transparent),
-                    center = Offset(size.width * g.x + base * g.dx * p, size.height * g.y + base * g.dy * p),
-                    radius = base * g.r,
-                ),
-            )
-        }
+        // 在绘制阶段读时间：只重画这一层，不触发重组
+        val (dx, dy) = driftAt(elapsed.longValue)
+        val img = if (size.width > size.height) landscape else portrait
+        val w = size.width * (1 + 2 * OVERSCAN)
+        val h = size.height * (1 + 2 * OVERSCAN)
+        drawImage(
+            img,
+            dstOffset = IntOffset((-size.width * OVERSCAN + dx * w).roundToInt(), (-size.height * OVERSCAN + dy * h).roundToInt()),
+            dstSize = IntSize(w.roundToInt(), h.roundToInt()),
+            filterQuality = FilterQuality.Low, // 双线性放大，图本身是糊的，看不出像素
+        )
         drawRect(ShaderBrush(ImageShader(grain, TileMode.Repeated, TileMode.Repeated)))
     }
 }
 
-// 噪点：固定种子生成一小块再平铺，每次都一样。每个像素是透明度很低的黑或白：近看有纸面的颗粒，远看看不出
+// 噪点：固定种子生成一小块再平铺，每次都一样。每个像素是很淡的一点亮或暗，强弱随机（多数几乎看不见）：
+// 近看有纸面的颗粒，远看看不出
 private fun grainTile(size: Int = 128): ImageBitmap {
     val rnd = Random(20261117)
-    val alpha = 14 shl 24
-    val px = IntArray(size * size) { if (rnd.nextBoolean()) alpha or 0xFFFFFF else alpha }
+    val px = IntArray(size * size) {
+        val v = rnd.nextFloat() - rnd.nextFloat()
+        val a = (abs(v) * 18).toInt()
+        (a shl 24) or (if (v > 0) 0xFFFFFF else 0)
+    }
     return Bitmap.createBitmap(px, size, size, Bitmap.Config.ARGB_8888).asImageBitmap()
 }

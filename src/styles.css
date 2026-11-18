@@ -202,9 +202,11 @@ code {
 }
 
 /* ---------- 背景氛围 ---------- */
-/* 几团很大、边缘渐隐的色块，像隔着磨砂玻璃看到的光，加一层很淡的噪点。原生版的 ui/Atmosphere.kt 是同一套参数。
-   不做实时模糊：径向渐变渐隐到透明，看起来就是模糊过的；颜色只取令牌，深色模式跟着变。
-   每团色块各自极慢地漂（一两分钟一个来回），只动 transform，交给 GPU 合成，不触发重排；减少动画时静止。 */
+/* 几团很大、边缘渐隐的色块，像隔着磨砂玻璃看到的光，加一层很淡的噪点。色块是 scripts/atmosphere.py
+   离线渲染好的高斯模糊图（浅色、深色，竖屏、横屏各一张，颜色取自令牌），原生版用同一组图。
+   不在页面上实时画：上面压着一层层磨砂（backdrop-filter），背景每动一帧它们都得重新模糊，手机上很卡。
+   整张图比屏幕大一圈，极慢地漂（几分钟走一圈）；按步进跳，两秒挪不到一个像素，看不出在跳，
+   磨砂也只在跳的那一帧重算。减少动画时静止。 */
 .atmosphere {
   position: fixed;
   inset: 0;
@@ -212,64 +214,29 @@ code {
   overflow: hidden;
   pointer-events: none;
 }
-.atmosphere i {
+.atmosphere::before {
+  content: '';
   position: absolute;
-  left: var(--x);
-  top: var(--y);
-  width: calc(var(--r) * 200vmax);
-  height: calc(var(--r) * 200vmax);
-  margin: calc(var(--r) * -100vmax) 0 0 calc(var(--r) * -100vmax);
-  border-radius: 50%;
-  background: radial-gradient(
-    closest-side,
-    color-mix(in srgb, var(--c) calc(var(--a) * 100%), transparent),
-    color-mix(in srgb, var(--c) calc(var(--a) * 40%), transparent) 50%,
-    transparent
-  );
-  animation: drift var(--t) ease-in-out infinite alternate;
-  will-change: transform;
+  inset: -6%;
+  background: url('./assets/atmosphere/light-portrait.webp') center / 100% 100% no-repeat;
+  animation: drift 200s steps(33) infinite alternate;
 }
-.atmosphere i:nth-child(1) {
-  --x: 78%;
-  --y: 12%;
-  --r: 0.75;
-  --c: var(--accent-soft);
-  --a: 0.85;
-  --t: 97s;
-  --dx: -4vmax;
-  --dy: 3vmax;
-} /* 右上：暖 */
-.atmosphere i:nth-child(2) {
-  --x: 10%;
-  --y: 42%;
-  --r: 0.7;
-  --c: var(--lit);
-  --a: 0.7;
-  --t: 113s;
-  --dx: 5vmax;
-  --dy: -3vmax;
-} /* 左中：绿 */
-.atmosphere i:nth-child(3) {
-  --x: 85%;
-  --y: 70%;
-  --r: 0.65;
-  --c: var(--c-bg);
-  --a: 0.55;
-  --t: 83s;
-  --dx: -3vmax;
-  --dy: -4vmax;
-} /* 右下：冷 */
-.atmosphere i:nth-child(4) {
-  --x: 30%;
-  --y: 95%;
-  --r: 0.6;
-  --c: var(--b-bg);
-  --a: 0.5;
-  --t: 127s;
-  --dx: 4vmax;
-  --dy: -2vmax;
-} /* 底部：暖 */
-/* 噪点：近看有一点纸面的颗粒，远看看不出，也顺带消掉渐变上的色带 */
+@media (orientation: landscape) {
+  .atmosphere::before {
+    background-image: url('./assets/atmosphere/light-landscape.webp');
+  }
+}
+@media (prefers-color-scheme: dark) {
+  .atmosphere::before {
+    background-image: url('./assets/atmosphere/dark-portrait.webp');
+  }
+}
+@media (prefers-color-scheme: dark) and (orientation: landscape) {
+  .atmosphere::before {
+    background-image: url('./assets/atmosphere/dark-landscape.webp');
+  }
+}
+/* 噪点：近看有一点纸面的颗粒，远看看不出 */
 .atmosphere::after {
   content: '';
   position: absolute;
@@ -278,12 +245,18 @@ code {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 1.6 -.3'/%3E%3C/filter%3E%3Crect width='128' height='128' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 @keyframes drift {
+  33% {
+    transform: translate(-3%, 2%);
+  }
+  66% {
+    transform: translate(1%, 4%);
+  }
   to {
-    transform: translate(var(--dx), var(--dy));
+    transform: translate(3%, -2%);
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .atmosphere i {
+  .atmosphere::before {
     animation: none;
   }
 }
