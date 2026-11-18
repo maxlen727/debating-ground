@@ -1,6 +1,9 @@
 name: 安卓 App
 
-# PR：构建 debug 包（用调试签名，能直接装），作为构建产物上传，方便试装；不需要任何凭据
+# 构建的是原生版（native/，Kotlin + Compose），它替换了原来的网页套壳版（Capacitor，#104）：
+# 同一个包名、同一把签名，versionCode 接着这个工作流的运行序号往上涨，手机上看到的是一次普通更新，
+# 第一次打开时会把旧版的知识库搬过来（见 docs/dev/native.md）。
+# PR：构建 debug 包（包名带 .dev，用调试签名，能和正式版同时装），作为构建产物上传，方便试装；不需要任何凭据
 # 合并到 main：构建正式签名的 APK，更新同一个“预览版”Release（标签 preview 跟着 main 走）
 # 打 v* 标签（例如 v0.10.0）：构建正式签名的 APK，发正式 Release
 # 正式签名需要仓库 Secrets：ANDROID_KEYSTORE_BASE64、ANDROID_KEYSTORE_PASSWORD、ANDROID_KEY_ALIAS、ANDROID_KEY_PASSWORD
@@ -23,10 +26,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -48,12 +47,6 @@ jobs:
           echo "kind=$kind" >> "$GITHUB_OUTPUT"
           echo "版本 $name（$kind）"
 
-      - run: npm ci
-      - name: 构建界面并同步到安卓工程
-        run: |
-          npm run build
-          npx cap sync android
-
       # 没配签名密钥时：main 上照样构建（debug 包，作为构建产物），只是不更新预览版 Release；打标签发正式版则必须签名
       - name: 检查签名密钥
         id: sign
@@ -68,12 +61,12 @@ jobs:
 
       - name: 构建 debug 包
         if: steps.sign.outputs.use != 'true'
-        working-directory: android
-        run: ./gradlew assembleDebug -PversionCode=${{ steps.ver.outputs.code }} -PversionName=${{ steps.ver.outputs.name }}
+        working-directory: native
+        run: ./gradlew assembleDebug -PversionCode=${{ steps.ver.outputs.code }} -PversionName=${{ steps.ver.outputs.name }} --console=plain
 
       - name: 构建正式签名的包
         if: steps.sign.outputs.use == 'true'
-        working-directory: android
+        working-directory: native
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -82,13 +75,13 @@ jobs:
         run: |
           export ANDROID_KEYSTORE_FILE="$RUNNER_TEMP/release.jks"
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$ANDROID_KEYSTORE_FILE"
-          ./gradlew assembleRelease -PversionCode=${{ steps.ver.outputs.code }} -PversionName=${{ steps.ver.outputs.name }}
+          ./gradlew assembleRelease -PversionCode=${{ steps.ver.outputs.code }} -PversionName=${{ steps.ver.outputs.name }} --console=plain
           rm -f "$ANDROID_KEYSTORE_FILE"
 
       - name: 整理安装包
         id: apk
         run: |
-          src=$(ls android/app/build/outputs/apk/*/*.apk | head -1)
+          src=$(ls native/app/build/outputs/apk/*/*.apk | head -1)
           out="sibian-${{ steps.ver.outputs.name }}.apk"
           cp "$src" "$out"
           echo "file=$out" >> "$GITHUB_OUTPUT"
@@ -115,6 +108,7 @@ jobs:
             echo "- 改动：$(git log -1 --format=%s)"
             echo
             echo "安装：下载下面的 APK，在手机上打开。第一次安装要允许“安装未知应用”。"
+            echo "从旧版（网页套壳版）升级：直接安装，第一次打开时会把知识库搬过来。"
             echo "SHA-256：$(sha256sum "${{ steps.apk.outputs.file }}" | cut -d' ' -f1)"
           } > notes.md
           gh release create preview "${{ steps.apk.outputs.file }}" --prerelease --target "$GITHUB_SHA" \

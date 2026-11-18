@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    // 和现在的 Capacitor App 同一个包名：最终直接替换它（#70）
+    // 和原来的网页套壳版（Capacitor）同一个包名：原生版直接替换了它（#104）
     namespace = "debating.ground.app"
     compileSdk = 37
 
@@ -13,12 +13,12 @@ android {
         applicationId = "debating.ground.app"
         minSdk = 24
         targetSdk = 37
-        // CI 用 -PversionCode / -PversionName 传进来，规则和 android/ 一样
+        // CI（android.yml）用 -PversionCode / -PversionName 传进来：versionCode 是构建序号，每次都比上一次大，手机才会当成更新
         versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 1
         versionName = (project.findProperty("versionName") as String?) ?: "0.0.0-dev"
     }
 
-    // 正式签名：和套壳版（android/）读同样的环境变量，用同一把密钥。密钥只在 CI 里从仓库 Secrets 解出来，
+    // 正式签名：用原来套壳版的同一把密钥（同样的环境变量）。密钥只在 CI 里从仓库 Secrets 解出来，
     // 不进仓库。签名一样，手机才会把原生版当成套壳版的更新，而不是另一个 App（#104）。本地没配就构建未签名的 release 包
     val keystore = System.getenv("ANDROID_KEYSTORE_FILE")
     signingConfigs {

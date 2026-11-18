@@ -43,7 +43,7 @@
 
 **在线体验**：打开 [maxlen727.github.io/debating-ground/app](https://maxlen727.github.io/debating-ground/app/)，不用安装。在线版默认是演示模式，AI 回复来自预设模板，推荐用“机会成本”体验完整流程。
 
-**安卓 App**：到 [Releases](https://github.com/maxlen727/debating-ground/releases) 下载 APK（正式版带版本号；“预览版”跟着主分支自动更新）。App 里可以用演示模式，或连接你自己部署的后端。详见[安卓 App](https://maxlen727.github.io/debating-ground/guide/android)。
+**安卓 App**：到 [Releases](https://github.com/maxlen727/debating-ground/releases) 下载 APK（正式版带版本号；“预览版”跟着主分支自动更新）。App 是原生应用，可以用演示模式、连接你自己部署的后端，或者直接连接 AI 服务商。详见[安卓 App](https://maxlen727.github.io/debating-ground/guide/android)。
 
 **和真实 AI 讨论**，有两种方式：
 
@@ -64,7 +64,7 @@
 
 - **在电脑上运行**：密钥只保存在本机服务的内存里，不写入硬盘、浏览器存储或日志，直接发往你选择的服务商。
 - **自己部署的后端**：后端运行在你自己的 Cloudflare 账号里，密钥存成加密变量，浏览器里不需要密钥，只保存后端地址和访问口令。部署在你自己的账号里，你只需要信任你自己。
-- **安卓 App**：现在和网页一样连接你自己部署的后端，App 里不保存 AI 服务商的密钥。以后会加上单人模式由手机直接请求 AI 服务商、密钥存在系统的安全存储里，**思辨场团队的服务器全程碰不到它**。
+- **安卓 App**：除了连接你自己部署的后端，还可以由手机直接请求 AI 服务商，密钥加密存在系统的安全存储里，**思辨场团队的服务器全程碰不到它**。
 
 不管用哪种方式，都建议**专门为思辨场新建一个 Key 并设置消费上限**，不用了就作废。讨论记录和知识库只保存在你的设备上，不接入任何第三方统计。详见[密钥与隐私](https://maxlen727.github.io/debating-ground/guide/api-and-privacy)。
 
@@ -74,7 +74,8 @@
 - [x] 理解复盘、知识库与间隔复习
 - [x] 移动优先的界面，深色模式
 - [x] 安卓 App，GitHub Actions 自动构建并发到 Releases
-- [ ] 安卓 App 单人模式直连服务商（密钥存在系统安全存储）
+- [x] 原生安卓 App（Kotlin + Compose），替换网页套壳版，旧版知识库自动搬过来
+- [x] 安卓 App 单人模式直连服务商（密钥存在系统安全存储）
 - [x] 可自部署的后端（Cloudflare Workers），网页版也能用真实 AI
 - [x] 多台设备联网讨论（圆桌、辩论）
 - [x] 流式输出：AI 边想边说，文字平滑地逐字出现

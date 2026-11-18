@@ -17,7 +17,6 @@ import { task } from './ai.ts';
 import { clearLive, getLive, setLive, updateLive } from './stream.ts';
 import { debateTurns, seatName, slots } from './debate.ts';
 import { pushAudio, voiceFailed } from './voice.ts';
-import { isNativeApp, PUBLIC_APP_URL } from './platform.ts';
 import { heard, setRoomListenSender } from './listen.ts';
 
 /* ---------- 邀请链接 ---------- */
@@ -30,10 +29,9 @@ const b64 = (s: string) =>
 const unb64 = (s: string) =>
   decodeURIComponent(escape(atob(s.replace(/-/g, '+').replace(/_/g, '/'))));
 
-// App 里的页面地址是 https://localhost，发出去没人打得开：改用在线版网页的地址
 export function inviteLink(
   link: Pick<RoomLink, 'backend' | 'roomId' | 'invite'>,
-  base = isNativeApp() ? PUBLIC_APP_URL : location.origin + location.pathname,
+  base = location.origin + location.pathname,
 ) {
   return `${base}#join=${b64(JSON.stringify({ b: link.backend, r: link.roomId, c: link.invite }))}`;
 }

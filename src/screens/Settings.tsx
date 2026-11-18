@@ -10,14 +10,12 @@ import {
 import { task } from '../lib/ai.ts';
 import { BusyStrip, ErrorBanner, TopBar } from '../components/ui.tsx';
 import { toast, typing, update, useApp, type Config } from '../store.ts';
-import { isNativeApp } from '../lib/platform.ts';
 
 const DOCS = 'https://maxlen727.github.io/debating-ground/guide/self-host';
-// App 里没有本机服务，只能用演示模式或自己部署的后端
 const SOURCES: { id: Config['aiMode']; label: string }[] = [
   { id: 'demo', label: '演示模式' },
   { id: 'remote', label: '我的后端' },
-  ...(isNativeApp() ? [] : [{ id: 'api' as const, label: '本机服务' }]),
+  { id: 'api', label: '本机服务' },
 ];
 
 export function Settings() {

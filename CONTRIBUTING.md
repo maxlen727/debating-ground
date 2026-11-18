@@ -11,7 +11,7 @@
 | 界面与交互 | `src/screens/` `src/components/` `src/styles.css` | 待定 |
 | 讨论流程与状态 | `src/actions.ts` `src/store.ts` `src/lib/` | 待定 |
 | 提示词与 AI | `server/ai.ts` `src/lib/demo.ts` | 待定 |
-| 服务端、打包与发布 | `server/server.ts` `.github/`，后续的 Capacitor | 待定 |
+| 服务端、打包与发布 | `server/server.ts` `.github/` | 待定 |
 
 ## 一个任务的流程
 
