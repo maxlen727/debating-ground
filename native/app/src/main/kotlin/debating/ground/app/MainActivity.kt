@@ -1,5 +1,6 @@
 package debating.ground.app
 
+import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -16,14 +17,31 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import debating.ground.app.migrate.LegacyImport
 import debating.ground.app.migrate.WebViewLegacySource
+import debating.ground.app.notify.Reminders
 import debating.ground.app.ui.AppScaffold
 import debating.ground.app.ui.Atmosphere
 import debating.ground.app.ui.LocalMotion
 import debating.ground.app.ui.theme.SibianTheme
 
 class MainActivity : ComponentActivity() {
+    // 从通知或分享打开时带来的意图，等存档读好再处理
+    private var pending by mutableStateOf<Intent?>(null)
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        pending = intent
+    }
+
+    private fun open(intent: Intent, m: AppModel) {
+        when (intent.action) {
+            // 点了复习提醒：进知识库（有到期的卡片时默认就是“待复习”）
+            Reminders.OPEN_LIBRARY -> m.learning.go("library")
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) pending = intent
         // 内容画到系统栏下面，由 Scaffold 和导航栏组件让出安全区域
         enableEdgeToEdge()
         // 系统设置里把动画关掉（开发者选项的“动画时长缩放”为 0，或无障碍里的“移除动画”）时，背景不漂
@@ -40,6 +58,12 @@ class MainActivity : ComponentActivity() {
                         val m = AppModel.get(this@MainActivity)
                         if (result != null && result.cards > 0) m.learning.toast("已从旧版搬来 ${result.cards} 张知识卡片。")
                         model = m
+                    }
+                    // 从通知、分享打开时要去的地方：读好存档以后再去
+                    LaunchedEffect(model, pending) {
+                        val m = model ?: return@LaunchedEffect
+                        pending?.let { open(it, m) }
+                        pending = null
                     }
                     model?.let { AppScaffold(it) } ?: Box(Modifier.fillMaxSize()) { Atmosphere() }
                 }

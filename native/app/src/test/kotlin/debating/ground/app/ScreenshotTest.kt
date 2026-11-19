@@ -361,6 +361,18 @@ class ScreenshotTest {
         save("phone-card-dark")
     }
 
+    // 复习提醒打开后：可以选时间
+    @Test
+    fun settingsReminderDark() {
+        val app = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.app.Application>()
+        debating.ground.app.notify.Reminders.save(app, debating.ground.app.notify.ReminderPrefs(enabled = true, hour = 20, minute = 0))
+        compose.setContent { Frame(dark = true, width = 390, height = 844) }
+        compose.onNodeWithText("设置").performClick()
+        compose.onNodeWithText("晚上 8 点").performScrollTo()
+        compose.waitForIdle()
+        save("phone-settings-reminder-dark")
+    }
+
     @Test
     fun settingsRemote() {
         compose.setContent { Frame(dark = false, width = 390, height = 844) }
