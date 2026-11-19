@@ -23,6 +23,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
+      # 和 package.json 的 packageManager、dependabot 用同一个 npm：不同大版本对锁文件里可选依赖的处理不一样（#83）
+      - run: npm install -g npm@11.21.1
       # 只在 worker/ 里安装和打包，和 Deploy to Cloudflare 按钮的环境一致
       - name: 检查能否单独打包
         working-directory: worker

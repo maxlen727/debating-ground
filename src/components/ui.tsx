@@ -175,7 +175,7 @@ export function TabBar() {
         >
           <span className="tab-icon">
             <Icon name={icon} size={22} />
-            {s === 'library' && due > 0 && <em className="badge-dot">{due}</em>}
+            {s === 'library' && due > 0 && <em className="badge-dot">{due > 99 ? '99+' : due}</em>}
           </span>
           <span>{label}</span>
         </button>
