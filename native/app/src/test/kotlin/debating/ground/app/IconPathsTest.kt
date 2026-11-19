@@ -24,7 +24,7 @@ class IconPathsTest {
             "bulb" to IconPaths.BULB, "note" to IconPaths.NOTE, "people" to IconPaths.PEOPLE, "swap" to IconPaths.SWAP,
             "minus" to IconPaths.MINUS, "up" to IconPaths.UP, "download" to IconPaths.DOWNLOAD,
             "branch" to IconPaths.BRANCH, "turn-back" to IconPaths.TURN_BACK,
-            "volume" to IconPaths.VOLUME, "stop" to IconPaths.STOP, "mic" to IconPaths.MIC,
+            "volume" to IconPaths.VOLUME, "stop" to IconPaths.STOP, "mic" to IconPaths.MIC, "search" to IconPaths.SEARCH,
         )
         for ((name, path) in native) assertEquals("图标 $name", web[name] ?: error("ui.tsx 里没有图标 $name"), path)
     }

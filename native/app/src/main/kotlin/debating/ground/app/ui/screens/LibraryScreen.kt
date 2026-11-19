@@ -11,24 +11,33 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -36,12 +45,15 @@ import androidx.compose.ui.unit.sp
 import debating.ground.app.AppModel
 import debating.ground.app.data.Card
 import debating.ground.app.data.MODES
+import debating.ground.app.data.SEARCH_MIN_CARDS
 import debating.ground.app.data.dueLabel
 import debating.ground.app.data.libraryMarkdown
+import debating.ground.app.data.searchCards
 import debating.ground.app.flow.AppState
 import debating.ground.app.ui.BusyStrip
 import debating.ground.app.ui.ErrorBanner
 import debating.ground.app.ui.GhostButton
+import debating.ground.app.ui.IconPaths
 import debating.ground.app.ui.NavSpacer
 import debating.ground.app.ui.Panel
 import debating.ground.app.ui.PrimaryButton
@@ -50,6 +62,7 @@ import debating.ground.app.ui.SectionLabel
 import debating.ground.app.ui.Segmented
 import debating.ground.app.ui.TopBar
 import debating.ground.app.ui.WithFloatingDock
+import debating.ground.app.ui.lineIcon
 import debating.ground.app.ui.mix
 import debating.ground.app.ui.scrollWithEdge
 import debating.ground.app.ui.theme.LocalTokens
@@ -70,7 +83,16 @@ fun LibraryScreen(st: AppState, model: AppModel, now: Long) {
     val context = LocalContext.current
     val due = library.filter { it.due <= now }
     var tab by rememberSaveable { mutableStateOf(if (due.isNotEmpty()) "due" else "all") }
-    val list = if (tab == "due") due else library
+    // 搜索词只在这一页里，不存档；搜索时不分组，在全部卡片里找
+    var query by rememberSaveable { mutableStateOf("") }
+    val searching = query.isNotBlank()
+    val list = if (searching) {
+        searchCards(library, query)
+    } else if (tab == "due") {
+        due
+    } else {
+        library
+    }
     Column(Modifier.fillMaxSize()) {
         TopBar("知识库", "${library.size} 张卡片 · 只保存在这台设备") {
             if (library.isNotEmpty()) ExportButton("导出知识库") { shareMarkdown(context, "思辨场知识库", libraryMarkdown(library)) }
@@ -84,8 +106,27 @@ fun LibraryScreen(st: AppState, model: AppModel, now: Long) {
                     PrimaryButton("开始学习", { l.go("learn") })
                 }
             } else {
-                Segmented(listOf("due" to "待复习 ${due.size}", "all" to "全部 ${library.size}"), tab, "卡片范围") { tab = it }
-                if (list.isEmpty()) {
+                if (library.size >= SEARCH_MIN_CARDS) SearchField(query) { query = it }
+                if (searching) {
+                    if (list.isNotEmpty()) Text("找到 ${list.size} 张卡片", style = TextStyles.small, color = t.muted.color())
+                } else {
+                    Segmented(listOf("due" to "待复习 ${due.size}", "all" to "全部 ${library.size}"), tab, "卡片范围") { tab = it }
+                }
+                if (list.isEmpty() && searching) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            "没有找到和“${query.trim()}”有关的卡片。",
+                            style = TextStyles.small,
+                            color = t.muted.color(),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        )
+                        GhostButton("清除搜索", { query = "" }, small = true)
+                    }
+                } else if (list.isEmpty()) {
                     Text(
                         "今天没有要复习的卡片。",
                         style = TextStyles.small,
@@ -98,6 +139,51 @@ fun LibraryScreen(st: AppState, model: AppModel, now: Long) {
                 }
             }
             NavSpacer()
+        }
+    }
+}
+
+// 搜索框（.search-box）：内容层里的输入框，和其它输入框一样的底色和描边，聚焦时描边变成品牌色
+@Composable
+private fun SearchField(value: String, onChange: (String) -> Unit) {
+    val t = LocalTokens.current
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(23.dp)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 46.dp)
+            .background(t.raised.color(), shape)
+            .border(1.dp, if (focused) t.brand.color() else t.line.color(), shape)
+            .padding(start = 14.dp, end = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(lineIcon("search", IconPaths.SEARCH), null, Modifier.size(18.dp), tint = t.muted.color())
+        BasicTextField(
+            value,
+            { onChange(it.take(80)) },
+            singleLine = true,
+            textStyle = TextStyles.body.copy(color = t.ink.color()),
+            cursorBrush = SolidColor(t.brand.color()),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            modifier = Modifier.weight(1f).onFocusChanged { focused = it.isFocused }.semantics { contentDescription = "搜索知识卡片" },
+            decorationBox = { inner ->
+                Box {
+                    if (value.isEmpty()) Text("搜概念、结论、术语", style = TextStyles.body, color = t.muted.color(), maxLines = 1)
+                    inner()
+                }
+            },
+        )
+        if (value.isNotEmpty()) {
+            Box(
+                Modifier.size(44.dp).clickable(role = Role.Button) {
+                    onChange("")
+                }.semantics { contentDescription = "清除搜索" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(lineIcon("close", IconPaths.CLOSE), null, Modifier.size(16.dp), tint = t.muted.color())
+            }
         }
     }
 }

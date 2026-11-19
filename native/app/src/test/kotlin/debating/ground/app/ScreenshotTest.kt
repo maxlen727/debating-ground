@@ -15,6 +15,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.dp
@@ -40,8 +41,11 @@ class ScreenshotTest {
     @get:Rule val tmp = org.junit.rules.TemporaryFolder()
 
     // 每个测试一份新的状态（存档写在临时目录里）。朗读和语音输入用假的播放器、麦克风和连接
+    // 存档目录：要预先放好知识库的测试，在用到 model 之前往这里写存档
+    private val dir by lazy { tmp.newFolder() }
+
     private val model by lazy {
-        debating.ground.app.AppModel(tmp.newFolder(), speech = { scope, _ ->
+        debating.ground.app.AppModel(dir, speech = { scope, _ ->
             val out = object : debating.ground.app.speech.AudioOut {
                 override fun play(audio: ByteArray, mime: String, onDone: () -> Unit, onError: () -> Unit) {}
                 override fun stop() {}
@@ -342,6 +346,50 @@ class ScreenshotTest {
         finishOne(listOf("机会成本就是做一件事放弃的另一件事最好的价值。", "比如我周末去打工，就放弃了在家复习的收获。"))
         compose.onNodeWithText("要点掌握情况").assertIsDisplayed()
         save("phone-review")
+    }
+
+    // 知识库搜索：6 张卡片，搜“成本”找到概念名里带它的两张
+    @Test
+    fun librarySearch() {
+        val saved = File(javaClass.classLoader!!.getResource("fixtures/rich-library.saved.json")!!.toURI()).readText()
+        val state = debating.ground.app.data.SibianJson.parseToJsonElement(saved) as kotlinx.serialization.json.JsonObject
+        val card = state.getValue("library").let { it as kotlinx.serialization.json.JsonArray }[0] as kotlinx.serialization.json.JsonObject
+        val now = System.currentTimeMillis()
+        val concepts = listOf(
+            "机会成本" to "放弃的选项里最好的那个的价值",
+            "沉没成本" to "已经花掉、收不回来的成本，不该左右以后的决定",
+            "边际效用" to "多得到一份时新增的满足",
+            "贝叶斯定理" to "按新证据有多意外来更新判断",
+            "认知失调" to "想法和行为对不上时改想法求心安",
+            "比较优势" to "做相对代价最低的事",
+        )
+        val cards = concepts.mapIndexed { i, (c, o) ->
+            kotlinx.serialization.json.JsonObject(
+                card + mapOf(
+                    "id" to kotlinx.serialization.json.JsonPrimitive("c$i"),
+                    "sessionId" to kotlinx.serialization.json.JsonPrimitive("s$i"),
+                    "concept" to kotlinx.serialization.json.JsonPrimitive(c),
+                    "oneLine" to kotlinx.serialization.json.JsonPrimitive(o),
+                    "due" to kotlinx.serialization.json.JsonPrimitive(now + (i - 1) * 86_400_000L),
+                ),
+            )
+        }
+        val seeded = kotlinx.serialization.json.JsonObject(
+            state +
+                mapOf(
+                    "library" to kotlinx.serialization.json.JsonArray(cards),
+                    "session" to kotlinx.serialization.json.JsonNull,
+                    "screen" to kotlinx.serialization.json.JsonPrimitive("library"),
+                ),
+        )
+        debating.ground.app.data.Storage(dir).write(seeded.toString())
+        compose.setContent { Frame(dark = false, width = 390, height = 844) }
+        compose.onNodeWithText("知识库").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("搜索知识卡片").performTextInput("成本")
+        compose.waitForIdle()
+        save("phone-library-search")
+        compose.onNodeWithText("找到 2 张卡片").assertExists()
     }
 
     // 知识库和卡片（深色）：做一道检验题

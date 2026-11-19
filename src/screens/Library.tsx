@@ -5,6 +5,7 @@ import { discussAgain, openCard, rateCard } from '../actions.ts';
 import { BusyStrip, Empty, ErrorBanner, Icon, Quiz, TopBar } from '../components/ui.tsx';
 import { exportLibrary } from '../lib/exporter.ts';
 import { dueLabel } from '../lib/srs.ts';
+import { SEARCH_MIN_CARDS, searchCards } from '../lib/search.ts';
 import { go, useApp, type Card } from '../store.ts';
 import { ReviewBody } from './Review.tsx';
 
@@ -26,7 +27,10 @@ export function Library() {
   const now = Date.now();
   const due = library.filter(c => c.due <= now);
   const [tab, setTab] = useState<'due' | 'all'>(due.length ? 'due' : 'all');
-  const list = tab === 'due' ? due : library;
+  // 搜索词只在这一页里，不存档；搜索时不分组，在全部卡片里找
+  const [query, setQuery] = useState('');
+  const searching = query.trim() !== '';
+  const list = searching ? searchCards(library, query) : tab === 'due' ? due : library;
   return (
     <div className="screen library">
       <TopBar
@@ -57,26 +61,66 @@ export function Library() {
           />
         ) : (
           <>
-            <div className="segmented" role="tablist">
-              <button
-                role="tab"
-                aria-selected={tab === 'due'}
-                className={tab === 'due' ? 'on' : ''}
-                onClick={() => setTab('due')}
-              >
-                待复习 {due.length}
-              </button>
-              <button
-                role="tab"
-                aria-selected={tab === 'all'}
-                className={tab === 'all' ? 'on' : ''}
-                onClick={() => setTab('all')}
-              >
-                全部 {library.length}
-              </button>
-            </div>
+            {library.length >= SEARCH_MIN_CARDS && (
+              <label className="search-box">
+                <Icon name="search" size={18} />
+                <input
+                  type="search"
+                  value={query}
+                  placeholder="搜概念、结论、术语"
+                  aria-label="搜索知识卡片"
+                  enterKeyHint="search"
+                  onChange={e => setQuery(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Escape') setQuery('');
+                  }}
+                />
+                {searching && (
+                  <button
+                    className="search-clear"
+                    aria-label="清除搜索"
+                    onClick={() => setQuery('')}
+                  >
+                    <Icon name="close" size={16} />
+                  </button>
+                )}
+              </label>
+            )}
+            {searching ? (
+              <p className="muted search-count" role="status">
+                {list.length ? `找到 ${list.length} 张卡片` : ''}
+              </p>
+            ) : (
+              <div className="segmented" role="tablist">
+                <button
+                  role="tab"
+                  aria-selected={tab === 'due'}
+                  className={tab === 'due' ? 'on' : ''}
+                  onClick={() => setTab('due')}
+                >
+                  待复习 {due.length}
+                </button>
+                <button
+                  role="tab"
+                  aria-selected={tab === 'all'}
+                  className={tab === 'all' ? 'on' : ''}
+                  onClick={() => setTab('all')}
+                >
+                  全部 {library.length}
+                </button>
+              </div>
+            )}
             {list.length === 0 ? (
-              <p className="muted center">今天没有要复习的卡片。</p>
+              searching ? (
+                <div className="center stack-sm">
+                  <p className="muted">没有找到和“{query.trim()}”有关的卡片。</p>
+                  <button className="ghost" onClick={() => setQuery('')}>
+                    清除搜索
+                  </button>
+                </div>
+              ) : (
+                <p className="muted center">今天没有要复习的卡片。</p>
+              )
             ) : (
               <ul className="card-list">
                 {list.map(c => (

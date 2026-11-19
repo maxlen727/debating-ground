@@ -702,6 +702,49 @@ select:focus {
   background: var(--warn-soft);
   color: var(--warn);
 }
+/* 知识库搜索：内容层里的输入框，和其它输入框一样的底色和描边 */
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 0 6px 0 14px;
+  border-radius: 23px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.search-box:focus-within {
+  border-color: var(--brand);
+}
+.search-box input,
+.search-box input:focus {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  font-size: 16px;
+  color: var(--ink);
+  outline: none;
+}
+.search-box input::-webkit-search-cancel-button {
+  display: none;
+}
+.search-clear {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+.search-count {
+  margin: 0;
+  font-size: var(--t-sm);
+}
 .segmented {
   display: grid;
   grid-auto-flow: column;
