@@ -14,7 +14,6 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -28,7 +27,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -70,6 +68,7 @@ import debating.ground.app.ui.SecondaryButton
 import debating.ground.app.ui.SectionLabel
 import debating.ground.app.ui.WithFloatingDock
 import debating.ground.app.ui.lineIcon
+import debating.ground.app.ui.scrollRow
 import debating.ground.app.ui.scrollWithEdge
 import debating.ground.app.ui.theme.LocalTokens
 import debating.ground.app.ui.theme.TextSize
@@ -146,7 +145,7 @@ fun LearnScreen(st: AppState, model: AppModel, now: Long) {
                         big = true,
                         onDone = { if (canStart) model.run { prepare(null, null, "start") } },
                     )
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.scrollRow(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         EXAMPLES.forEach { c -> Chip(c, config.concept == c, { l.setConcept(c) }, enabled = !busy) }
                     }
                     // 写的是一件具体的事：AI 先请你交代经过，再出题

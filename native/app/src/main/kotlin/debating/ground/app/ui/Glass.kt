@@ -3,6 +3,7 @@ package debating.ground.app.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -190,3 +191,28 @@ fun Modifier.fadeUnder(top: Dp, bottom: Dp): Modifier = this
             )
         }
     }
+
+/**
+ * 横向滚动的一排（例子、工具、要点进度……）：还能往哪边滚，哪边就渐隐一小段，而不是被屏幕边缘硬切断。
+ * 读滚动位置放在绘制阶段，滚动时不重组。
+ */
+fun Modifier.fadeEdges(canBack: () -> Boolean, canForward: () -> Boolean, width: Dp = 24.dp): Modifier = this
+    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithContent {
+        drawContent()
+        val w = width.toPx()
+        if (canBack()) drawRect(Brush.horizontalGradient(0f to Color.Transparent, 1f to Color.Black, startX = 0f, endX = w), blendMode = BlendMode.DstIn)
+        if (canForward()) {
+            drawRect(
+                Brush.horizontalGradient(0f to Color.Black, 1f to Color.Transparent, startX = size.width - w, endX = size.width),
+                blendMode = BlendMode.DstIn,
+            )
+        }
+    }
+
+/** 能横向滚动、两端按需渐隐的一排。 */
+@Composable
+fun Modifier.scrollRow(): Modifier {
+    val state = rememberScrollState()
+    return fadeEdges({ state.canScrollBackward }, { state.canScrollForward }).horizontalScroll(state)
+}

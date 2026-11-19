@@ -58,6 +58,7 @@ import debating.ground.app.ui.IconPaths
 import debating.ground.app.ui.PrimaryButton
 import debating.ground.app.ui.SecondaryButton
 import debating.ground.app.ui.TopBar
+import debating.ground.app.ui.fadeEdges
 import debating.ground.app.ui.fadeUnder
 import debating.ground.app.ui.glass
 import debating.ground.app.ui.lineIcon
@@ -176,7 +177,13 @@ private fun PointsProgress(s: Session, model: AppModel) {
             color = t.brand.color(),
             modifier = Modifier.semantics { contentDescription = "要点进度 ${s.covered.size}/${s.keyPoints.size}" },
         )
-        LazyRow(Modifier.weight(1f), state = row, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        LazyRow(
+            Modifier.weight(1f).fadeEdges({
+                row.canScrollBackward
+            }, { row.canScrollForward }),
+            state = row,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             itemsIndexed(s.keyPoints) { i, k -> PointChip(k, i in s.covered) }
         }
         if (!s.finished) {
