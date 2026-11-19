@@ -113,6 +113,14 @@ class RoomTest {
     }
 
     @Test
+    fun invitesAreFoundInsideSharedText() {
+        val url = inviteLink("https://api.example.dev", "r".repeat(22), "inv")
+        assertEquals(url, debating.ground.app.room.inviteIn("小明邀请你一起讨论：$url 点开就能加入"))
+        assertEquals("inv", parseInvite(debating.ground.app.room.inviteIn("$url\n")!!)?.invite)
+        assertNull(debating.ground.app.room.inviteIn("今天天气不错 https://example.com"))
+    }
+
+    @Test
     fun aSessionWithoutARoomHasNoLink() {
         assertNull(Session(id = "s", mode = "socratic", concept = "c", topic = "t").link)
         assertNull(Session(id = "s", mode = "socratic", concept = "c", topic = "t", room = JsonObject(emptyMap())).link)
