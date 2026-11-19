@@ -39,6 +39,8 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -66,6 +68,8 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -109,6 +113,8 @@ fun AppScaffold(model: AppModel) {
             pageTransform(kind, motion)
         }) { scr, state -> Page(scr, state, model) }
     }
+    // 今天要复习几张：写在“知识库”标签上
+    val due = st.library.count { it.due <= System.currentTimeMillis() }
     val onTab = { tab: Tab ->
         viaTab[0] = true
         // 讨论结束且已有复盘时，“讨论”标签打开复盘页
@@ -122,7 +128,7 @@ fun AppScaffold(model: AppModel) {
         val showNav = !immersive(screen)
         if (style == NavStyle.Rail) {
             Row(Modifier.fillMaxSize()) {
-                if (showNav) Rail(activeTab(screen), onTab)
+                if (showNav) Rail(activeTab(screen), due, onTab)
                 // 内容铺满导航右边的整块区域，不留两侧空白（和网页版宽屏时一样）。
                 // 左侧导航自己避开系统栏；内容这边避开状态栏、底部手势条和横屏时的刘海
                 Box(
@@ -162,7 +168,7 @@ fun AppScaffold(model: AppModel) {
                     enter = if (motion) slideInVertically(tween(360, easing = EaseOut)) { it / 6 } + fadeIn(tween(240)) else EnterTransition.None,
                     exit = if (motion) slideOutVertically(tween(240)) { it / 6 } + fadeOut(tween(180)) else ExitTransition.None,
                 ) {
-                    BoxWithConstraints(Modifier.fillMaxSize()) { FloatingNav(activeTab(screen), collapsed, { collapsed = false }, onTab) }
+                    BoxWithConstraints(Modifier.fillMaxSize()) { FloatingNav(activeTab(screen), due, collapsed, { collapsed = false }, onTab) }
                 }
             }
         }
@@ -211,13 +217,30 @@ private fun ToastText(text: String) {
     )
 }
 
+// 标签图标；知识库的右上角写着今天要复习几张（和网页版 .badge-dot 一样：强调色底、白字）
+@Composable
+private fun TabIcon(tab: Tab, badge: Int, modifier: Modifier, tint: Color?, description: String?) {
+    val t = LocalTokens.current
+    BadgedBox(
+        badge = {
+            if (badge > 0) Badge(containerColor = t.accent.color(), contentColor = Color.White) { Text(if (badge > 99) "99+" else "$badge") }
+        },
+        modifier = Modifier.semantics(mergeDescendants = true) {
+            if (badge > 0) contentDescription = (description ?: tab.label) + "，$badge 张待复习"
+        },
+    ) {
+        val icon = lineIcon(tab.name, tab.icon)
+        if (tint != null) Icon(icon, description, modifier, tint = tint) else Icon(icon, description, modifier)
+    }
+}
+
 // 胶囊高 64dp，上下各留 12dp
 private val NAV_CLEARANCE = 88.dp
 
 // 悬浮的胶囊导航：半透明磨砂，选中的那项亮起一块小胶囊（和外框的圆角同心）。
 // 收起时只剩当前标签，缩到左下角；点它展开
 @Composable
-private fun BoxWithConstraintsScope.FloatingNav(current: Tab?, collapsed: Boolean, onExpand: () -> Unit, onSelect: (Tab) -> Unit) {
+private fun BoxWithConstraintsScope.FloatingNav(current: Tab?, due: Int, collapsed: Boolean, onExpand: () -> Unit, onSelect: (Tab) -> Unit) {
     val t = LocalTokens.current
     val motion = LocalMotion.current
     val shape = RoundedCornerShape(32.dp)
@@ -252,7 +275,7 @@ private fun BoxWithConstraintsScope.FloatingNav(current: Tab?, collapsed: Boolea
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                Icon(lineIcon(tab.name, tab.icon), contentDescription = if (collapsed) "${tab.label}，展开导航" else null, Modifier.size(22.dp), tint = fg)
+                TabIcon(tab, if (tab == Tab.Library) due else 0, Modifier.size(22.dp), fg, if (collapsed) "${tab.label}，展开导航" else null)
                 if (!collapsed) {
                     Text(
                         tab.label,
@@ -267,14 +290,14 @@ private fun BoxWithConstraintsScope.FloatingNav(current: Tab?, collapsed: Boolea
 }
 
 @Composable
-private fun Rail(current: Tab?, onSelect: (Tab) -> Unit) {
+private fun Rail(current: Tab?, due: Int, onSelect: (Tab) -> Unit) {
     val t = LocalTokens.current
     NavigationRail(containerColor = Color.Transparent) {
         Tab.entries.forEach { tab ->
             NavigationRailItem(
                 selected = tab == current,
                 onClick = { onSelect(tab) },
-                icon = { Icon(lineIcon(tab.name, tab.icon), contentDescription = null) },
+                icon = { TabIcon(tab, if (tab == Tab.Library) due else 0, Modifier, null, null) },
                 label = { Text(tab.label, style = TextStyles.label) },
                 colors = NavigationRailItemDefaults.colors(
                     selectedIconColor = t.brand.color(),
