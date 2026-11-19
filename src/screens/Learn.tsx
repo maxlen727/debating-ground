@@ -22,6 +22,8 @@ export function Learn() {
   const due = library.filter(c => c.due <= Date.now());
   const unfinished = session && !session.finished;
   const busy = !!ui.busy;
+  const canStart = !busy && !!config.concept.trim() && (!ui.context || !!ui.context.text.trim());
+  const startLabel = ui.context ? '按这个经过开始' : '开始讨论';
   return (
     <div className="screen learn">
       <header className="learn-head">
@@ -180,22 +182,40 @@ export function Learn() {
       <div className="dock">
         <ErrorBanner />
         <BusyStrip />
-        {/* 一句话开始：写下概念就进讨论；想先看看题目、要点和角色（或者邀请同学），走准备页 */}
-        <button
-          className="primary block"
-          disabled={busy || !config.concept.trim() || (!!ui.context && !ui.context.text.trim())}
-          onClick={() => prepare(null, undefined, 'start')}
-        >
-          {ui.context ? '按这个经过开始讨论' : '开始讨论'}
-        </button>
-        <button
-          className="link quiet-link"
-          disabled={busy || !config.concept.trim() || (!!ui.context && !ui.context.text.trim())}
-          onClick={() => prepare()}
-        >
-          先看看题目和角色
-          {config.mode === 'roundtable' || config.mode === 'debate' ? '，或邀请同学' : ''}
-        </button>
+        {/* 写下概念后，开始按钮才从底部升起：没写时不摆一条点不了的灰按钮。
+            左边先看看题目、要点和角色（或者邀请同学），右边一句话开始，写明用哪种方式讨论哪个概念 */}
+        {config.concept.trim() && (
+          <div className="start-bar">
+            <button
+              className="secondary"
+              disabled={!canStart}
+              title={
+                config.mode === 'roundtable' || config.mode === 'debate'
+                  ? '先看看题目和角色，或邀请同学'
+                  : '先看看题目、要点和角色'
+              }
+              onClick={() => prepare()}
+            >
+              先看题目
+            </button>
+            <button
+              className="primary start"
+              disabled={!canStart}
+              aria-label={`${startLabel}：${MODES[config.mode].name} · ${config.concept.trim()}`}
+              onClick={() => prepare(null, undefined, 'start')}
+            >
+              <span className="start-text">
+                <b>{startLabel}</b>
+                <small>
+                  {MODES[config.mode].name} · {config.concept.trim()}
+                </small>
+              </span>
+              <span className="start-arrow" aria-hidden="true">
+                <Icon name="send" size={20} />
+              </span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
