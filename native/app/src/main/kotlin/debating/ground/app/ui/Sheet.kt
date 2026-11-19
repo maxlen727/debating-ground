@@ -40,6 +40,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,11 +50,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.paneTitle
@@ -66,6 +69,7 @@ import androidx.compose.ui.unit.sp
 import debating.ground.app.ui.theme.LocalTokens
 import debating.ground.app.ui.theme.TextStyles
 import debating.ground.app.ui.theme.color
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 // 底部操作面板（网页版的 Sheet、.sheet）。参考 iOS 的面板规范：
@@ -106,6 +110,13 @@ fun Sheet(title: String, onClose: () -> Unit, titleStyle: TextStyle? = null, con
             label = "sheet-height",
         )
         val dismissAt = with(density) { 120.dp.toPx() }
+        // 下拖越过“松手就关上”的位置时轻触一下，往回拖不再重复
+        val haptic = LocalHapticFeedback.current
+        LaunchedEffect(expanded) {
+            snapshotFlow { drag.value > dismissAt }.distinctUntilChanged().collect { past ->
+                if (past && !expanded) haptic.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+            }
+        }
         fun settle(velocity: Float) {
             scope.launch {
                 val d = drag.value

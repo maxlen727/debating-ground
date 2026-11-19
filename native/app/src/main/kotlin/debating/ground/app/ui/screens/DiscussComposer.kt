@@ -37,7 +37,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -336,7 +338,9 @@ internal fun MicButton(
     val t = LocalTokens.current
     val context = LocalContext.current
     val phase by speech.listen.phase.collectAsState()
+    val haptic = LocalHapticFeedback.current
     val begin = {
+        haptic.performHapticFeedback(HapticFeedbackType.ToggleOn)
         speech.voice.stop() // 别把朗读的声音录进去
         val before = draft
         val sep = if (Regex("[A-Za-z0-9]$").containsMatchIn(before)) " " else ""
@@ -374,8 +378,13 @@ internal fun MicButton(
             .alpha(if (phase == Phase.Starting || phase == Phase.Finishing) 0.7f else 1f)
             .clickable(enabled = phase != Phase.Finishing, role = Role.Button) {
                 when {
-                    on -> speech.listen.stop()
+                    on -> {
+                        haptic.performHapticFeedback(HapticFeedbackType.ToggleOff)
+                        speech.listen.stop()
+                    }
+
                     ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED -> begin()
+
                     else -> ask.launch(Manifest.permission.RECORD_AUDIO)
                 }
             }
