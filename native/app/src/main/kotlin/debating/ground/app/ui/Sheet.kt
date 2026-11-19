@@ -87,6 +87,7 @@ fun Sheet(title: String, onClose: () -> Unit, titleStyle: TextStyle? = null, con
     // 关上时：托管它的 SheetHost 等它沉下去、遮罩淡出，再移除（没有托管时直接消失）
     val host = LocalSheetScope.current
     fun leaving(exit: ExitTransition) = host?.run { Modifier.animateEnterExit(EnterTransition.None, if (motion) exit else ExitTransition.None) } ?: Modifier
+    val back = LocalBackGesture.current
     // 往下拖了多少（像素）：跟着手指走，松手后弹回或关掉
     val drag = remember { Animatable(0f) }
     var expanded by remember { mutableStateOf(false) }
@@ -187,7 +188,7 @@ fun Sheet(title: String, onClose: () -> Unit, titleStyle: TextStyle? = null, con
             Modifier
                 .fillMaxSize()
                 .then(leaving(fadeOut(tween(240))))
-                .graphicsLayer { alpha = rise.value * (1f - (drag.value / (dismissAt * 3)).coerceIn(0f, 0.6f)) }
+                .graphicsLayer { alpha = rise.value * (1f - (drag.value / (dismissAt * 3)).coerceIn(0f, 0.6f)) * (1f - 0.5f * backOf(back)) }
                 .background(Color.Black.copy(alpha = 0.35f))
                 .clickable(remember { MutableInteractionSource() }, null, onClick = onClose),
         )
@@ -210,7 +211,8 @@ fun Sheet(title: String, onClose: () -> Unit, titleStyle: TextStyle? = null, con
                 .heightIn(max = limit)
                 .graphicsLayer {
                     alpha = rise.value
-                    translationY = (1 - rise.value) * 40.dp.toPx() + drag.value.coerceAtLeast(0f)
+                    // 返回手势：面板跟着手指往下沉（最多沉下去自己高度的三成），松手关上，反悔弹回
+                    translationY = (1 - rise.value) * 40.dp.toPx() + drag.value.coerceAtLeast(0f) + backOf(back) * size.height * 0.3f
                 }
                 .shadow(24.dp, shape, ambientColor = Color.Black.copy(alpha = 0.16f), spotColor = Color.Black.copy(alpha = 0.2f))
                 .background(t.surface.color(), shape)
@@ -278,3 +280,6 @@ fun Quote(text: String) {
 }
 
 private fun Double.em() = androidx.compose.ui.unit.TextUnit(this.toFloat(), androidx.compose.ui.unit.TextUnitType.Em)
+
+// 返回手势的进度，只在有面板开着时作用到面板上
+private fun backOf(g: BackGesture) = if (g.overlay) g.progress else 0f

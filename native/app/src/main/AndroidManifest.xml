@@ -16,10 +16,13 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!-- allowBackup 和现在的 App 保持一致（知识库能随系统备份）。直接连接用的 API Key 存在 noBackupFilesDir，
+    <!-- 返回预览（enableOnBackInvokedCallback）只在 Android 13 起有效，更旧的系统忽略它，照常返回。
+         allowBackup 和现在的 App 保持一致（知识库能随系统备份）。直接连接用的 API Key 存在 noBackupFilesDir，
          不进备份；而且它用 Android Keystore 里不能导出的密钥加密，就算文件被拷走也解不开 -->
     <application
         android:allowBackup="true"
+        android:enableOnBackInvokedCallback="true"
+        tools:targetApi="33"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
