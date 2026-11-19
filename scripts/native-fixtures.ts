@@ -318,8 +318,56 @@ export async function generate(): Promise<Record<string, string>> {
   out['speech-cases.json'] = JSON.stringify(speechCases()) + '\n';
   // 多人房间：状态映射、邀请链接、倒计时、轮到谁、建房间时提交的内容
   out['room-cases.json'] = JSON.stringify(await roomCases()) + '\n';
+  // 知识库搜索：同样的卡片和查询，原生版的结果和顺序要一样
+  out['search-cases.json'] = JSON.stringify(await searchCases()) + '\n';
   out['meta.json'] = JSON.stringify({ now: NOW, timeZone: TIME_ZONE }, null, 2) + '\n';
   return out;
+}
+
+async function searchCases() {
+  const { searchCards, normalizeForSearch } = await import('../src/lib/search.ts');
+  const base = { ...richCard, reviews: [], terms: [] };
+  const cards = [
+    {
+      ...base,
+      id: 'a',
+      concept: '机会成本',
+      oneLine: '放弃的最好选择的价值',
+      topic: '周末打工的代价',
+    },
+    { ...base, id: 'b', concept: '沉没成本', oneLine: '已经花掉、收不回的成本' },
+    {
+      ...base,
+      id: 'c',
+      concept: '边际效用',
+      terms: [{ term: '机会成本', definition: '放弃的最好选择', relation: '' }],
+    },
+    { ...base, id: 'd', concept: 'Bayes 定理', oneLine: '用证据更新信念' },
+    richCard,
+  ];
+  const queries = [
+    '',
+    '  ',
+    '机会成本',
+    '成本',
+    '成本 决策',
+    'ｂａｙｅｓ',
+    'BAYES',
+    '边际',
+    '效用 满足',
+    '不存在',
+    '最好\u3000选择',
+    'Ⅻ',
+    '①',
+  ];
+  return {
+    cards,
+    queries: queries.map(q => ({
+      q,
+      ids: searchCards(cards as never, q).map(c => c.id),
+      norm: normalizeForSearch(q),
+    })),
+  };
 }
 
 async function roomCases() {
