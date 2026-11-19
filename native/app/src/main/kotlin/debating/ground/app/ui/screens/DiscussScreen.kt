@@ -36,8 +36,10 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -149,7 +151,14 @@ private fun PointsProgress(s: Session, model: AppModel) {
     val row = rememberLazyListState()
     // 新点亮的要点滚到看得见的地方
     val lit = s.covered.lastOrNull()
-    LaunchedEffect(s.covered.size) { if (lit != null) row.animateScrollToItem(lit) }
+    // 新点亮一个要点：手里也有一下确认感（打开讨论时已经亮着的不算）
+    val haptic = LocalHapticFeedback.current
+    val seen = remember(s.id) { intArrayOf(s.covered.size) }
+    LaunchedEffect(s.covered.size) {
+        if (s.covered.size > seen[0]) haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+        seen[0] = s.covered.size
+        if (lit != null) row.animateScrollToItem(lit)
+    }
     // 要点进度是一条悬浮的磨砂胶囊
     Row(
         Modifier.padding(horizontal = 12.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp), 6.dp).padding(start = 14.dp, end = 2.dp),

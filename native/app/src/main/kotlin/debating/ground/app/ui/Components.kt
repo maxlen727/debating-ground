@@ -35,6 +35,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -334,6 +336,7 @@ private fun StepButton(path: String, label: String, enabled: Boolean, onClick: (
 @Composable
 fun Segmented(options: List<Pair<String, String>>, selected: String, label: String, enabled: Boolean = true, onSelect: (String) -> Unit) {
     val t = LocalTokens.current
+    val haptic = LocalHapticFeedback.current
     Row(
         Modifier.fillMaxWidth().background(t.bg.color(), RoundedCornerShape(12.dp)).border(1.dp, t.line.color(), RoundedCornerShape(12.dp)).padding(3.dp)
             .semantics { contentDescription = label },
@@ -344,7 +347,11 @@ fun Segmented(options: List<Pair<String, String>>, selected: String, label: Stri
             Box(
                 Modifier.weight(1f).heightIn(min = 40.dp).background(if (on) t.raised.color() else Color.Transparent, RoundedCornerShape(9.dp))
                     .alpha(if (enabled || on) 1f else 0.45f)
-                    .clickable(enabled = enabled, role = Role.RadioButton) { onSelect(id) },
+                    .clickable(enabled = enabled, role = Role.RadioButton) {
+                        // 换了一项：轻轻点一下（系统关了触感就不震）
+                        if (!on) haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        onSelect(id)
+                    },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(

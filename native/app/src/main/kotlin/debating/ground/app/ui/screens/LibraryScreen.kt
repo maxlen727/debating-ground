@@ -32,7 +32,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -268,13 +270,17 @@ fun CardScreen(st: AppState, model: AppModel) {
     var showReview by rememberSaveable(c.id) { mutableStateOf(false) }
     val open = showReview || c.quiz.isEmpty() || picks.size >= c.quiz.size
     val busy = st.ui.busy != null
+    val haptic = LocalHapticFeedback.current
     WithFloatingDock(dock = {
         ErrorBanner(st.ui.error) { l.clearError() }
         BusyStrip(st.ui.busy) { l.cancelAI() }
         Text("这次回顾得怎么样？", style = TextStyles.small.copy(fontSize = 13.sp), color = t.muted.color())
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SecondaryButton("还有点模糊", { l.rateCard(c.id, false) }, Modifier.weight(1f))
-            PrimaryButton("记得很清楚", { l.rateCard(c.id, true) }, Modifier.weight(1f))
+            PrimaryButton("记得很清楚", {
+                haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                l.rateCard(c.id, true)
+            }, Modifier.weight(1f))
         }
     }) { bottom ->
         Column(Modifier.fillMaxSize()) {
