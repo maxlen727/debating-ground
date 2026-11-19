@@ -8,9 +8,8 @@ import {
 } from 'react';
 import { cancelAI } from '../lib/ai.ts';
 import { go, update, useApp, type Screen } from '../store.ts';
-import type { PointStatus, QuizItem } from '../../shared/types.ts';
+import type { PointStatus } from '../../shared/types.ts';
 import { STATUS_LABEL } from '../../shared/modes.ts';
-import { pickAnswer } from '../actions.ts';
 
 const PATHS: Record<string, string> = {
   back: 'M15 18l-6-6 6-6',
@@ -145,8 +144,7 @@ function useCollapseOnScroll(screen: Screen) {
 }
 
 export function TabBar() {
-  const { ui, library, session } = useApp();
-  const due = library.filter(c => c.due <= Date.now()).length;
+  const { ui, session } = useApp();
   const tabs: [Screen, string, string][] = [
     ['learn', 'learn', '学习'],
     ['session', 'chat', '讨论'],
@@ -175,7 +173,6 @@ export function TabBar() {
         >
           <span className="tab-icon">
             <Icon name={icon} size={22} />
-            {s === 'library' && due > 0 && <em className="badge-dot">{due > 99 ? '99+' : due}</em>}
           </span>
           <span>{label}</span>
         </button>
@@ -290,46 +287,6 @@ export function Toast() {
 
 export function Pill({ status }: { status: PointStatus }) {
   return <span className={'pill ' + status}>{STATUS_LABEL[status]}</span>;
-}
-
-export function Quiz({ id, items }: { id: string; items: QuizItem[] }) {
-  const { ui } = useApp();
-  const picks = ui.quiz[id] ?? {};
-  return (
-    <ol className="quiz">
-      {items.map((q, qi) => {
-        const picked = picks[qi];
-        return (
-          <li key={qi}>
-            <p className="q">{q.q}</p>
-            <div className="opts">
-              {q.options.map((o, oi) => {
-                const cls =
-                  picked == null ? '' : oi === q.answer ? 'right' : oi === picked ? 'wrong' : 'dim';
-                return (
-                  <button
-                    key={oi}
-                    className={'opt ' + cls}
-                    disabled={picked != null}
-                    onClick={() => pickAnswer(id, qi, oi)}
-                  >
-                    <b>{'ABCD'[oi]}</b>
-                    {o}
-                  </button>
-                );
-              })}
-            </div>
-            {picked != null && (
-              <p className={'why ' + (picked === q.answer ? 'ok' : 'no')}>
-                {picked === q.answer ? '答对了。' : `正确答案是 ${'ABCD'[q.answer]}。`}
-                {q.why}
-              </p>
-            )}
-          </li>
-        );
-      })}
-    </ol>
-  );
 }
 
 export function Empty({

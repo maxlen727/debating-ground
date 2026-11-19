@@ -17,7 +17,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import debating.ground.app.migrate.LegacyImport
 import debating.ground.app.migrate.WebViewLegacySource
-import debating.ground.app.notify.Reminders
 import debating.ground.app.room.inviteIn
 import debating.ground.app.ui.AppScaffold
 import debating.ground.app.ui.Atmosphere
@@ -25,7 +24,7 @@ import debating.ground.app.ui.LocalMotion
 import debating.ground.app.ui.theme.SibianTheme
 
 class MainActivity : ComponentActivity() {
-    // 从通知或分享打开时带来的意图，等存档读好再处理
+    // 从分享打开时带来的意图，等存档读好再处理
     private var pending by mutableStateOf<Intent?>(null)
 
     override fun onNewIntent(intent: Intent) {
@@ -35,9 +34,6 @@ class MainActivity : ComponentActivity() {
 
     private fun open(intent: Intent, m: AppModel) {
         when (intent.action) {
-            // 点了复习提醒：进知识库（有到期的卡片时默认就是“待复习”）
-            Reminders.OPEN_LIBRARY -> m.learning.go("library")
-
             // 分享来的文字：里面有邀请链接就进加入页（链接不完整时 openJoin 会说明）
             Intent.ACTION_SEND -> {
                 val link = inviteIn(intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty())
@@ -63,10 +59,10 @@ class MainActivity : ComponentActivity() {
                         val import = LegacyImport(filesDir, WebViewLegacySource(this@MainActivity))
                         val result = if (import.pending()) runCatching { import.run() }.getOrNull() else null
                         val m = AppModel.get(this@MainActivity)
-                        if (result != null && result.cards > 0) m.learning.toast("已从旧版搬来 ${result.cards} 张知识卡片。")
+                        if (result != null && result.cards > 0) m.learning.toast("已从旧版搬来知识库，整理成了 ${result.cards} 篇概念笔记。")
                         model = m
                     }
-                    // 从通知、分享打开时要去的地方：读好存档以后再去
+                    // 从分享打开时要去的地方：读好存档以后再去
                     LaunchedEffect(model, pending) {
                         val m = model ?: return@LaunchedEffect
                         pending?.let { open(it, m) }

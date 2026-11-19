@@ -12,10 +12,6 @@
     <!-- 语音输入（可选，后端配好讯飞时才出现）：第一次点麦克风时才请求；录音只在内存里转发给后端，不保存 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
-    <!-- 复习提醒（可选，默认关闭）：发通知要权限（Android 13 起，打开提醒时才请求）；重启后重新排上每天的闹钟 -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-
     <!-- 返回预览（enableOnBackInvokedCallback）只在 Android 13 起有效，更旧的系统忽略它，照常返回。
          allowBackup 和现在的 App 保持一致（知识库能随系统备份）。直接连接用的 API Key 存在 noBackupFilesDir，
          不进备份；而且它用 Android Keystore 里不能导出的密钥加密，就算文件被拷走也解不开 -->
@@ -44,15 +40,5 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
-
-        <!-- 复习提醒：闹钟到点发通知；手机重启、App 更新后重新排上闹钟。只接系统和自己发的广播 -->
-        <receiver
-            android:name=".notify.ReminderReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-            </intent-filter>
-        </receiver>
     </application>
 </manifest>

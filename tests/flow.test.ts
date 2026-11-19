@@ -13,7 +13,6 @@ const store: Record<string, string> = {};
 const { getState, update, typing, resetForTests, defaultConfig } = await import('../src/store.ts');
 const actions = await import('../src/actions.ts');
 const { setDemoDelay } = await import('../src/lib/ai.ts');
-const { schedule, INTERVALS, DAY } = await import('../src/lib/srs.ts');
 const { debateTurns, slots } = await import('../src/lib/debate.ts');
 setDemoDelay(0);
 
@@ -78,13 +77,31 @@ test('demo mode runs the whole loop: prepare, discuss, reflect, review, knowledg
   assert.ok(done?.kind === 'reflect' && done.feedback.length > 0);
   await actions.finish();
   assert.equal(getState().ui.screen, 'review');
+  // 复盘整理成一篇概念笔记（#140）：说清它是什么、什么时候用、要点带原话、自检题
   assert.equal(getState().library.length, 1);
-  const card = getState().library[0];
-  assert.ok(card.due > Date.now() + 23 * 3600_000, 'first review is tomorrow');
-  actions.rateCard(card.id, true);
-  assert.equal(getState().library[0].level, 1);
-  assert.ok(getState().library[0].due > Date.now() + 2.9 * DAY);
-  assert.ok(store['sibian-v3'].includes('"library"'), 'state is persisted');
+  let note = getState().library[0];
+  assert.equal(note.concept, '机会成本');
+  assert.ok(note.summary && note.useWhen);
+  assert.ok(note.points.some(p => p.evidence));
+  assert.equal(note.checks.length, 3);
+  assert.equal(note.sources.length, 1);
+  assert.equal(note.sources[0].sessionId, getState().session!.id);
+  // 自检：答出来了，它检验的要点算掌握
+  const check = note.checks.findIndex(c => c.point === '只算次优那一项');
+  actions.selfCheck(note.id, check, true);
+  note = getState().library[0];
+  const point = note.points.find(p => p.label === '只算次优那一项')!;
+  assert.equal(point.status, 'mastered');
+  assert.ok(point.checked);
+  assert.ok(store['sibian-v4'].includes('"library"'), 'state is persisted');
+  // 再讨论一次同一个概念：理解沉淀进同一篇笔记，不另起一张
+  await actions.discussAgain(note);
+  actions.startSession();
+  for (const t of ['少玩了一天', '只算家教']) await actions.send(t);
+  await actions.finish();
+  assert.equal(getState().library.length, 1);
+  assert.equal(getState().library[0].sources.length, 2);
+  assert.equal(getState().library[0].id, note.id);
 });
 
 test('API failure keeps the learner message and adds no AI reply', async () => {
@@ -179,11 +196,7 @@ test('debate needs a seat for the learner', () => {
   assert.equal(getState().session, null);
 });
 
-test('spaced repetition and debate turn order', () => {
-  assert.deepEqual(INTERVALS.slice(0, 4), [1, 3, 7, 14]);
-  assert.equal(schedule(0, true, 0).days, 3);
-  assert.equal(schedule(5, true, 0).days, 60);
-  assert.equal(schedule(4, false, 0).days, 1);
+test('debate turn order', () => {
   const c = defaultConfig();
   assert.equal(slots(c).length, 4);
   const turns = debateTurns(c);
@@ -267,7 +280,7 @@ test('demo: unfamiliar terms are marked, explained on tap, and saved with the kn
   assert.equal(getState().ui.busy, null);
   await actions.finish();
   assert.deepEqual(
-    getState().library[0].terms!.map(t => t.term),
+    getState().library[0].terms.map(t => t.term),
     ['稀缺性'],
   );
 });
@@ -783,7 +796,7 @@ test('typing a draft does not copy the knowledge base or write storage on every 
     s.library.push({ id: 'c1' } as never);
   });
   const library = getState().library,
-    saved = store['sibian-v3'];
+    saved = store['sibian-v4'];
   typing(s => {
     s.session!.draft = '机会';
   });
@@ -792,10 +805,10 @@ test('typing a draft does not copy the knowledge base or write storage on every 
   });
   assert.equal(getState().session!.draft, '机会成本');
   assert.equal(getState().library, library, 'the knowledge base is shared, not cloned');
-  assert.equal(store['sibian-v3'], saved, 'nothing is written while typing');
+  assert.equal(store['sibian-v4'], saved, 'nothing is written while typing');
   // 停下来以后补存
   await new Promise(r => setTimeout(r, 450));
-  assert.match(store['sibian-v3'], /"draft":"机会成本"/);
+  assert.match(store['sibian-v4'], /"draft":"机会成本"/);
   // 之后的任何 update 都会立刻存，不会被排着队的旧草稿覆盖
   typing(s => {
     s.session!.draft = '机会成本是';
@@ -803,10 +816,10 @@ test('typing a draft does not copy the knowledge base or write storage on every 
   update(s => {
     s.ui.hint = null;
   });
-  assert.match(store['sibian-v3'], /"draft":"机会成本是"/);
+  assert.match(store['sibian-v4'], /"draft":"机会成本是"/);
 });
 
-test('a damaged save does not crash the app: broken parts are dropped, knowledge cards are kept', async () => {
+test('a damaged save does not crash the app: broken parts are dropped, knowledge is kept', async () => {
   for (const k of Object.keys(store)) delete store[k];
   store['sibian-v3'] = JSON.stringify({
     config: {
@@ -836,10 +849,11 @@ test('a damaged save does not crash the app: broken parts are dropped, knowledge
   assert.equal(st.plan, null);
   assert.equal(st.session, null);
   assert.equal(st.ui.screen, 'learn');
-  assert.equal(st.library.length, 1, 'the usable card survives');
+  assert.equal(st.library.length, 1, 'the usable card survives as a note');
+  assert.equal(st.library[0].concept, '机会成本');
   assert.deepEqual(st.library[0].points, []);
-  assert.deepEqual(st.library[0].quiz, []);
-  assert.deepEqual(st.library[0].reviews, []);
+  assert.deepEqual(st.library[0].checks, []);
+  assert.equal(st.library[0].sources[0].oneLine, '放弃的最好选择');
 });
 
 test('a healthy save comes back unchanged', async () => {
@@ -880,4 +894,59 @@ test('a malformed stream event fails the turn with a clear message and keeps pro
   assert.doesNotMatch(getState().ui.error, /JSON|Unexpected/);
   // 学习者自己的发言留下，AI 的半截文字不进记录
   assert.equal(getState().session!.entries.length, before + 1);
+});
+
+test('old knowledge cards (sibian-v3) are merged into one note per concept; the old save is kept', () => {
+  for (const k of Object.keys(store)) delete store[k];
+  const card = (id: string, created: number, extra: object) => ({
+    id,
+    sessionId: 's-' + id,
+    concept: '机会成本',
+    topic: '题 ' + id,
+    mode: 'socratic',
+    created,
+    source: 'api',
+    model: 'm',
+    oneLine: '评价 ' + id,
+    points: [{ label: '放弃的最佳选择', status: 'partial', note: '旧' }],
+    misconceptions: [],
+    quiz: [{ q: '机会成本是？', options: ['300', '500'], answer: 1, why: '最好的那个' }],
+    level: 2,
+    due: 0,
+    reviews: [{ at: 1, remembered: true }],
+    ...extra,
+  });
+  const v3 = JSON.stringify({
+    config: defaultConfig(),
+    library: [
+      // 概念名多了个空格也算同一个
+      card('b', 2000, {
+        concept: '机会成本 ',
+        points: [{ label: '放弃的最佳选择', status: 'mastered', note: '新' }],
+      }),
+      card('a', 1000, {}),
+      card('c', 1500, { concept: '沉没成本', points: [] }),
+    ],
+  });
+  store['sibian-v3'] = v3;
+  resetForTests();
+  const lib = getState().library;
+  assert.deepEqual(
+    lib.map(n => n.concept),
+    ['机会成本', '沉没成本'],
+    'one note per concept, most recently updated first',
+  );
+  const cost = lib[0];
+  assert.deepEqual(
+    cost.sources.map(x => x.sessionId),
+    ['s-a', 's-b'],
+  );
+  assert.equal(cost.points.length, 1, 'the same point is merged, not duplicated');
+  assert.equal(cost.points[0].status, 'mastered', 'the later discussion wins');
+  assert.equal(
+    cost.checks[0].answer,
+    '500。最好的那个',
+    'a multiple-choice question becomes a self-check',
+  );
+  assert.equal(store['sibian-v3'], v3, 'the old save is not touched');
 });

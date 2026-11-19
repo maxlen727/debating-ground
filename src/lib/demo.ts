@@ -163,42 +163,57 @@ const termsIn = (text: string) =>
 
 export const COST_REVIEW: Review = {
   oneLine: '你已经理解机会成本是“放弃的最好选择”，它和沉没成本的区别还需要再巩固。',
+  summary: '做一个选择时，放弃掉的那些选项里最好的一个的价值，就是这个选择的机会成本。',
+  useWhen: '在几个选项之间做决定，想知道“选这个到底花了什么”的时候。',
   points: [
-    { label: '放弃的最佳选择', status: 'mastered', note: '能用打工和家教的例子说清楚。' },
-    { label: '只算次优那一项', status: 'partial', note: '一开始把所有放弃的选项加在了一起。' },
-    { label: '包含隐性代价', status: 'mastered', note: '主动提到了时间和休息。' },
+    {
+      label: '放弃的最佳选择',
+      status: 'mastered',
+      note: '能用打工和家教的例子说清楚。',
+      evidence: '机会成本就是做一件事放弃的另一件事最好的价值。',
+    },
+    {
+      label: '只算次优那一项',
+      status: 'partial',
+      note: '一开始把所有放弃的选项加在了一起。',
+      evidence: '机会成本是放弃的东西。',
+    },
+    {
+      label: '包含隐性代价',
+      status: 'mastered',
+      note: '主动提到了时间和休息。',
+      evidence: '比如我周末去打工，就放弃了在家复习的收获。',
+    },
     { label: '区别于沉没成本', status: 'partial', note: '知道健身卡不该算，但理由说得不完整。' },
     { label: '用于比较决策', status: 'missing', note: '还没有用它做过一次完整的选择比较。' },
   ],
+  examples: ['周末去打工赚 300 元，放弃了在家复习的收获。'],
   misconceptions: [
     {
       said: '机会成本是所有放弃的选项加起来。',
       fix: '只算放弃的选项中价值最高的那一个，因为你一次只能选一个。',
     },
   ],
-  quiz: [
+  boundaries: ['不是已经花掉、拿不回来的钱：那是沉没成本，不该影响现在的选择。'],
+  related: ['沉没成本', '边际效用'],
+  checks: [
     {
-      q: '小王周六可以打工赚 300 元、做家教赚 500 元或在家休息。他选择了打工，他的机会成本是？',
-      options: ['300 元', '500 元', '800 元', '0 元'],
-      answer: 1,
-      why: '放弃的选项里价值最高的是家教的 500 元。',
+      q: '小王周六可以打工赚 300 元、做家教赚 500 元，或者在家休息。他选了打工，他的机会成本是多少？为什么不是 800 元？',
+      answer:
+        '500 元。只算放弃的选项里价值最高的那一个（家教），一次只能选一个，不能把放弃的都加起来。',
+      point: '只算次优那一项',
     },
     {
-      q: '已经付了 200 元、不能退的演唱会门票，当天你更想去加班。门票钱应该怎么看？',
-      options: [
-        '算作去加班的机会成本',
-        '是沉没成本，不影响决策',
-        '要加到演唱会的收益里',
-        '必须去看才不亏',
-      ],
-      answer: 1,
-      why: '钱已经花了、拿不回来，选哪个都一样，所以不该影响现在的选择。',
+      q: '已经付了 200 元、不能退的演唱会门票，当天你更想去加班。这 200 元该不该影响你的决定？',
+      answer:
+        '不该。钱已经花了、拿不回来，选哪个都一样，是沉没成本；只比较去看和去加班各自接下来的得失。',
+      point: '区别于沉没成本',
     },
     {
-      q: '下面哪一项最不可能是“读研三年”的机会成本？',
-      options: ['三年工作的工资', '三年的工作经验', '本科四年的学费', '提前积累的人脉'],
-      answer: 2,
-      why: '本科学费已经付过，是沉没成本；其余都是读研期间放弃的东西。',
+      q: '用机会成本比较一下：毕业后直接工作，还是读研三年？各列出你会放弃什么。',
+      answer:
+        '读研放弃三年的工资、工作经验和人脉；直接工作放弃学历带来的机会。两边都算上放弃的最好选项，再比较。',
+      point: '用于比较决策',
     },
   ],
 };
@@ -380,15 +395,25 @@ export async function demoRun<P extends Purpose>(
     case 'review': {
       if (cost && s.mode !== 'debate') return { data: COST_REVIEW };
       const lit = s.covered.length;
+      // 规则式：“一句话”用学习者最后写的小结，自检题考还没点亮的要点
+      const reflection = [...s.entries].reverse().find(e => e.kind === 'reflect' && e.text);
       const data: Review = {
-        oneLine: `规则式复盘：本次讨论点亮了 ${lit}/${n} 个要点。连接 API 后可获得针对你发言的具体评价和练习题。`,
+        oneLine: `规则式复盘：本次讨论点亮了 ${lit}/${n} 个要点。连接 API 后可获得针对你发言的具体评价和自检题。`,
+        summary: reflection?.text ?? '',
         points: s.keyPoints.map((k, i) => ({
           label: k,
           status: s.covered.includes(i) ? 'mastered' : 'missing',
           note: s.covered.includes(i) ? '讨论中点亮了这一点。' : '讨论中还没有讲到。',
         })),
         misconceptions: [],
-        quiz: [],
+        checks: s.keyPoints
+          .filter((_, i) => !s.covered.includes(i))
+          .slice(0, 3)
+          .map(k => ({
+            q: `用你自己的话说说「${k}」是什么意思，再举一个例子。`,
+            answer: `说得出「${k}」的意思，并能举出一个讨论里没出现过的例子，就算答出来了。`,
+            point: k,
+          })),
       };
       return { data };
     }

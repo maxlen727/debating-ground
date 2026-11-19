@@ -2,7 +2,8 @@ package debating.ground.app.data
 
 import java.io.File
 
-// 本地存储：一份 JSON 文件，内容和网页版写进 localStorage 的 sibian-v3 一样。
+// 本地存储：一份 JSON 文件，内容和网页版写进 localStorage 的 sibian-v4 一样。
+// 概念笔记以前的存档（sibian-v3.json）留着不动：读不到 v4 时从它迁移，写只写 v4。
 // 写入先写到临时文件再改名替换：写到一半断电或被杀掉，原来的存档还在，不会被写坏。
 class Storage(private val dir: File) {
     private val file get() = File(dir, "$STORE_KEY.json")
@@ -19,5 +20,6 @@ class Storage(private val dir: File) {
     }
 
     /** 读回存档：主文件不在、但上次替换到一半留下了临时文件时，用临时文件。 */
-    fun read(): String? = file.takeIf { it.exists() }?.readText() ?: File(dir, "$STORE_KEY.json.tmp").takeIf { it.exists() }?.readText()
+    fun read(key: String = STORE_KEY): String? =
+        File(dir, "$key.json").takeIf { it.exists() }?.readText() ?: File(dir, "$key.json.tmp").takeIf { it.exists() }?.readText()
 }

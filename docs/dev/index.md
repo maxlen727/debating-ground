@@ -64,9 +64,9 @@ server/
   server.ts    本机服务：托管界面、代理 /api、在内存中管理密钥
 worker/        可自部署的后端（Cloudflare Worker），多人房间在 src/room.ts
 src/
-  store.ts     全局状态与本地持久化（localStorage: sibian-v3）
+  store.ts     全局状态与本地持久化（localStorage: sibian-v4）
   actions.ts   学习流程的全部操作
-  lib/         AI 调用入口、演示模板、赛制、间隔复习、导出
+  lib/         AI 调用入口、演示模板、赛制、概念笔记、导出
   screens/     学习、准备、讨论、复盘、知识库、设置
   components/  通用界面组件
   styles.css   样式与设计令牌
@@ -85,7 +85,7 @@ docs/          本文档站（VitePress）
 - `tests/worker.test.ts`：Worker 的访问口令、跨域限制、缺少配置时拒绝服务、不跟随重定向、房间路由。
 - `tests/room.test.ts`：多人房间的加入、轮流发言、失败与重试、辩论席位、个人复盘、上限与过期删除。
 - `tests/room-flow.test.ts`：房主用真实的 actions 创建房间、邀请、发言、小结、结束并生成自己的复盘。
-- `tests/flow.test.ts`：在 Node 里直接驱动 actions，走完“准备 → 讨论 → 小结 → 复盘 → 知识卡片 → 复习”；API 失败、取消、辩论轮次。
+- `tests/flow.test.ts`：在 Node 里直接驱动 actions，走完“准备 → 讨论 → 小结 → 复盘 → 概念笔记 → 自检 → 再讨论”；API 失败、取消、辩论轮次。
 - `tests/render.test.ts`：界面冒烟测试。借 Vite 加载组件，把每个页面在几种典型状态下渲染成 HTML，确认不会崩溃、关键文字在；不跑副作用，也不检查样式，样式和动效仍要在手机宽度下人工看。
 
 改提示词时更新 `tests/ai.test.ts`，改流程时更新 `tests/flow.test.ts`。

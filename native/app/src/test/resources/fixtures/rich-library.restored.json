@@ -64,22 +64,9 @@
   "library": [
     {
       "id": "card-rich",
-      "sessionId": "s-old",
       "concept": "边际效用",
-      "topic": "第三块蛋糕为什么没有第一块好吃？",
-      "mode": "roundtable",
-      "created": 1762934400000,
-      "source": "api",
-      "model": "some-model",
-      "level": 2,
-      "due": 1763452800000,
-      "reviews": [
-        {
-          "at": 1763280000000,
-          "remembered": true
-        }
-      ],
-      "oneLine": "你分清了总效用和边际效用。",
+      "summary": "",
+      "useWhen": "",
       "points": [
         {
           "label": "每多一份带来的满足在变少",
@@ -97,12 +84,15 @@
           "note": ""
         }
       ],
+      "examples": [],
       "misconceptions": [
         {
           "said": "吃得越多越不满足",
           "fix": "是每多一份的满足变少，总满足可能还在增加"
         }
       ],
+      "boundaries": [],
+      "related": [],
       "stances": [
         {
           "said": "水比钻石更有用",
@@ -113,16 +103,10 @@
           "note": ""
         }
       ],
-      "quiz": [
+      "checks": [
         {
           "q": "第三块蛋糕带来的满足比第一块少，说明什么？",
-          "options": [
-            "总效用下降",
-            "边际效用递减",
-            "价格太高"
-          ],
-          "answer": 1,
-          "why": "每多一份的满足在变少。"
+          "answer": "边际效用递减。每多一份的满足在变少。"
         }
       ],
       "terms": [
@@ -136,7 +120,20 @@
           "definition": "只是一个词",
           "relation": ""
         }
-      ]
+      ],
+      "sources": [
+        {
+          "sessionId": "s-old",
+          "at": 1762934400000,
+          "mode": "roundtable",
+          "topic": "第三块蛋糕为什么没有第一块好吃？",
+          "oneLine": "你分清了总效用和边际效用。",
+          "source": "api",
+          "model": "some-model"
+        }
+      ],
+      "created": 1762934400000,
+      "updated": 1762934400000
     }
   ],
   "screen": "learn"

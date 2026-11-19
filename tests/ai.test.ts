@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import type { Review } from '../shared/types.ts';
 import assert from 'node:assert/strict';
 import {
   normalizeConfig,
@@ -191,17 +192,52 @@ test('structured outputs are extracted tolerantly and validated', () => {
     {
       text: JSON.stringify({
         oneLine: 'ok',
-        points: [{ label: 'a', status: 'weird', note: '' }],
+        summary: '放弃的最好选择',
+        points: [{ label: 'a', status: 'weird', note: '', evidence: '我说过的话' }],
+        examples: ['打工', '', 3],
+        related: ['沉没成本'],
+        checks: [
+          { q: '为什么？', answer: '因为', point: 'a' },
+          { q: '对不上要点', answer: '答', point: '不存在' },
+          { q: '没有参考答案' },
+        ],
         quiz: [{ q: 'q', options: ['1', '2'], answer: 7, why: '' }],
       }),
       model: 'm',
     },
-  ) as {
-    data: { points: { status: string }[]; quiz: { answer: number }[]; misconceptions: unknown[] };
-  };
+  ) as { data: Review };
   assert.equal(rev.data.points[0].status, 'partial');
-  assert.equal(rev.data.quiz[0].answer, 0);
+  assert.equal(rev.data.points[0].evidence, '我说过的话');
+  assert.equal(rev.data.summary, '放弃的最好选择');
+  assert.deepEqual(rev.data.examples, ['打工', '3']);
+  assert.deepEqual(rev.data.related, ['沉没成本']);
+  // 自检题：没有参考答案的不要；检验的要点对不上就不挂
+  assert.deepEqual(rev.data.checks, [
+    { q: '为什么？', answer: '因为', point: 'a' },
+    { q: '对不上要点', answer: '答' },
+  ]);
+  assert.equal('quiz' in rev.data, false, 'multiple-choice quizzes are gone (#140)');
   assert.deepEqual(rev.data.misconceptions, []);
+});
+
+test('review: the result can be settled into a concept note, every part traceable to the discussion', () => {
+  const p = buildRequest('review', { session: learning }).messages[0].content;
+  for (const k of [
+    '"summary"',
+    '"useWhen"',
+    '"evidence"',
+    '"examples"',
+    '"boundaries"',
+    '"related"',
+    '"checks"',
+  ])
+    assert.ok(p.includes(k), k);
+  assert.doesNotMatch(p, /"quiz"/);
+  // 只依据学习者自己的话（约定 4），不替他补全、不编原话
+  assert.match(p, /summary 和 examples 只来自学习者自己说过的话/);
+  assert.match(p, /evidence 从学习者的发言或小结里原样摘一句，找不到就留空字符串，不要编/);
+  // 自检题考能不能说出来、用出来，不考背诵
+  assert.match(p, /checks 出 3 道自检题，不给选项/);
 });
 
 test('request contract, text extraction, and no silent fallback', async () => {

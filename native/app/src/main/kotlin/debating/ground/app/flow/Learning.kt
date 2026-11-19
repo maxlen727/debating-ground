@@ -6,21 +6,19 @@ import debating.ground.app.ai.AiOutcome
 import debating.ground.app.ai.DirectSettings
 import debating.ground.app.ai.checkRemoteUrl
 import debating.ground.app.data.Branch
-import debating.ground.app.data.Card
 import debating.ground.app.data.ChatMessage
 import debating.ground.app.data.Config
-import debating.ground.app.data.DAY
 import debating.ground.app.data.Entry
+import debating.ground.app.data.MergeFrom
 import debating.ground.app.data.Misconception
+import debating.ground.app.data.Note
 import debating.ground.app.data.Persona
 import debating.ground.app.data.Plan
 import debating.ground.app.data.Point
 import debating.ground.app.data.PointProposal
 import debating.ground.app.data.Previous
-import debating.ground.app.data.QuizItem
 import debating.ground.app.data.Reflection
 import debating.ground.app.data.Remote
-import debating.ground.app.data.ReviewRecord
 import debating.ground.app.data.SavedState
 import debating.ground.app.data.SeatConfig
 import debating.ground.app.data.Session
@@ -30,7 +28,11 @@ import debating.ground.app.data.Stage
 import debating.ground.app.data.Stance
 import debating.ground.app.data.SystemLine
 import debating.ground.app.data.TermCard
-import debating.ground.app.data.schedule
+import debating.ground.app.data.checkPoint
+import debating.ground.app.data.emptyNote
+import debating.ground.app.data.mergeReview
+import debating.ground.app.data.sameConcept
+import debating.ground.app.data.weak
 import debating.ground.app.room.JoinTarget
 import debating.ground.app.room.RoomDialer
 import debating.ground.app.room.RoomLink
@@ -108,7 +110,7 @@ data class AppState(
     val config: Config = Config(),
     val plan: Plan? = null,
     val session: Session? = null,
-    val library: List<Card> = emptyList(),
+    val library: List<Note> = emptyList(),
     val ui: Ui = Ui(),
 ) {
     fun saved() = SavedState(config, plan, session, library, ui.screen)
@@ -944,7 +946,7 @@ class Learning(
 
     /* ---------- 术语小卡片 ---------- */
 
-    /** 讨论里 AI 标出的陌生词：查看释义。查过的词记在这次讨论里，复盘时存进知识卡片。 */
+    /** 讨论里 AI 标出的陌生词：查看释义。查过的词记在这次讨论里，复盘时存进这个概念的笔记。 */
     suspend fun openTerm(term: String, messageId: String) {
         val s = session ?: return
         ui { it.copy(sheet = null) }
@@ -981,11 +983,12 @@ class Learning(
             val ss = st.session
             if (ss?.id != s.id) return@update st.copy(ui = ui2)
             val glossary = ss.glossary.orEmpty().filter { it.term != term } + card
-            // 已经复盘过的讨论，直接补进知识卡片
+            // 已经复盘过的讨论，直接补进它所在的概念笔记
+            val saved = st.library.find { n -> n.sources.any { it.sessionId == ss.id } }
             st.copy(
                 ui = ui2,
                 session = ss.copy(glossary = glossary),
-                library = st.library.map { if (it.sessionId == ss.id) it.copy(terms = glossary) else it },
+                library = st.library.map { if (it === saved) it.copy(terms = it.terms.filter { t -> t.term != term } + card) else it },
             )
         }
     }
@@ -1043,55 +1046,33 @@ class Learning(
                     ),
             ),
         )
+        // 复盘合并进这个概念的笔记（一个概念一篇，#140）：没有就新建，有就沉淀进去
         update { st ->
             val ss = st.session!!.copy(review = review)
-            val existing = st.library.find { it.sessionId == ss.id }
-            val card = Card(
-                id = existing?.id ?: uid(),
-                sessionId = ss.id,
-                concept = ss.concept,
-                topic = ss.topic,
-                mode = ss.mode,
-                created = existing?.created ?: now(),
-                oneLine = review.oneLine,
-                points = review.points,
-                misconceptions = review.misconceptions,
-                stances = review.stances,
-                quiz = review.quiz,
-                source = res.source,
-                model = review.model,
-                terms = ss.glossary?.ifEmpty { null } ?: existing?.terms,
-                context = ss.context?.ifEmpty { null } ?: existing?.context,
-                level = existing?.level ?: 0,
-                due = existing?.due ?: (now() + DAY),
-                reviews = existing?.reviews ?: emptyList(),
+            val at = now()
+            val i = st.library.indexOfFirst { sameConcept(it.concept, ss.concept) }
+            val base = st.library.getOrNull(i) ?: emptyNote(uid(), ss.concept, at)
+            val note = mergeReview(
+                base,
+                review,
+                MergeFrom(ss.id, at, ss.mode, ss.concept, ss.topic, res.source, review.model, ss.context, ss.glossary),
             )
-            st.copy(
-                session = ss,
-                library = if (existing != null) st.library.map { if (it.id == existing.id) card else it } else listOf(card) + st.library,
-            )
+            // 刚更新的笔记排到最前面
+            st.copy(session = ss, library = listOf(note) + st.library.filterIndexed { j, _ -> j != i })
         }
     }
 
-    /** 复习一张卡片：记得就拉长间隔，模糊就明天再来。 */
-    fun rateCard(id: String, remembered: Boolean) {
-        val c = state.library.find { it.id == id } ?: return
-        val next = schedule(c.level, remembered, now())
+    /** 这次复盘沉淀进了哪篇笔记（复盘页上给个入口）。 */
+    fun settledInto(s: Session): Note? = state.library.find { n -> n.sources.any { it.sessionId == s.id } }
+
+    /** 自检：答出来了，它检验的要点算掌握；没答出，算模糊。 */
+    fun selfCheck(noteId: String, index: Int, ok: Boolean) {
         update { st ->
-            st.copy(
-                library = st.library.map {
-                    if (it.id ==
-                        id
-                    ) {
-                        it.copy(level = next.level, due = next.due, reviews = it.reviews + ReviewRecord(now(), remembered))
-                    } else {
-                        it
-                    }
-                },
-                ui = st.ui.copy(openCard = null, screen = "library", quiz = st.ui.quiz - "c:$id"),
-            )
+            val i = st.library.indexOfFirst { it.id == noteId }
+            val c = st.library.getOrNull(i)?.checks?.getOrNull(index) ?: return@update st
+            st.copy(library = st.library.mapIndexed { j, n -> if (j == i) checkPoint(n, c, ok, now()) else n })
         }
-        toast("下次复习：${next.days} 天后")
+        toast(if (ok) "记下了：这一点你能说清楚。" else "记下了：这一点还模糊，可以从薄弱点再讨论一次。")
     }
 
     /* ---------- 设置：自己部署的后端 ---------- */
@@ -1224,13 +1205,11 @@ class Learning(
         toast("已从这台设备上删除接口设置和 API Key。")
     }
 
-    /** 检验题选一个选项（选过就定了）。 */
-    fun pickAnswer(key: String, q: Int, o: Int) = ui { it.copy(quiz = it.quiz + (key to (it.quiz[key].orEmpty() + (q to o)))) }
-
-    /** 再讨论一次：带上上次的一句话和没掌握的地方。 */
-    suspend fun discussAgain(card: Card) {
-        update { it.copy(config = it.config.copy(concept = card.concept, mode = card.mode)) }
-        prepare(Previous(card.oneLine, weakOf(card)), card.context)
+    /** 再讨论一次：带上上次的一句话和还没弄清的地方，用上次的讨论方式。 */
+    suspend fun discussAgain(note: Note) {
+        val last = note.sources.lastOrNull()
+        update { it.copy(config = it.config.copy(concept = note.concept, mode = last?.mode ?: it.config.mode)) }
+        prepare(Previous(last?.oneLine ?: note.summary, note.weak()), note.context)
     }
 
     // 安卓返回键：先关开着的面板，知识画布里先回上一层分支，再回上一页。
@@ -1261,8 +1240,6 @@ class Learning(
         go("card")
     }
 }
-
-fun weakOf(c: Card) = c.points.filter { it.status != "mastered" }.map { it.label } + c.misconceptions.map { it.said }
 
 private fun JsonObject.str(key: String) = (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
 

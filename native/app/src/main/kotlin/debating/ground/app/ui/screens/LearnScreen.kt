@@ -80,12 +80,11 @@ import debating.ground.app.ui.theme.color
 private val EXAMPLES = listOf("机会成本", "贝叶斯定理", "边际效用", "认知失调", "光速不变原理", "梯度下降")
 
 @Composable
-fun LearnScreen(st: AppState, model: AppModel, now: Long) {
+fun LearnScreen(st: AppState, model: AppModel) {
     val t = LocalTokens.current
     val l = model.learning
     val (config, _, session, library, ui) = st
     val busy = ui.busy != null
-    val due = library.filter { it.due <= now }
     val canStart = !busy && config.concept.trim().isNotEmpty() && (ui.context == null || ui.context.text.trim().isNotEmpty())
     WithFloatingDock(dock = {
         ErrorBanner(ui.error) { l.clearError() }
@@ -126,11 +125,6 @@ fun LearnScreen(st: AppState, model: AppModel, now: Long) {
                 }
                 if (session != null && !session.finished) {
                     Banner("继续讨论", "${session.concept} · 已点亮 ${session.covered.size}/${session.keyPoints.size}") { l.go("session") }
-                }
-                if (due.isNotEmpty()) {
-                    Banner("今天有 ${due.size} 张卡片要复习", due.take(3).joinToString("、") { it.concept }, warm = true) {
-                        if (due.size == 1) l.openCard(due[0].id) else l.go("library")
-                    }
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(top = 8.dp)) {
                     Text("今天想弄懂\n什么？", style = TextStyles.display, color = t.ink.color(), modifier = Modifier.semantics { heading() })
@@ -173,7 +167,7 @@ fun LearnScreen(st: AppState, model: AppModel, now: Long) {
                 }
                 // 同学发来了邀请链接：在 App 里加入
                 GhostButton("加入同学的讨论", { l.go("join") }, Modifier.fillMaxWidth(), small = true, icon = IconPaths.PEOPLE)
-                if (library.isEmpty()) FinePrint("讨论结束后会生成理解复盘，存成知识卡片，按 1、3、7、14 天的间隔提醒你回顾。")
+                if (library.isEmpty()) FinePrint("讨论结束后会生成理解复盘，整理进这个概念的笔记；以后再讨论它，新的理解会接着沉淀进去。")
                 if (config.aiMode == "demo") {
                     FinePrint("当前是演示模式：“机会成本”有完整示例，其他概念用通用模板。要让 AI 真正参与讨论，在设置里连接你自己部署的后端。")
                 }

@@ -10,11 +10,13 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
@@ -348,7 +350,7 @@ class ScreenshotTest {
         save("phone-review")
     }
 
-    // 知识库搜索：6 张卡片，搜“成本”找到概念名里带它的两张
+    // 知识库搜索：6 篇笔记，搜“成本”找到概念名里带它的两篇（要点、来源沿用标准答案里那篇，里面没有“成本”）
     @Test
     fun librarySearch() {
         val saved = File(javaClass.classLoader!!.getResource("fixtures/rich-library.saved.json")!!.toURI()).readText()
@@ -367,10 +369,16 @@ class ScreenshotTest {
             kotlinx.serialization.json.JsonObject(
                 card + mapOf(
                     "id" to kotlinx.serialization.json.JsonPrimitive("c$i"),
-                    "sessionId" to kotlinx.serialization.json.JsonPrimitive("s$i"),
                     "concept" to kotlinx.serialization.json.JsonPrimitive(c),
-                    "oneLine" to kotlinx.serialization.json.JsonPrimitive(o),
-                    "due" to kotlinx.serialization.json.JsonPrimitive(now + (i - 1) * 86_400_000L),
+                    "summary" to kotlinx.serialization.json.JsonPrimitive(o),
+                    "useWhen" to kotlinx.serialization.json.JsonPrimitive(""),
+                    "examples" to kotlinx.serialization.json.JsonArray(emptyList()),
+                    "boundaries" to kotlinx.serialization.json.JsonArray(emptyList()),
+                    "related" to kotlinx.serialization.json.JsonArray(emptyList()),
+                    "misconceptions" to kotlinx.serialization.json.JsonArray(emptyList()),
+                    "terms" to kotlinx.serialization.json.JsonArray(emptyList()),
+                    "checks" to kotlinx.serialization.json.JsonArray(emptyList()),
+                    "updated" to kotlinx.serialization.json.JsonPrimitive(now - i * 86_400_000L),
                 ),
             )
         }
@@ -386,39 +394,28 @@ class ScreenshotTest {
         compose.setContent { Frame(dark = false, width = 390, height = 844) }
         compose.onNodeWithText("知识库").performClick()
         compose.waitForIdle()
-        compose.onNodeWithContentDescription("搜索知识卡片").performTextInput("成本")
+        compose.onNodeWithContentDescription("搜索概念笔记").performTextInput("成本")
         compose.waitForIdle()
         save("phone-library-search")
-        compose.onNodeWithText("找到 2 张卡片").assertExists()
+        compose.onNodeWithText("找到 2 个概念").assertExists()
     }
 
-    // 知识库和卡片（深色）：做一道检验题
+    // 知识库和概念笔记（深色）：翻开一道自检题的参考要点
     @Test
     fun libraryAndCardDark() {
         compose.setContent { Frame(dark = true, width = 390, height = 844) }
         finishOne(listOf("机会成本就是做一件事放弃的另一件事最好的价值。"))
         model.learning.go("library")
         compose.waitForIdle()
-        compose.onNodeWithText("全部 1").performClick()
         save("phone-library-dark")
-        val card = model.state.value.library.first()
-        model.learning.openCard(card.id)
-        if (card.quiz.isNotEmpty()) model.learning.pickAnswer("c:${card.id}", 0, (card.quiz[0].answer + 1) % card.quiz[0].options.size)
+        val note = model.state.value.library.first()
+        model.learning.openCard(note.id)
         compose.waitForIdle()
-        compose.onNodeWithText("这次回顾得怎么样？").assertIsDisplayed()
+        // 按钮滚进来时可能停在悬浮底栏下面，直接触发它的点击动作，不靠坐标
+        compose.onAllNodesWithText("想好了，看参考要点")[0].performScrollTo().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick)
+        compose.waitForIdle()
+        compose.onNodeWithText("答出来了").performScrollTo().assertIsDisplayed()
         save("phone-card-dark")
-    }
-
-    // 复习提醒打开后：可以选时间
-    @Test
-    fun settingsReminderDark() {
-        val app = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.app.Application>()
-        debating.ground.app.notify.Reminders.save(app, debating.ground.app.notify.ReminderPrefs(enabled = true, hour = 20, minute = 0))
-        compose.setContent { Frame(dark = true, width = 390, height = 844) }
-        compose.onNodeWithText("设置").performClick()
-        compose.onNodeWithText("晚上 8 点").performScrollTo()
-        compose.waitForIdle()
-        save("phone-settings-reminder-dark")
     }
 
     @Test

@@ -17,6 +17,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -138,7 +139,7 @@ class FlowTest {
 
             "finish" -> flow.finish()
 
-            "rate" -> flow.rateCard(flow.state.library.first().id, o.getValue("remembered").jsonPrimitive.boolean)
+            "check" -> flow.selfCheck(flow.state.library.first().id, o.getValue("index").jsonPrimitive.int, o.getValue("ok").jsonPrimitive.boolean)
 
             "discussAgain" -> flow.discussAgain(flow.state.library.first())
 
@@ -199,7 +200,7 @@ class FlowTest {
 
     // 和 scripts/native-fixtures.ts 的 canonical() 一样：键按字母顺序遍历，id 换成按出现顺序编号的占位符，时间戳换成 <t>
     private val idKeys = setOf("id", "sessionId", "from", "parent", "branch", "back", "messageId", "openCard", "sheet", "at")
-    private val timeKeys = setOf("created", "due", "at")
+    private val timeKeys = setOf("created", "due", "at", "updated", "checked")
 
     private fun canonical(v: JsonElement, ids: MutableMap<String, String> = mutableMapOf(), key: String = ""): JsonElement = when (v) {
         is JsonArray -> JsonArray(v.map { canonical(it, ids, key) })

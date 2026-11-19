@@ -90,7 +90,18 @@ export async function generate(): Promise<Record<string, string>> {
     reset();
     S.resetForTests();
     await setup();
-    const saved = store['sibian-v3'];
+    // 用旧存档（sibian-v3，知识库是一张张卡片）起步的场景：像打开新版 App 一样读进来，合并成概念笔记，
+    // 再存一次 v4。迁移前的旧存档也写进标准答案（.v3.json），原生版读它也要得到同样的结果（#140）
+    const legacy = store['sibian-v4'] ? undefined : store['sibian-v3'];
+    if (legacy) {
+      const ticking = Date.now;
+      Date.now = () => NOW;
+      S.resetForTests();
+      S.update(() => {});
+      Date.now = ticking;
+      out[`${name}.v3.json`] = legacy;
+    }
+    const saved = store['sibian-v4'];
     if (!saved) throw new Error(`${name}: 没有生成存档`);
     // 读回存档时把“现在”固定成 NOW：缺了时间的卡片会补上它，原生版测试传同一个 NOW
     const ticking = Date.now;
@@ -320,30 +331,146 @@ export async function generate(): Promise<Record<string, string>> {
   out['room-cases.json'] = JSON.stringify(await roomCases()) + '\n';
   // 知识库搜索：同样的卡片和查询，原生版的结果和顺序要一样
   out['search-cases.json'] = JSON.stringify(await searchCases()) + '\n';
+  // 概念笔记的合并规则（#140）：同样的复盘按同样的顺序合并，原生版每一步的笔记、导出和统计都要一样
+  out['notes-cases.json'] = JSON.stringify(await notesCases()) + '\n';
   out['meta.json'] = JSON.stringify({ now: NOW, timeZone: TIME_ZONE }, null, 2) + '\n';
   return out;
 }
 
+async function notesCases() {
+  const N = await import('../src/lib/notes.ts');
+  const { COST_REVIEW } = await import('../src/lib/demo.ts');
+  const from = (sessionId: string, at: number, extra: object = {}) => ({
+    sessionId,
+    at,
+    mode: 'socratic' as const,
+    concept: '机会成本',
+    topic: '题目 ' + sessionId,
+    source: 'api' as const,
+    model: 'm',
+    ...extra,
+  });
+  const second = {
+    oneLine: '第二次：区别讲清楚了',
+    summary: '',
+    useWhen: '要做取舍的时候',
+    points: [
+      { label: '区别于沉没成本', status: 'mastered' as const, note: '能说清了', evidence: '' },
+      {
+        label: ' 只算次优那一项 ',
+        status: 'missing' as const,
+        note: '又忘了',
+        evidence: '加起来吧',
+      },
+      { label: '新要点', status: 'partial' as const, note: '刚提到' },
+    ],
+    examples: ['周末去打工赚 300 元，放弃了在家复习的收获。', '读研三年', '', '买房还是租房'],
+    misconceptions: [{ said: '机会成本是所有放弃的选项加起来。', fix: '改过的说法' }],
+    boundaries: ['不是会计成本'],
+    related: ['机会成本', '沉没 成本', '比较优势'],
+    stances: [{ said: '应该多考虑时间', note: '理由清楚' }],
+    checks: [
+      { q: COST_REVIEW.checks![0].q, answer: '新的参考答案', point: '只算次优那一项' },
+      { q: '新的一道题', answer: '答案', point: '不存在的要点' },
+    ],
+  };
+  const many = {
+    oneLine: '第三次',
+    points: Array.from({ length: 9 }, (_, i) => ({
+      label: '要点 ' + i,
+      status: 'partial' as const,
+      note: '',
+    })),
+    examples: Array.from({ length: 8 }, (_, i) => '例子 ' + i),
+    misconceptions: [],
+    related: Array.from({ length: 10 }, (_, i) => '概念 ' + i),
+    checks: Array.from({ length: 8 }, (_, i) => ({ q: '题 ' + i, answer: '答 ' + i })),
+  };
+  const steps: unknown[] = [];
+  const record = (label: string, n: import('../src/lib/notes.ts').Note) =>
+    steps.push({
+      label,
+      note: n,
+      markdown: N.noteMarkdown(n),
+      weak: N.weakOf(n),
+      tally: N.tally(n),
+    });
+  let n = N.emptyNote('n1', '机会成本', NOW);
+  n = N.mergeReview(
+    n,
+    COST_REVIEW,
+    from('s1', NOW + 1000, {
+      context: '周末打工',
+      terms: [{ term: '稀缺性', definition: '有限', relation: '' }],
+    }),
+  );
+  record('第一次讨论', n);
+  n = N.mergeReview(n, second, from('s2', NOW + 2000, { mode: 'debate' }));
+  record('第二次讨论', n);
+  n = N.mergeReview(n, second, from('s2', NOW + 3000, { mode: 'debate' }));
+  record('同一次讨论重新复盘', n);
+  n = N.checkPoint(n, n.checks[0], false, NOW + 4000);
+  record('自检没答出', n);
+  n = N.checkPoint(
+    n,
+    n.checks.find(c => c.point === '区别于沉没成本')!,
+    true,
+    NOW + 5000,
+  );
+  record('自检答出来了', n);
+  n = N.checkPoint(n, { q: '没挂要点', answer: 'x' }, true, NOW + 6000);
+  record('自检题没挂要点', n);
+  n = N.mergeReview(n, many, from('s3', NOW + 7000));
+  record('超过上限', n);
+  return {
+    // 原生版 NotesTest 用同样的输入走一遍同样的步骤
+    inputs: { now: NOW, cost: COST_REVIEW, second, many },
+    steps,
+    same: [
+      ['机会成本', '机会成本 '],
+      ['ＡＢＣ', 'abc'],
+      ['沉没 成本', '沉没成本'],
+      ['机会成本', '沉没成本'],
+    ].map(([a, b]) => ({ a, b, same: N.sameConcept(a, b) })),
+  };
+}
+
 async function searchCases() {
   const { searchCards, normalizeForSearch } = await import('../src/lib/search.ts');
-  const base = { ...richCard, reviews: [], terms: [] };
+  const { emptyNote } = await import('../src/lib/notes.ts');
+  const note = (id: string, concept: string, extra: object) => ({
+    ...emptyNote(id, concept, NOW),
+    ...extra,
+  });
   const cards = [
-    {
-      ...base,
-      id: 'a',
-      concept: '机会成本',
-      oneLine: '放弃的最好选择的价值',
-      topic: '周末打工的代价',
-    },
-    { ...base, id: 'b', concept: '沉没成本', oneLine: '已经花掉、收不回的成本' },
-    {
-      ...base,
-      id: 'c',
-      concept: '边际效用',
+    note('a', '机会成本', {
+      summary: '放弃的最好选择的价值',
+      useWhen: '周末打工的代价',
+      points: [{ label: '包含隐性代价', status: 'mastered', note: '' }],
+    }),
+    note('b', '沉没成本', {
+      summary: '已经花掉、收不回的成本',
+      examples: ['健身卡'],
+      misconceptions: [{ said: '花了钱就要用', fix: '不影响决策' }],
+    }),
+    note('c', '边际效用', {
       terms: [{ term: '机会成本', definition: '放弃的最好选择', relation: '' }],
-    },
-    { ...base, id: 'd', concept: 'Bayes 定理', oneLine: '用证据更新信念' },
-    richCard,
+      boundaries: ['不是总效用'],
+      related: ['满足感'],
+    }),
+    note('d', 'Bayes 定理', {
+      summary: '用证据更新信念',
+      sources: [
+        {
+          sessionId: 's',
+          at: NOW,
+          mode: 'socratic',
+          topic: '体检结果的意义',
+          oneLine: '',
+          source: 'demo',
+        },
+      ],
+    }),
   ];
   const queries = [
     '',
@@ -359,6 +486,11 @@ async function searchCases() {
     '最好\u3000选择',
     'Ⅻ',
     '①',
+    '健身卡',
+    '总效用',
+    '体检',
+    '隐性',
+    '满足感',
   ];
   return {
     cards,
@@ -576,8 +708,8 @@ export const FLOW_SCRIPTS: { name: string; ops: Op[] }[] = [
       { op: 'send', text: '比如你周六去打工，就不能去做家教。' },
       { op: 'teaching' },
       { op: 'finish' },
-      { op: 'rate', remembered: true },
-      { op: 'rate', remembered: false },
+      { op: 'check', index: 0, ok: true },
+      { op: 'check', index: 1, ok: false },
       { op: 'discussAgain' },
       { op: 'start' },
     ],
@@ -847,7 +979,7 @@ const ID_KEYS = new Set([
   'sheet',
   'at',
 ]);
-const TIME_KEYS = new Set(['created', 'due', 'at']);
+const TIME_KEYS = new Set(['created', 'due', 'at', 'updated', 'checked']);
 // 规整：id 换成按出现顺序编号的占位符，时间戳换成 <t>。键按字母顺序遍历，两边的顺序一致
 export function canonical(v: unknown, ids = new Map<string, string>(), key = ''): unknown {
   if (Array.isArray(v)) return v.map(x => canonical(x, ids, key));
@@ -983,8 +1115,8 @@ async function recordFlows(
         case 'finish':
           await A.finish();
           break;
-        case 'rate':
-          A.rateCard(S.getState().library[0].id, o.remembered as boolean);
+        case 'check':
+          A.selfCheck(S.getState().library[0].id, o.index as number, o.ok as boolean);
           break;
         case 'discussAgain':
           await A.discussAgain(S.getState().library[0]);

@@ -99,6 +99,7 @@ test('the other discussion modes render their session page', async () => {
 });
 
 test('a damaged save still renders the home page', async () => {
+  delete store['sibian-v4'];
   store['sibian-v3'] = JSON.stringify({
     session: { id: 1, entries: 'bad' },
     plan: 5,

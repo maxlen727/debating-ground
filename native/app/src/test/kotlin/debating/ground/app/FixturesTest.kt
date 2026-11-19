@@ -39,8 +39,19 @@ class FixturesTest {
     @Test
     fun restoringASaveGivesExactlyWhatTheWebAppGives() {
         for (name in scenarios) {
-            val native = restoreSaved(read("$name.saved.json"), null, now)
+            val native = restoreSaved(read("$name.saved.json"), null, null, now)
             assertEquals("场景 $name 读回存档的结果", normalize(web(name)), normalize(native))
+        }
+    }
+
+    // 概念笔记以前的旧存档（sibian-v3，知识库是卡片）：迁移以后和网页版读同一份旧存档的结果一样（#140）
+    @Test
+    fun migratingAnOldCardsSaveGivesExactlyWhatTheWebAppGives() {
+        val legacy = scenarios.filter { File(dir, "$it.v3.json").exists() }
+        assertTrue("没有旧存档的场景，先运行 npm run fixtures:native", legacy.isNotEmpty())
+        for (name in legacy) {
+            val native = restoreSaved(null, read("$name.v3.json"), null, now)
+            assertEquals("场景 $name 迁移旧存档的结果", normalize(web(name)), normalize(native))
         }
     }
 
@@ -50,7 +61,7 @@ class FixturesTest {
     @Test
     fun typedModelsRoundTripLikeTheWebApp() {
         for (name in scenarios) {
-            val state = loadState(read("$name.saved.json"), null, now)
+            val state = loadState(read("$name.saved.json"), null, null, now)
             val typed = SibianJson.encodeToJsonElement(SavedState.serializer(), state)
             assertEquals("场景 $name 类型化后写回的 JSON", normalize(web(name), dropNulls = true), normalize(typed, dropNulls = true))
         }
@@ -59,7 +70,7 @@ class FixturesTest {
     @Test
     fun markdownExportMatchesTheWebApp() {
         for (name in scenarios) {
-            val state = loadState(read("$name.saved.json"), null, now)
+            val state = loadState(read("$name.saved.json"), null, null, now)
             assertEquals("场景 $name 导出的知识库", read("$name.library.md"), libraryMarkdown(state.library, zone))
             val session = File(dir, "$name.session.md")
             if (session.exists()) {

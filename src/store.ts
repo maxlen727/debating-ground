@@ -20,7 +20,14 @@ import type {
 import type { PointProposal, RoomMember, RoomStatus, Speaker } from '../shared/room.ts';
 import { DEFAULT_VOICE } from '../shared/speech.ts';
 import { holdingRenders, transition, type View } from './lib/motion.ts';
-import { restoreConfig, restoreLibrary, restorePlan, restoreSession } from './lib/restore.ts';
+import {
+  restoreCards,
+  restoreConfig,
+  restoreNotes,
+  restorePlan,
+  restoreSession,
+} from './lib/restore.ts';
+import { notesFromCards, type Note } from './lib/notes.ts';
 
 export type Screen =
   'learn' | 'prepare' | 'session' | 'review' | 'library' | 'card' | 'settings' | 'join';
@@ -119,21 +126,6 @@ export interface Branch {
   gist?: string;
   created: number;
 }
-export interface Card extends Review {
-  id: string;
-  sessionId: string;
-  concept: string;
-  topic: string;
-  mode: ModeId;
-  created: number;
-  source: Source;
-  model?: string;
-  level: number;
-  due: number;
-  reviews: { at: number; remembered: boolean }[];
-  terms?: TermCard[]; // 讨论中遇到并点开看过的术语
-  context?: string; // 讨论时交代的背景，再讨论一次时沿用
-}
 export interface AiStatus {
   available: boolean;
   configured: boolean;
@@ -156,7 +148,6 @@ export interface Ui {
   explain: { kind: ExplainKind; label: string; quote: string; text: string } | null;
   sheet: string | null; // 打开操作面板的消息 id
   openCard: string | null;
-  quiz: Record<string, Record<number, number>>;
   join: { backend: string; roomId: string; invite: string } | null; // 打开邀请链接后，等待填写名字
   invite: boolean; // 显示邀请链接面板
   term: (TermCard & { messageId: string }) | null; // 打开的术语卡片；definition 为空表示正在查
@@ -166,12 +157,13 @@ export interface AppState {
   config: Config;
   plan: Plan | null;
   session: Session | null;
-  library: Card[];
+  library: Note[]; // 概念笔记：一个概念一篇，最近更新的在前（#140）
   ai: AiStatus;
   ui: Ui;
 }
 
-const STORE = 'sibian-v3';
+// v4：知识库从“一次讨论一张卡片”改成“一个概念一篇笔记”（#140）。旧存档读进来时合并成笔记，旧的键不删
+const STORE = 'sibian-v4';
 
 export const defaultConfig = (): Config => ({
   concept: '机会成本',
@@ -208,7 +200,6 @@ const defaultUi = (): Ui => ({
   explain: null,
   sheet: null,
   openCard: null,
-  quiz: {},
   join: null,
   invite: false,
   term: null,
@@ -239,7 +230,11 @@ function load(): AppState {
   };
   try {
     const raw: unknown = JSON.parse(localStorage.getItem(STORE) ?? 'null');
-    const saved = isObj(raw) ? raw : null;
+    const v3: unknown = isObj(raw) ? null : JSON.parse(localStorage.getItem('sibian-v3') ?? 'null');
+    const saved = isObj(raw) ? raw : isObj(v3) ? v3 : null;
+    // v3 及以前的知识库是一张张卡片：按概念合并成笔记
+    const library = (lib: unknown) =>
+      isObj(raw) ? restoreNotes(lib) : notesFromCards(restoreCards(lib));
     // 反向讲解并进了苏格拉底追问（“换我来讲”）：选着它的设置改过来，按它准备的计划作废；进行中的讨论和知识卡片照旧
     if (saved && isObj(saved.config) && saved.config.mode === 'teach')
       saved.config.mode = 'socratic';
@@ -252,7 +247,7 @@ function load(): AppState {
         config: restoreConfig(saved.config, base.config),
         plan: restorePlan(saved.plan),
         session,
-        library: restoreLibrary(saved.library),
+        library: library(saved.library),
         ui: {
           ...base.ui,
           screen: saved.screen === 'session' && session && !session.finished ? 'session' : 'learn',
@@ -262,7 +257,7 @@ function load(): AppState {
     // v0.4 的知识卡片结构相同，迁移过来
     const v2: unknown = JSON.parse(localStorage.getItem('sibian-v2') ?? 'null');
     if (isObj(v2) && Array.isArray(v2.library))
-      return { ...base, library: restoreLibrary(v2.library) };
+      return { ...base, library: notesFromCards(restoreCards(v2.library)) };
   } catch {
     /* 读取失败就从头开始 */
   }
