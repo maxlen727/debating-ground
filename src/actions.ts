@@ -11,7 +11,7 @@ import type {
 } from '../shared/types.ts';
 import { getState, go, toast, typing, uid, update } from './store.ts';
 import { forceNav } from './lib/motion.ts';
-import type { Card, Config, Screen, Session } from './store.ts';
+import type { Config, Screen, Session } from './store.ts';
 import { runAI } from './lib/ai.ts';
 import { clearLive } from './lib/stream.ts';
 import { playingId, speakText, startVoice, stopVoice } from './lib/voice.ts';
@@ -19,7 +19,7 @@ import { cancelListening, listeningPhase, startListening, stopListening } from '
 import * as room from './lib/room.ts';
 import { debateTurns, seatName, slots } from './lib/debate.ts';
 import { branchChain, pathEntries } from './lib/canvas.ts';
-import { DAY, schedule } from './lib/srs.ts';
+import { checkPoint, emptyNote, mergeReview, sameConcept, weakOf, type Note } from './lib/notes.ts';
 
 const TONES = ['c', 'a', 'b'] as const;
 const session = () => getState().session;
@@ -963,7 +963,7 @@ export function bringBack(gist: string) {
 }
 
 /* ---------- 术语小卡片 ---------- */
-// 讨论里 AI 标出的陌生词：轻点查看释义。查过的词记在这次讨论里，复盘时存进知识卡片。
+// 讨论里 AI 标出的陌生词：轻点查看释义。查过的词记在这次讨论里，复盘时存进这个概念的笔记。
 export async function openTerm(term: string, messageId: string) {
   const s = session();
   if (!s) return;
@@ -1001,9 +1001,9 @@ export async function openTerm(term: string, messageId: string) {
     const ss = st.session;
     if (ss?.id !== s.id) return;
     ss.glossary = [...(ss.glossary ?? []).filter(g => g.term !== term), card];
-    // 已经复盘过的讨论，直接补进知识卡片
-    const saved = st.library.find(c => c.sessionId === ss.id);
-    if (saved) saved.terms = ss.glossary;
+    // 已经复盘过的讨论，直接补进它所在的概念笔记
+    const saved = st.library.find(n => n.sources.some(x => x.sessionId === ss.id));
+    if (saved) saved.terms = [...saved.terms.filter(t => t.term !== term), card];
   });
 }
 
@@ -1052,62 +1052,52 @@ export async function generateReview() {
         .then(r => r && { ...r, source: 'api' as const })
     : await runAI('review', { session: snapshot(s, true) }, '正在复盘整场讨论');
   if (!res || session()?.id !== s.id) return;
+  // 复盘合并进这个概念的笔记（一个概念一篇，#140）：没有就新建，有就沉淀进去
   update(st => {
     const ss = st.session!;
     ss.review = { ...res.data, source: res.source, model: res.model };
-    const existing = st.library.find(c => c.sessionId === ss.id);
-    const card: Card = {
-      id: existing?.id ?? uid(),
+    const now = Date.now();
+    const i = st.library.findIndex(n => sameConcept(n.concept, ss.concept));
+    const base = i >= 0 ? st.library[i] : emptyNote(uid(), ss.concept, now);
+    const note = mergeReview(base, res.data, {
       sessionId: ss.id,
+      at: now,
+      mode: ss.mode,
       concept: ss.concept,
       topic: ss.topic,
-      mode: ss.mode,
-      created: existing?.created ?? Date.now(),
-      ...res.data,
       source: res.source,
       model: res.model,
-      terms: ss.glossary?.length ? ss.glossary : existing?.terms,
-      context: ss.context || existing?.context,
-      level: existing?.level ?? 0,
-      due: existing?.due ?? Date.now() + DAY,
-      reviews: existing?.reviews ?? [],
-    };
-    if (existing) Object.assign(existing, card);
-    else st.library.unshift(card);
+      context: ss.context,
+      terms: ss.glossary,
+    });
+    // 刚更新的笔记排到最前面
+    st.library = [note, ...st.library.filter((_, j) => j !== i)];
   });
 }
 
-export function rateCard(id: string, remembered: boolean) {
-  const c = getState().library.find(x => x.id === id);
-  if (!c) return;
-  const next = schedule(c.level, remembered);
-  update(st => {
-    const card = st.library.find(x => x.id === id)!;
-    card.level = next.level;
-    card.due = next.due;
-    card.reviews.push({ at: Date.now(), remembered });
-    delete st.ui.quiz['c:' + id];
-    st.ui.openCard = null;
-    st.ui.screen = 'library';
-  });
-  toast(`下次复习：${next.days} 天后`);
+/** 这次复盘沉淀进笔记的情况：新增了几个要点、更新了几个（复盘页上告诉学习者）。 */
+export function settledInto(s: Session) {
+  const note = getState().library.find(n => n.sources.some(x => x.sessionId === s.id));
+  return note ?? null;
 }
-export const weakOf = (c: Card) =>
-  c.points
-    .filter(p => p.status !== 'mastered')
-    .map(p => p.label)
-    .concat(c.misconceptions.map(m => m.said));
-export function discussAgain(card: Card) {
+
+// 自检：答出来了，它检验的要点算掌握；没答出，算模糊
+export function selfCheck(noteId: string, index: number, ok: boolean) {
   update(st => {
-    st.config.concept = card.concept;
-    st.config.mode = card.mode;
+    const i = st.library.findIndex(n => n.id === noteId);
+    const c = st.library[i]?.checks[index];
+    if (!c) return;
+    st.library[i] = checkPoint(st.library[i], c, ok, Date.now());
   });
-  return prepare({ oneLine: card.oneLine, weak: weakOf(card) }, card.context);
+  toast(ok ? '记下了：这一点你能说清楚。' : '记下了：这一点还模糊，可以从薄弱点再讨论一次。');
 }
-export function pickAnswer(key: string, q: number, o: number) {
+export function discussAgain(note: Note) {
+  const last = note.sources.at(-1);
   update(st => {
-    st.ui.quiz[key] = { ...(st.ui.quiz[key] ?? {}), [q]: o };
+    st.config.concept = note.concept;
+    if (last) st.config.mode = last.mode;
   });
+  return prepare({ oneLine: last?.oneLine ?? note.summary, weak: weakOf(note) }, note.context);
 }
 export function openCard(id: string) {
   update(st => {

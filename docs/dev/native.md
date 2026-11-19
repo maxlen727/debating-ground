@@ -33,9 +33,9 @@ cd native
 
 ## 数据层和网页版的标准答案
 
-数据层在 `data/`：数据结构、存档检查、间隔复习、Markdown 导出、本地存储。存档格式和网页版的 `sibian-v3` 完全一致，导出文件可以互通，替换旧 App 时（M6）也能直接迁移知识库。
+数据层在 `data/`：数据结构、存档检查、概念笔记的合并（`Notes.kt`）、Markdown 导出、本地存储。存档格式和网页版的 `sibian-v4` 完全一致（读不到时从 `sibian-v3.json` 迁移，旧文件不动），导出文件可以互通，替换旧 App 时（M6）也能直接迁移知识库。
 
-为了让两边的逻辑不走样，`scripts/native-fixtures.ts` 用**网页版的真实代码**跑出几个场景的存档：做完的讨论、带分支的画布、进行中的辩论、内容很全的知识卡片、写坏的存档、旧版本的存档。它再记下网页版读回这些存档的结果和导出的 Markdown，放在 `native/app/src/test/resources/fixtures/`。原生版的 `FixturesTest` 读同样的存档，结果必须逐字一致。
+为了让两边的逻辑不走样，`scripts/native-fixtures.ts` 用**网页版的真实代码**跑出几个场景的存档：做完的讨论、带分支的画布、进行中的辩论、内容很全的知识库、写坏的存档、旧版本的存档。它再记下网页版读回这些存档的结果和导出的 Markdown，放在 `native/app/src/test/resources/fixtures/`。原生版的 `FixturesTest` 读同样的存档，结果必须逐字一致。
 
 - 改了存档结构、`src/lib/restore.ts` 或 `src/lib/exporter.ts`，运行 `npm run fixtures:native` 重新生成，再跑原生测试，看看原生版要跟着改什么。
 - 网页版的 `tests/native-fixtures.test.ts` 会检查标准答案有没有过期，忘了重新生成就会失败。
@@ -76,11 +76,11 @@ AI 层在 `ai/`，提供三种来源：
 
 ## 学习流程
 
-学习流程在 `flow/Learning.kt`，和网页版 `src/actions.ts` 的单人部分一一对应：准备、开始讨论、发言、提示、小结、快捷追问、术语、补充要点、“换我来讲”、知识画布的分支、辩论赛程、结束、复盘、复习、再讨论一次。界面只负责展示和调用这些操作。
+学习流程在 `flow/Learning.kt`，和网页版 `src/actions.ts` 的单人部分一一对应：准备、开始讨论、发言、提示、小结、快捷追问、术语、补充要点、“换我来讲”、知识画布的分支、辩论赛程、结束、复盘、自检、再讨论一次。界面只负责展示和调用这些操作。
 
 - 状态是不可变的 `AppState`，每个操作通过 `update` 整体替换，和网页版的 `update(draft => …)` 一个思路。时间和 id 由外部传入，测试时可以固定。
 - 发给 AI 的快照（`flow/Snapshot.kt`）决定了真实的 AI 能看到什么，必须和网页版一模一样。
-- **剧本式标准答案**：`scripts/native-fixtures.ts` 用网页版在演示模式下跑五段剧本（追问的完整闭环、圆桌、知识画布的分支树、一整场辩论、各种边界情况），每一步之后记下规整后的状态、当前快照和复盘用的完整快照。`FlowTest` 按同样的剧本操作，逐步比对。id 和时间戳比较前换成占位符；时间相关的逻辑（间隔复习）另有单测。
+- **剧本式标准答案**：`scripts/native-fixtures.ts` 用网页版在演示模式下跑五段剧本（追问的完整闭环、圆桌、知识画布的分支树、一整场辩论、各种边界情况），每一步之后记下规整后的状态、当前快照和复盘用的完整快照。`FlowTest` 按同样的剧本操作，逐步比对。id 和时间戳比较前换成占位符；概念笔记的合并、自检和导出另有逐步比对（`NotesTest`，`notes-cases.json`）；旧存档迁移成笔记的结果也和网页版比对（`*.v3.json`）。
 - 剧本里的操作目标（比如“最后一条 AI 发言”）两边用同一套规则推出来。改了剧本，两边的执行器都要跟着改。
 
 ## 界面
@@ -93,7 +93,6 @@ AI 层在 `ai/`，提供三种来源：
 - 讨论页在 `ui/screens/DiscussScreen.kt`（页面、标题和要点进度），讨论记录在 `DiscussThread.kt`，输入栏和语音按钮在 `DiscussComposer.kt`，面板在 `DiscussSheets.kt`。讨论记录倒着排（`reverseLayout`），AI 逐字生成时自动贴着底部。逐字显示在 `ui/Reveal.kt`，生成中的气泡和完成后的正式发言用同一个 id 记进度，衔接时不会从头再写；关掉动效时直接显示全文。底部面板在 `ui/Sheet.kt`，宽屏时变成居中的对话框。
 - 朗读和语音输入在 `speech/`（网页版 `lib/voice.ts`、`lib/listen.ts`）：`Voice` 按 `splitForSpeech`（和 `shared/speech.ts` 逐条比对，`speech-cases.json`）分段请求后端的 `/api/tts`，收到一段播一段；`Listen` 用 16k PCM 帧经后端的 `/api/stt` 转给讯飞，访问口令在第一条消息里。播放器、麦克风和 WebSocket 是接口，`AndroidSpeech.kt` 里是安卓实现（`MediaPlayer`、`AudioRecord`、OkHttp），`SpeechTest` 用假的实现测流程。只在“我的后端”模式、后端报告讯飞已配置时出现（`GET /api/config`，打开 App 时问一次）。后端的 `/api/stt` 只接受带 `Origin` 的连接，App 用 `https://localhost`（`ALLOWED_ORIGINS` 默认就有）。
 - 多人房间在 `room/`（规则，和网页版 `src/lib/room.ts` 用 `room-cases.json` 逐条比对：状态映射、邀请链接、倒计时、轮到谁、建房间时提交的内容）和 `flow/Rooms.kt`（连接、重连、个人请求、房间里的操作）。连接是接口（`RoomDialer`），安卓上是 OkHttp，`RoomFlowTest` 用假的连接模拟后端。`Session.room` 仍按网页版存档的格式保存（`RoomLink`），凭据只在那里，不进讨论记录、知识库和导出。邀请链接指向公开的网页版，没装 App 的同学在浏览器里加入；App 里在学习页贴链接加入。界面在 `ui/screens/RoomParts.kt`。
-- 复习提醒在 `notify/Reminders.kt`：设置是这台设备自己的（SharedPreferences），不进和网页版共用的存档；用不精确的每日闹钟（`setInexactRepeating`，不要精确闹钟权限），`ReminderReceiver` 在闹钟到点时读存档、有到期卡片才发通知，在重启和 App 更新后重新排上闹钟。通知只有概念名。`ReminderTest` 用 Robolectric 跑排闹钟和发通知。
 - 动效在 `ui/Motion.kt`，照网页版 `lib/motion.ts` 的“从哪里来，回哪里去”：换页由 `PageHost` 按 `navKind` 判断方向（往里走、返回、切标签、卡片放大和缩回，`MotionTest`），旧页面带着离开那一刻的状态退场；面板交给 `SheetHost` 托管，关上时带着原来的内容沉下去；错误提示、忙碌条、提示卡用 `Appear` 展开收起；讨论里新来的条目用 `RiseIn` 淡入上浮，翻回去看旧的不重播。返回键用 `PredictiveBackHandler`（Android 14 起的返回预览）：手指一滑，有面板时面板跟着往下沉，没有时当前页面跟着缩小成一张卡片（`followBack`），松手才返回，反悔就弹回（`BackGestureTest`）。`LocalMotion` 为 false（系统移除动画、截图测试）时全部直接切换。
 - 知识画布的部件在 `ui/screens/CanvasParts.kt`，分支图的布局算法（`data/Canvas.kt` 的 `graph()`）和网页版 `graphOf` 一样，`FlowTest` 在画布剧本的每一步逐字比对；辩论台面、空讲台和双方阵容在 `ui/screens/DebateParts.kt`。
 - 复盘、知识库、卡片、设置在 `ui/screens/ReviewScreen.kt`、`LibraryScreen.kt`、`SettingsScreen.kt`。导出交给系统的分享面板（`shareMarkdown`），导出内容由 `data/Export.kt` 生成、和网页版逐字一致。设置页的“连接并测试”在流程层的 `connectRemote`：先保存地址和口令，测试通过才切换到“我的后端”。

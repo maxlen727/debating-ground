@@ -41,7 +41,7 @@ import androidx.compose.ui.unit.dp
 
 // 页面和面板的连贯动效：从哪里来，回哪里去。照网页版 src/lib/motion.ts 和 styles.css 的“连贯动效”一节：
 // 往里走（学习 → 准备 → 讨论 → 复盘）新页从右边滑进来、旧页往左退半步；返回反过来；
-// 底部导航切标签按标签顺序左右滑；知识卡片从列表里放大成整页，返回时缩回去。
+// 底部导航切标签按标签顺序左右滑；概念笔记从列表里放大成整页，返回时缩回去。
 
 /** 页面的层级：越深越“往里走”（和网页版 DEPTH 一致）。 */
 private val DEPTH = mapOf("learn" to 0, "library" to 0, "settings" to 0, "prepare" to 1, "card" to 1, "join" to 1, "session" to 2, "review" to 3)

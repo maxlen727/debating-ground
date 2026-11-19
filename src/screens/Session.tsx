@@ -336,7 +336,7 @@ export function Session() {
                 </p>
               )}
               <p className="fineprint">
-                {s.review ? '已存进这次的知识卡片。' : '已记下，复盘后会和这次的知识卡片存在一起。'}
+                {s.review ? '已存进这个概念的笔记。' : '已记下，复盘后会存进这个概念的笔记。'}
                 查词不占用发言轮次。
               </p>
               {canvas && !s.finished && (

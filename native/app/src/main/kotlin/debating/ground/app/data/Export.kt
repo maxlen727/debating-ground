@@ -9,57 +9,43 @@ import java.util.TimeZone
 
 // 网页版用 toLocaleDateString('zh-CN')：年/月/日，月和日不补零。
 // 用 SimpleDateFormat 而不是 java.time：后者要安卓 8.0 才有，App 最低支持安卓 7.0
-private fun date(millis: Long, zone: TimeZone) = SimpleDateFormat("yyyy/M/d", Locale.ROOT).apply { timeZone = zone }.format(Date(millis))
+internal fun date(millis: Long, zone: TimeZone) = SimpleDateFormat("yyyy/M/d", Locale.ROOT).apply { timeZone = zone }.format(Date(millis))
 
-/** 一张卡片（或一次讨论的复盘）的 Markdown。 */
+/** 一次讨论的复盘的 Markdown。 */
 fun reviewMarkdown(
     concept: String,
     topic: String,
     mode: String,
     created: Long,
-    oneLine: String,
-    points: List<Point>,
-    misconceptions: List<Misconception>,
-    stances: List<Stance>?,
-    quiz: List<QuizItem>,
+    r: SessionReview,
     terms: List<TermCard>?,
     zone: TimeZone = TimeZone.getDefault(),
 ): String = buildString {
-    append("## $concept\n\n讨论题：$topic\n讨论方式：${modeName(mode)} · ${date(created, zone)}\n\n$oneLine\n\n")
-    append(points.joinToString("\n") { "- [${STATUS_LABEL[it.status] ?: it.status}] ${it.label}：${it.note}" })
-    if (misconceptions.isNotEmpty()) {
-        append("\n\n需要纠正的理解：\n")
-        append(misconceptions.joinToString("\n") { "- ${it.said} → ${it.fix}" })
+    fun list(title: String, lines: List<String>) {
+        if (lines.isNotEmpty()) append("\n\n$title：\n" + lines.joinToString("\n"))
     }
-    if (!stances.isNullOrEmpty()) {
-        append("\n\n你的立场：\n")
-        append(stances.joinToString("\n") { "- ${it.said}${if (it.note.isNotEmpty()) "（${it.note}）" else ""}" })
-    }
-    if (quiz.isNotEmpty()) {
-        append("\n\n练习题：\n")
-        append(
-            quiz.withIndex().joinToString("\n") { (i, q) ->
-                "${i + 1}. ${q.q}\n" +
-                    q.options.withIndex().joinToString("\n") { (j, o) -> "   ${letter(j)}. $o" } +
-                    "\n   答案：${letter(q.answer)}。${q.why}"
-            },
-        )
-    }
-    if (!terms.isNullOrEmpty()) {
-        append("\n\n这次遇到的新词：\n")
-        append(terms.joinToString("\n") { "- ${it.term}：${it.definition}${if (it.relation.isNotEmpty()) "（${it.relation}）" else ""}" })
-    }
+    append("## $concept\n\n讨论题：$topic\n讨论方式：${modeName(mode)} · ${date(created, zone)}\n\n${r.oneLine}")
+    if (!r.summary.isNullOrEmpty()) append("\n\n用你的话说：${r.summary}")
+    if (!r.useWhen.isNullOrEmpty()) append("\n\n什么时候想到它：${r.useWhen}")
+    append("\n\n")
+    append(
+        r.points.joinToString("\n") {
+            "- [${STATUS_LABEL[it.status] ?: it.status}] ${it.label}：${it.note}${if (!it.evidence.isNullOrEmpty()) "（你说过：“${it.evidence}”）" else ""}"
+        },
+    )
+    list("你举过的例子", r.examples.orEmpty().map { "- $it" })
+    list("需要纠正的理解", r.misconceptions.map { "- ${it.said} → ${it.fix}" })
+    list("边界", r.boundaries.orEmpty().map { "- $it" })
+    list("你的立场", r.stances.orEmpty().map { "- ${it.said}${if (it.note.isNotEmpty()) "（${it.note}）" else ""}" })
+    list("相关概念", if (r.related.isNullOrEmpty()) emptyList() else listOf(r.related.joinToString("、")))
+    list("自检", r.checks.orEmpty().withIndex().map { (i, c) -> "${i + 1}. ${c.q}\n   参考：${c.answer}" })
+    list("这次遇到的新词", terms.orEmpty().map { "- ${it.term}：${it.definition}${if (it.relation.isNotEmpty()) "（${it.relation}）" else ""}" })
     append("\n")
 }
 
-// 'ABCD'[i]：超出范围时网页版得到 undefined
-private fun letter(i: Int) = "ABCD".getOrNull(i)?.toString() ?: "undefined"
-
-fun Card.markdown(zone: TimeZone = TimeZone.getDefault()) =
-    reviewMarkdown(concept, topic, mode, created, oneLine, points, misconceptions, stances, quiz, terms, zone)
-
-/** 整个知识库。 */
-fun libraryMarkdown(cards: List<Card>, zone: TimeZone = TimeZone.getDefault()) = "# 思辨场知识库\n\n" + cards.joinToString("\n---\n\n") { it.markdown(zone) }
+/** 整个知识库：一篇篇概念笔记连在一起；单独导出一篇时（[noteMarkdown]）带上 name / description 开头。 */
+fun libraryMarkdown(notes: List<Note>, zone: TimeZone = TimeZone.getDefault()) =
+    "# 思辨场知识库\n\n" + notes.joinToString("\n---\n\n") { noteMarkdown(it, false, zone) }
 
 private fun entriesMarkdown(list: List<Entry>): String = list.mapNotNull { m ->
     when (m) {
@@ -99,6 +85,6 @@ fun sessionMarkdown(s: Session, zone: TimeZone = TimeZone.getDefault()): String 
         (
             s.review?.let { r ->
                 "\n# 理解复盘\n\n" +
-                    reviewMarkdown(s.concept, s.topic, s.mode, s.created, r.oneLine, r.points, r.misconceptions, r.stances, r.quiz, s.glossary, zone)
+                    reviewMarkdown(s.concept, s.topic, s.mode, s.created, r, s.glossary, zone)
             } ?: ""
             )

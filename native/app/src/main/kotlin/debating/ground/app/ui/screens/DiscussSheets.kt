@@ -178,7 +178,7 @@ private fun TermSheet(s: Session, st: AppState, model: AppModel) {
                     Text(term.relation, style = TextStyles.small.copy(lineHeight = 1.75.em), color = t.ink.color())
                 }
             }
-            FinePrint((if (s.review != null) "已存进这次的知识卡片。" else "已记下，复盘后会和这次的知识卡片存在一起。") + "查词不占用发言轮次。")
+            FinePrint((if (s.review != null) "已存进这个概念的笔记。" else "已记下，复盘后会存进这个概念的笔记。") + "查词不占用发言轮次。")
             if (s.mode == "canvas" && !s.finished) {
                 SecondaryButton(
                     "展开一个分支，聊聊「${term.term}」",

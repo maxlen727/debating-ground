@@ -5,6 +5,7 @@ import debating.ground.app.ai.Ai
 import debating.ground.app.ai.DirectAccess
 import debating.ground.app.ai.KeystoreDirectStore
 import debating.ground.app.ai.SandboxPrompts
+import debating.ground.app.data.CARDS_STORE_KEY
 import debating.ground.app.data.SavedState
 import debating.ground.app.data.SibianJson
 import debating.ground.app.data.Storage
@@ -61,7 +62,7 @@ class AppModel(
     val speech: Speech?
 
     init {
-        val saved = runCatching { loadState(storage.read(), null, System.currentTimeMillis()) }.getOrElse { SavedState() }
+        val saved = runCatching { loadState(storage.read(), storage.read(CARDS_STORE_KEY), null, System.currentTimeMillis()) }.getOrElse { SavedState() }
         val initial = AppState(saved.config, saved.plan, saved.session, saved.library, Ui(screen = saved.screen, direct = DirectStatus.of(direct?.settings())))
         _state = MutableStateFlow(initial)
         learning = Learning(

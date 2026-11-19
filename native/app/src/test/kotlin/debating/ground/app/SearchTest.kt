@@ -1,6 +1,6 @@
 package debating.ground.app
 
-import debating.ground.app.data.Card
+import debating.ground.app.data.Note
 import debating.ground.app.data.SibianJson
 import debating.ground.app.data.normalizeForSearch
 import debating.ground.app.data.searchCards
@@ -13,12 +13,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.io.File
 
-// 知识库搜索：同样的卡片和查询，结果和顺序都要和网页版 src/lib/search.ts 一样（search-cases.json）
+// 知识库搜索：同样的笔记和查询，结果和顺序都要和网页版 src/lib/search.ts 一样（search-cases.json）
 class SearchTest {
     @Test
     fun searchMatchesTheWeb() {
         val o = SibianJson.parseToJsonElement(File(javaClass.classLoader!!.getResource("fixtures/search-cases.json")!!.toURI()).readText()).jsonObject
-        val cards = SibianJson.decodeFromJsonElement(ListSerializer(Card.serializer()), o.getValue("cards"))
+        val cards = SibianJson.decodeFromJsonElement(ListSerializer(Note.serializer()), o.getValue("cards"))
         for (c in o.getValue("queries") as JsonArray) {
             val q = c.jsonObject
             val query = q.getValue("q").jsonPrimitive.content

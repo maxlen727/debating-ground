@@ -4,7 +4,7 @@ layout: home
 hero:
   name: 思辨场
   text: 把一个概念真正聊明白
-  tagline: 写下你想弄懂的概念，和 AI 讨论、追问、辩论。讲清楚的要点会被点亮，结束后生成理解复盘，存进知识库，按间隔提醒你回顾。
+  tagline: 写下你想弄懂的概念，和 AI 讨论、追问、辩论。讲清楚的要点会被点亮，结束后生成理解复盘，整理成这个概念的笔记，越讨论越完整。
   image:
     src: /screenshots/session.png
     alt: 思辨场的讨论界面
@@ -29,9 +29,9 @@ features:
   - title: 停下来说说
     details: 讨论进行到一半，会请你用自己的话写一句小结。AI 对照要点告诉你哪里说对了、最关键的遗漏是什么。
   - title: 复盘只看你自己
-    details: 结束后逐条评估要点的掌握情况，指出需要纠正的理解，出几道检验题。只依据你本人的发言，AI 说过的不算你懂了。
+    details: 结束后逐条评估要点的掌握情况，指出需要纠正的理解，出几道自检题。只依据你本人的发言，AI 说过的不算你懂了。
   - title: 落盘，再回顾
-    details: 每次复盘都存成一张知识卡片，按 1、3、7、14 天的间隔提醒你回顾。复习时先凭记忆做题，再看上次的复盘。
+    details: 一个概念一篇笔记：它是什么、什么时候想到它、要点和你说过的话、例子、易错、边界、自检题。再讨论同一个概念，新的理解接着沉淀进去。
 ---
 
 <div class="home-shots">
@@ -47,7 +47,7 @@ features:
   <figure><img src="/screenshots/ask.png" alt="轻点发言弹出追问面板"><figcaption>轻点一句话，就能追问</figcaption></figure>
   <figure><img src="/screenshots/reflect.png" alt="小结卡：用自己的话说说"><figcaption>停下来，用自己的话说说</figcaption></figure>
   <figure><img src="/screenshots/review.png" alt="理解复盘：逐条评估要点"><figcaption>复盘：哪些懂了，哪些还模糊</figcaption></figure>
-  <figure><img src="/screenshots/library.png" alt="知识库：按间隔提醒回顾"><figcaption>存进知识库，按时回顾</figcaption></figure>
+  <figure><img src="/screenshots/library.png" alt="知识库：一个概念一篇笔记"><figcaption>沉淀成概念笔记</figcaption></figure>
 </div>
 
 </div>

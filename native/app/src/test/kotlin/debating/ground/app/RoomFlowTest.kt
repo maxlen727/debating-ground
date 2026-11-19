@@ -146,10 +146,10 @@ class RoomFlowTest {
         val ask = room.sent.last()
         assertEquals("review", ask["purpose"]!!.jsonPrimitive.content)
         room.server(
-            """{"type":"answer","reqId":"${ask["reqId"]!!.jsonPrimitive.content}","ok":true,"result":{"data":{"oneLine":"一句话","points":[],"misconceptions":[],"quiz":[]},"model":"m"}}""",
+            """{"type":"answer","reqId":"${ask["reqId"]!!.jsonPrimitive.content}","ok":true,"result":{"data":{"oneLine":"一句话","points":[],"misconceptions":[],"checks":[]},"model":"m"}}""",
         )
         assertEquals("一句话", l.state.session!!.review!!.oneLine)
-        assertEquals("room-$roomId", l.state.library.single().sessionId)
+        assertEquals("room-$roomId", l.state.library.single().sources[0].sessionId)
     }
 
     @Test

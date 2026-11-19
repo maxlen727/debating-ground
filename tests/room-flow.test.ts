@@ -249,7 +249,7 @@ test('a host invites a classmate, they chat with an AI guest, and each gets a pe
   assert.equal(s.finished, true);
   assert.equal(getState().ui.screen, 'review');
   assert.equal(s.review?.oneLine, '讲清了定义');
-  assert.equal(getState().library[0].sessionId, s.id);
+  assert.equal(getState().library[0].sources[0].sessionId, s.id);
   assert.equal(getState().library[0].concept, '机会成本');
   // 复盘请求里，只有房主自己是学习者，小结也带上了
   const review = prompts.find(p => p.purpose === 'review')!;

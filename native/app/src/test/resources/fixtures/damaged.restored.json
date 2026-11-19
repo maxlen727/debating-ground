@@ -65,7 +65,8 @@
     {
       "id": "c1",
       "concept": "机会成本",
-      "oneLine": "放弃的最好选择",
+      "summary": "",
+      "useWhen": "",
       "points": [
         {
           "label": "a",
@@ -73,26 +74,30 @@
           "note": ""
         }
       ],
-      "quiz": [
+      "examples": [],
+      "misconceptions": [],
+      "boundaries": [],
+      "related": [],
+      "stances": [],
+      "checks": [
         {
           "q": "有选项",
-          "options": [
-            "甲",
-            "乙"
-          ],
-          "answer": 0,
-          "why": ""
+          "answer": "甲"
         }
       ],
-      "topic": "",
-      "sessionId": "",
-      "mode": "socratic",
+      "terms": [],
+      "sources": [
+        {
+          "sessionId": "",
+          "at": 1763366400000,
+          "mode": "socratic",
+          "topic": "",
+          "oneLine": "放弃的最好选择",
+          "source": "demo"
+        }
+      ],
       "created": 1763366400000,
-      "level": 0,
-      "due": 0,
-      "source": "demo",
-      "misconceptions": [],
-      "reviews": []
+      "updated": 1763366400000
     }
   ],
   "screen": "learn"

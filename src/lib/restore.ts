@@ -1,9 +1,10 @@
 // 读回 localStorage 里的存档时先检查结构。
 // 存档可能来自旧版本（缺字段），也可能写到一半被打断：缺的补上默认值，坏到没法用的那一块才丢掉。
-// 原则：知识卡片能救就救（宁可补空字段，也不整张丢掉）；计划和进行中的讨论坏了就作废，不让界面一打开就崩溃。
+// 原则：知识（概念笔记、旧的知识卡片）能救就救（宁可补空字段，也不整张丢掉）；计划和进行中的讨论坏了就作废，不让界面一打开就崩溃。
 import { MODES } from '../../shared/modes.ts';
-import type { ModeId } from '../../shared/types.ts';
-import type { Card, Config, Plan, Session } from '../store.ts';
+import type { ModeId, PointStatus, TermCard } from '../../shared/types.ts';
+import type { Config, Plan, Session } from '../store.ts';
+import type { Note, OldCard } from './notes.ts';
 
 type Loose = Record<string, unknown>;
 const isObj = (v: unknown): v is Loose => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -14,31 +15,112 @@ const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const strings = (v: unknown) => list(v).filter((x): x is string => typeof x === 'string');
 const isMode = (v: unknown): v is ModeId => typeof v === 'string' && v in MODES;
 
-export function restoreLibrary(v: unknown): Card[] {
+// 旧的知识卡片（sibian-v3 之前）：一次讨论一张。先按旧结构补齐，再按概念合并成笔记
+export function restoreCards(v: unknown): OldCard[] {
   return list(v)
     .filter(isObj)
     .filter(c => typeof c.id === 'string' && c.id)
-    .map(
-      c =>
-        ({
-          ...c,
-          concept: str(c.concept),
-          topic: str(c.topic),
-          oneLine: str(c.oneLine),
-          sessionId: str(c.sessionId),
-          mode: isMode(c.mode) ? c.mode : 'socratic',
-          created: num(c.created, Date.now()),
-          level: num(c.level),
-          due: num(c.due),
-          source: c.source === 'api' ? 'api' : 'demo', // 卡片来自复盘，只有这两种来源
-          points: list(c.points).filter(isObj),
-          misconceptions: list(c.misconceptions).filter(isObj),
-          quiz: list(c.quiz)
-            .filter(isObj)
-            .filter(q => Array.isArray(q.options)),
-          reviews: list(c.reviews).filter(isObj),
-        }) as unknown as Card,
-    );
+    .map(c => ({
+      id: c.id as string,
+      sessionId: str(c.sessionId),
+      concept: str(c.concept),
+      topic: str(c.topic),
+      mode: isMode(c.mode) ? c.mode : 'socratic',
+      created: num(c.created, Date.now()),
+      source: c.source === 'api' ? 'api' : 'demo', // 卡片来自复盘，只有这两种来源
+      ...(typeof c.model === 'string' ? { model: c.model } : {}),
+      oneLine: str(c.oneLine),
+      points: points(c.points),
+      misconceptions: pairs(c.misconceptions, 'said', 'fix'),
+      stances: pairs(c.stances, 'said', 'note'),
+      quiz: list(c.quiz)
+        .filter(isObj)
+        .filter(q => Array.isArray(q.options))
+        .map(q => ({
+          q: str(q.q),
+          options: strings(q.options),
+          answer: num(q.answer),
+          why: str(q.why),
+        })),
+      terms: terms(c.terms),
+      ...(typeof c.context === 'string' && c.context ? { context: c.context } : {}),
+    }));
+}
+
+const STATUSES = ['mastered', 'partial', 'missing'];
+function points(v: unknown) {
+  return list(v)
+    .filter(isObj)
+    .filter(p => typeof p.label === 'string' && p.label)
+    .map(p => ({
+      label: p.label as string,
+      status: (STATUSES.includes(p.status as string) ? p.status : 'partial') as PointStatus,
+      note: str(p.note),
+      ...(typeof p.evidence === 'string' && p.evidence ? { evidence: p.evidence } : {}),
+      ...(typeof p.checked === 'number' ? { checked: p.checked } : {}),
+    }));
+}
+function pairs<A extends string, B extends string>(v: unknown, a: A, b: B) {
+  return list(v)
+    .filter(isObj)
+    .filter(x => typeof x[a] === 'string' && x[a])
+    .map(x => ({ [a]: x[a] as string, [b]: str(x[b]) }) as Record<A | B, string>);
+}
+function terms(v: unknown): TermCard[] {
+  return list(v)
+    .filter(isObj)
+    .filter(t => typeof t.term === 'string' && t.term)
+    .map(t => ({
+      term: t.term as string,
+      definition: str(t.definition),
+      relation: str(t.relation),
+    }));
+}
+
+// 概念笔记（sibian-v4）：坏掉的字段补空，笔记本身能救就救
+export function restoreNotes(v: unknown): Note[] {
+  return list(v)
+    .filter(isObj)
+    .filter(n => typeof n.id === 'string' && n.id && typeof n.concept === 'string')
+    .map(n => {
+      const created = num(n.created, Date.now());
+      return {
+        id: n.id as string,
+        concept: n.concept as string,
+        summary: str(n.summary),
+        useWhen: str(n.useWhen),
+        points: points(n.points),
+        examples: strings(n.examples),
+        misconceptions: pairs(n.misconceptions, 'said', 'fix'),
+        boundaries: strings(n.boundaries),
+        related: strings(n.related),
+        stances: pairs(n.stances, 'said', 'note'),
+        checks: list(n.checks)
+          .filter(isObj)
+          .filter(c => typeof c.q === 'string' && c.q)
+          .map(c => ({
+            q: c.q as string,
+            answer: str(c.answer),
+            ...(typeof c.point === 'string' && c.point ? { point: c.point } : {}),
+          })),
+        terms: terms(n.terms),
+        sources: list(n.sources)
+          .filter(isObj)
+          .filter(x => typeof x.sessionId === 'string')
+          .map(x => ({
+            sessionId: x.sessionId as string,
+            at: num(x.at, created),
+            mode: isMode(x.mode) ? x.mode : 'socratic',
+            topic: str(x.topic),
+            oneLine: str(x.oneLine),
+            source: x.source === 'api' ? 'api' : 'demo',
+            ...(typeof x.model === 'string' ? { model: x.model } : {}),
+          })),
+        ...(typeof n.context === 'string' && n.context ? { context: n.context } : {}),
+        created,
+        updated: num(n.updated, created),
+      };
+    });
 }
 
 export function restorePlan(v: unknown): Plan | null {

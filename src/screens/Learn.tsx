@@ -1,6 +1,6 @@
 import { MODES, MODE_ORDER } from '../../shared/modes.ts';
 import type { ModeId } from '../../shared/types.ts';
-import { prepare, openCard, setContextDraft } from '../actions.ts';
+import { prepare, setContextDraft } from '../actions.ts';
 import { useRef } from 'react';
 import { BusyStrip, ErrorBanner, Icon } from '../components/ui.tsx';
 import { CaretField } from '../components/SmoothCaret.tsx';
@@ -19,7 +19,6 @@ export function Learn() {
   const conceptRef = useRef<HTMLInputElement>(null);
   const contextRef = useRef<HTMLTextAreaElement>(null);
   const { config, library, session, ui, ai } = useApp();
-  const due = library.filter(c => c.due <= Date.now());
   const unfinished = session && !session.finished;
   const busy = !!ui.busy;
   const canStart = !busy && !!config.concept.trim() && (!ui.context || !!ui.context.text.trim());
@@ -52,21 +51,6 @@ export function Learn() {
             <span>
               <b>继续讨论</b>
               {session.concept} · 已点亮 {session.covered.length}/{session.keyPoints.length}
-            </span>
-            <Icon name="chevron" />
-          </button>
-        )}
-        {due.length > 0 && (
-          <button
-            className="banner warm"
-            onClick={() => (due.length === 1 ? openCard(due[0].id) : go('library'))}
-          >
-            <span>
-              <b>今天有 {due.length} 张卡片要复习</b>
-              {due
-                .slice(0, 3)
-                .map(c => c.concept)
-                .join('、')}
             </span>
             <Icon name="chevron" />
           </button>
@@ -168,7 +152,7 @@ export function Learn() {
 
         {library.length === 0 && (
           <p className="fineprint">
-            讨论结束后会生成理解复盘，存成知识卡片，按 1、3、7、14 天的间隔提醒你回顾。
+            讨论结束后会生成理解复盘，整理进这个概念的笔记；以后再讨论它，新的理解会接着沉淀进去。
           </p>
         )}
         {config.aiMode === 'demo' && (

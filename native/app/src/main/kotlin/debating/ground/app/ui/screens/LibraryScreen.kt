@@ -1,13 +1,17 @@
 package debating.ground.app.ui.screens
 
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -46,15 +50,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import debating.ground.app.AppModel
-import debating.ground.app.data.Card
 import debating.ground.app.data.MODES
+import debating.ground.app.data.Note
 import debating.ground.app.data.SEARCH_MIN_CARDS
-import debating.ground.app.data.dueLabel
 import debating.ground.app.data.libraryMarkdown
+import debating.ground.app.data.noteMarkdown
+import debating.ground.app.data.sameConcept
 import debating.ground.app.data.searchCards
+import debating.ground.app.data.tally
 import debating.ground.app.flow.AppState
 import debating.ground.app.ui.BusyStrip
+import debating.ground.app.ui.Chip
 import debating.ground.app.ui.ErrorBanner
+import debating.ground.app.ui.FinePrint
 import debating.ground.app.ui.GhostButton
 import debating.ground.app.ui.IconPaths
 import debating.ground.app.ui.LocalMotion
@@ -77,28 +85,20 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// 知识库和知识卡片：和网页版 src/screens/Library.tsx 一致。卡片只保存在这台设备上，按间隔提醒复习。
+// 知识库：一个概念一篇笔记，每次讨论完把理解沉淀进去（#140）。只保存在这台设备上。和网页版 src/screens/Library.tsx 一致
 
 @Composable
-fun LibraryScreen(st: AppState, model: AppModel, now: Long) {
+fun LibraryScreen(st: AppState, model: AppModel) {
     val t = LocalTokens.current
     val l = model.learning
     val library = st.library
     val context = LocalContext.current
-    val due = library.filter { it.due <= now }
-    var tab by rememberSaveable { mutableStateOf(if (due.isNotEmpty()) "due" else "all") }
-    // 搜索词只在这一页里，不存档；搜索时不分组，在全部卡片里找
+    // 搜索词只在这一页里，不存档
     var query by rememberSaveable { mutableStateOf("") }
     val searching = query.isNotBlank()
-    val list = if (searching) {
-        searchCards(library, query)
-    } else if (tab == "due") {
-        due
-    } else {
-        library
-    }
+    val list = if (searching) searchCards(library, query) else library
     Column(Modifier.fillMaxSize()) {
-        TopBar("知识库", "${library.size} 张卡片 · 只保存在这台设备") {
+        TopBar("知识库", "${library.size} 个概念 · 只保存在这台设备") {
             if (library.isNotEmpty()) ExportButton("导出知识库") { shareMarkdown(context, "思辨场知识库", libraryMarkdown(library)) }
         }
         Column(
@@ -106,48 +106,36 @@ fun LibraryScreen(st: AppState, model: AppModel, now: Long) {
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             if (library.isEmpty()) {
-                EmptyState("知识库还是空的", "完成一次讨论并生成复盘后，它会变成一张知识卡片，并按 1、3、7、14 天的间隔提醒你回顾。") {
+                EmptyState(
+                    "知识库还是空的",
+                    "每讨论完一个概念，复盘会整理成一篇它的笔记：用你自己的话说清它是什么、什么时候用、你举过的例子和容易错的地方，还有几道自检题。以后再讨论同一个概念，新的理解会接着沉淀进这篇笔记。",
+                ) {
                     PrimaryButton("开始学习", { l.go("learn") })
                 }
             } else {
                 if (library.size >= SEARCH_MIN_CARDS) SearchField(query) { query = it }
-                if (searching) {
-                    if (list.isNotEmpty()) Text("找到 ${list.size} 张卡片", style = TextStyles.small, color = t.muted.color())
-                } else {
-                    Segmented(listOf("due" to "待复习 ${due.size}", "all" to "全部 ${library.size}"), tab, "卡片范围") { tab = it }
-                }
-                if (list.isEmpty() && searching) {
+                if (searching && list.isNotEmpty()) Text("找到 ${list.size} 个概念", style = TextStyles.small, color = t.muted.color())
+                if (list.isEmpty()) {
                     Column(
                         Modifier.fillMaxWidth().padding(vertical = 16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Text(
-                            "没有找到和“${query.trim()}”有关的卡片。",
+                            "没有找到和“${query.trim()}”有关的笔记。",
                             style = TextStyles.small,
                             color = t.muted.color(),
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         )
                         GhostButton("清除搜索", { query = "" }, small = true)
                     }
-                } else if (list.isEmpty()) {
-                    Text(
-                        "今天没有要复习的卡片。",
-                        style = TextStyles.small,
-                        color = t.muted.color(),
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    )
                 } else {
-                    // 切换“待复习 / 全部”时整列淡入淡出，不是一下子换掉
-                    Crossfade(if (searching) "search" else tab, animationSpec = tween(if (LocalMotion.current) 200 else 0), label = "cards") { shown ->
-                        // 淡出的那一列照旧显示它自己的卡片
-                        val cards = when (shown) {
-                            "search" -> list
-                            "due" -> due
-                            else -> library
+                    // 搜索结果变了时整列淡入淡出，不是一下子换掉
+                    val ms = if (LocalMotion.current) 200 else 0
+                    AnimatedContent(list.map { it.id }, transitionSpec = { fadeIn(tween(ms)) togetherWith fadeOut(tween(ms)) }, label = "notes") { ids ->
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            for (id in ids) library.find { it.id == id }?.let { n -> NoteItem(n) { l.openCard(n.id) } }
                         }
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { for (c in cards) CardItem(c, now) { l.openCard(c.id) } }
                     }
                 }
             }
@@ -180,10 +168,10 @@ private fun SearchField(value: String, onChange: (String) -> Unit) {
             textStyle = TextStyles.body.copy(color = t.ink.color()),
             cursorBrush = SolidColor(t.brand.color()),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            modifier = Modifier.weight(1f).onFocusChanged { focused = it.isFocused }.semantics { contentDescription = "搜索知识卡片" },
+            modifier = Modifier.weight(1f).onFocusChanged { focused = it.isFocused }.semantics { contentDescription = "搜索概念笔记" },
             decorationBox = { inner ->
                 Box {
-                    if (value.isEmpty()) Text("搜概念、结论、术语", style = TextStyles.body, color = t.muted.color(), maxLines = 1)
+                    if (value.isEmpty()) Text("搜概念、要点、例子、术语", style = TextStyles.body, color = t.muted.color(), maxLines = 1)
                     inner()
                 }
             },
@@ -203,56 +191,63 @@ private fun SearchField(value: String, onChange: (String) -> Unit) {
 
 private val dateFormat get() = SimpleDateFormat("yyyy/M/d", Locale.CHINA)
 
+private fun date(t: Long) = dateFormat.format(Date(t))
+
 @Composable
-private fun CardItem(c: Card, now: Long, onOpen: () -> Unit) {
+private fun NoteItem(n: Note, onOpen: () -> Unit) {
     val t = LocalTokens.current
-    val isDue = c.due <= now
+    val c = n.tally()
+    val weak = c.partial + c.missing
     Column(
         Modifier.fillMaxWidth()
             .background(t.raised.color(), RoundedCornerShape(14.dp))
-            .border(1.dp, if (isDue) t.accent.color().mix(0.45f, t.line.color()) else t.line.color(), RoundedCornerShape(14.dp))
+            .border(1.dp, t.line.color(), RoundedCornerShape(14.dp))
             .clickable(role = Role.Button, onClick = onOpen)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                c.concept,
+                n.concept,
                 style = TextStyles.body.copy(fontFamily = Serif, fontWeight = FontWeight.Bold, fontSize = 17.sp),
                 color = t.ink.color(),
                 modifier = Modifier.weight(1f),
             )
-            Text(
-                if (isDue) "待复习" else "下次 " + dueLabel(c.due, now),
-                style = TextStyles.small.copy(fontSize = 12.sp, fontWeight = if (isDue) FontWeight.SemiBold else FontWeight.Normal),
-                color = if (isDue) t.accent.color() else t.muted.color(),
-            )
+            if (weak > 0) {
+                Text(
+                    "$weak 处还模糊",
+                    style = TextStyles.small.copy(fontSize = 12.sp, fontWeight = FontWeight.SemiBold),
+                    color = t.warn.color(),
+                    modifier = Modifier.background(t.warnSoft.color(), RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 2.dp),
+                )
+            }
         }
-        if (c.oneLine.isNotEmpty()) {
-            Text(
-                c.oneLine,
-                style = TextStyles.small.copy(lineHeight = 1.6.em),
-                color = t.muted.color(),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Meter(c)
         Text(
-            "${MODES[c.mode]?.name.orEmpty()} · ${dateFormat.format(Date(c.created))} · 复习 ${c.reviews.size} 次",
+            n.summary.ifEmpty { "还没有用自己的话说清它，再讨论一次就能补上。" },
+            style = TextStyles.small.copy(fontFamily = if (n.summary.isNotEmpty()) Serif else null, lineHeight = 1.6.em),
+            color = if (n.summary.isNotEmpty()) t.ink.color() else t.muted.color(),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Meter(n)
+        Text(
+            "${n.sources.size} 次讨论 · 更新于 ${date(n.updated)}" + (if (n.checks.isNotEmpty()) " · ${n.checks.size} 道自检" else ""),
             style = TextStyles.small.copy(fontSize = 12.sp),
             color = t.muted.color(),
         )
     }
 }
 
-// 每个要点一格：掌握了是绿的，还模糊是黄的
+// 每个要点一格：掌握是绿的，模糊是黄的，没讲到是灰的
 @Composable
-private fun Meter(c: Card) {
+private fun Meter(n: Note) {
     val t = LocalTokens.current
-    val mastered = c.points.count { it.status == "mastered" }
-    Row(Modifier.fillMaxWidth().semantics { contentDescription = "已掌握 $mastered/${c.points.size}" }, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        for (p in c.points) {
+    val c = n.tally()
+    Row(
+        Modifier.fillMaxWidth().semantics { contentDescription = "掌握 ${c.mastered}，模糊 ${c.partial}，没讲到 ${c.missing}" },
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        for (p in n.points) {
             val (color, alpha) = when (p.status) {
                 "mastered" -> t.good.color() to 1f
                 "partial" -> t.warn.color() to 0.7f
@@ -263,57 +258,149 @@ private fun Meter(c: Card) {
     }
 }
 
-// 一张知识卡片：先凭记忆做题，再看上次的复盘，最后说说记得怎么样
+// 自检：先自己想（最好说出来或写下来），再看参考要点，标答出来没有。结果会改对应要点的状态
+@Composable
+private fun SelfChecks(n: Note, model: AppModel) {
+    if (n.checks.isEmpty()) return
+    val t = LocalTokens.current
+    val haptic = LocalHapticFeedback.current
+    // 哪几道已经翻开了参考要点：只在这一页里
+    var open by rememberSaveable(n.id) { mutableStateOf(listOf<Int>()) }
+    Panel {
+        SectionLabel("自检")
+        Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            n.checks.forEachIndexed { i, c ->
+                val point = c.point?.let { pt -> n.points.find { sameConcept(it.label, pt) } }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "${i + 1}. ${c.q}",
+                        style = TextStyles.knowledge.copy(fontWeight = FontWeight.SemiBold, lineHeight = 1.7.em),
+                        color = t.ink.color(),
+                    )
+                    // 翻开时参考要点从按钮的位置展开
+                    AnimatedContent(i in open, transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(120)) }, label = "check") { shown ->
+                        if (!shown) {
+                            GhostButton("想好了，看参考要点", { open = open + i }, Modifier.fillMaxWidth())
+                        } else {
+                            Column(
+                                Modifier.fillMaxWidth().background(t.surface.color(), RoundedCornerShape(12.dp))
+                                    .border(1.dp, t.line.color(), RoundedCornerShape(12.dp)).padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                Text("参考要点", style = TextStyles.small.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold), color = t.muted.color())
+                                Text(c.answer, style = TextStyles.small.copy(lineHeight = 1.7.em), color = t.ink.color())
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    SecondaryButton("没答出", { model.learning.selfCheck(n.id, i, false) }, Modifier.weight(1f))
+                                    PrimaryButton("答出来了", {
+                                        haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                                        model.learning.selfCheck(n.id, i, true)
+                                    }, Modifier.weight(1f))
+                                }
+                                if (point != null) {
+                                    FinePrint("检验的是“${point.label}”" + (point.checked?.let { "，上次自检在 ${date(it)}" } ?: "") + "。")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        FinePrint("先不看答案，用自己的话说一遍，再对照参考要点。只看得懂不算，说得出来才算。")
+    }
+}
+
+// 一篇概念笔记：从上到下是“它是什么、什么时候用、要点（带依据）、例子、易错、边界、立场、相关、术语、自检、来源”
 @Composable
 fun CardScreen(st: AppState, model: AppModel) {
     val t = LocalTokens.current
     val l = model.learning
-    val c = st.library.find { it.id == st.ui.openCard }
-    if (c == null) {
+    val context = LocalContext.current
+    val n = st.library.find { it.id == st.ui.openCard }
+    if (n == null) {
         Column(Modifier.fillMaxSize()) {
-            TopBar("知识卡片", onBack = { l.go("library") })
-            EmptyState("找不到这张卡片", "它可能已经被清除。")
+            TopBar("概念笔记", onBack = { l.go("library") })
+            EmptyState("找不到这篇笔记", "它可能已经被清除。")
         }
         return
     }
-    val key = "c:${c.id}"
-    val picks = st.ui.quiz[key].orEmpty()
-    var showReview by rememberSaveable(c.id) { mutableStateOf(false) }
-    val open = showReview || c.quiz.isEmpty() || picks.size >= c.quiz.size
+    val c = n.tally()
     val busy = st.ui.busy != null
-    val haptic = LocalHapticFeedback.current
+
+    // 相关概念：知识库里有就打开那篇，还没有就去学习页讨论它
+    fun openRelated(concept: String) {
+        val other = st.library.find { sameConcept(it.concept, concept) }
+        if (other != null) {
+            l.openCard(other.id)
+        } else {
+            l.setConcept(concept)
+            l.go("learn")
+        }
+    }
     WithFloatingDock(dock = {
         ErrorBanner(st.ui.error) { l.clearError() }
         BusyStrip(st.ui.busy) { l.cancelAI() }
-        Text("这次回顾得怎么样？", style = TextStyles.small.copy(fontSize = 13.sp), color = t.muted.color())
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SecondaryButton("还有点模糊", { l.rateCard(c.id, false) }, Modifier.weight(1f))
-            PrimaryButton("记得很清楚", {
-                haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                l.rateCard(c.id, true)
-            }, Modifier.weight(1f))
-        }
+        PrimaryButton(
+            if (c.partial + c.missing > 0) "从模糊的地方再讨论一次" else "再讨论一次，往深里走",
+            { model.run { discussAgain(n) } },
+            Modifier.fillMaxWidth(),
+            enabled = !busy,
+        )
     }) { bottom ->
         Column(Modifier.fillMaxSize()) {
-            TopBar(c.concept, "${MODES[c.mode]?.name.orEmpty()} · 已复习 ${c.reviews.size} 次", onBack = { l.go("library") })
+            TopBar(n.concept, "${n.sources.size} 次讨论 · 掌握 ${c.mastered}/${n.points.size}", onBack = { l.go("library") }) {
+                ExportButton("导出这篇笔记") { shareMarkdown(context, n.concept, noteMarkdown(n)) }
+            }
             Column(
                 Modifier.weight(1f).scrollWithEdge().padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                Text(c.topic, style = TextStyles.knowledge, color = t.ink.color())
-                if (c.quiz.isNotEmpty()) {
+                Column(Modifier.padding(horizontal = 2.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (n.summary.isNotEmpty()) {
+                        Text(n.summary, style = DisplaySm, color = t.ink.color())
+                    } else {
+                        Text("还没有用自己的话说清它。再讨论一次，复盘会补上。", style = TextStyles.body, color = t.muted.color())
+                    }
+                    if (n.useWhen.isNotEmpty()) UseWhen(n.useWhen)
+                }
+                if (n.points.isNotEmpty()) {
                     Panel {
-                        SectionLabel("先凭记忆作答")
-                        Quiz(c.quiz, picks) { q, o -> l.pickAnswer(key, q, o) }
+                        SectionLabel("要点")
+                        PointList(n.points)
                     }
                 }
-                if (open) {
-                    Text(c.oneLine, style = DisplaySm, color = t.ink.color())
-                    ReviewBody(c.points, c.misconceptions, c.stances, c.terms)
-                } else {
-                    GhostButton("先看上次的复盘", { showReview = true }, Modifier.fillMaxWidth())
+                Bullets("你举过的例子", n.examples)
+                FixList("易错", n.misconceptions)
+                Bullets("边界", n.boundaries, "它不是什么、和哪些相近的概念容易混。")
+                StanceList("我的立场", n.stances)
+                if (n.related.isNotEmpty()) {
+                    Panel {
+                        SectionLabel("相关概念")
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            for (r in n.related) {
+                                val has = st.library.any { sameConcept(it.concept, r) }
+                                Chip(if (has) r else "$r · 去讨论", has, { openRelated(r) })
+                            }
+                        }
+                    }
                 }
-                GhostButton("从薄弱点再讨论一次", { model.run { discussAgain(c) } }, Modifier.fillMaxWidth(), enabled = !busy)
+                TermList("术语", n.terms)
+                SelfChecks(n, model)
+                Panel {
+                    SectionLabel("来源")
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        for (x in n.sources.asReversed()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    "${date(x.at)} · ${MODES[x.mode]?.name ?: x.mode}" + (if (x.source == "demo") " · 演示" else ""),
+                                    style = TextStyles.small.copy(fontSize = 12.sp),
+                                    color = t.muted.color(),
+                                )
+                                Text(x.topic, style = TextStyles.small, color = t.ink.color())
+                                if (x.oneLine.isNotEmpty()) Text(x.oneLine, style = TextStyles.small.copy(fontSize = 12.5.sp), color = t.muted.color())
+                            }
+                        }
+                    }
+                }
                 Spacer(Modifier.height(bottom))
             }
         }

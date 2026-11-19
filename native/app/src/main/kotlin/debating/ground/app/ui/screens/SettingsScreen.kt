@@ -1,9 +1,6 @@
 package debating.ground.app.ui.screens
 
-import android.Manifest
 import android.content.Intent
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,9 +27,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import debating.ground.app.AppModel
 import debating.ground.app.flow.AppState
-import debating.ground.app.notify.REMINDER_TIMES
-import debating.ground.app.notify.ReminderPrefs
-import debating.ground.app.notify.Reminders
 import debating.ground.app.ui.BusyStrip
 import debating.ground.app.ui.Chip
 import debating.ground.app.ui.ErrorBanner
@@ -91,7 +85,6 @@ fun SettingsScreen(st: AppState, model: AppModel) {
                 if (mode == "remote") RemotePanel(st, model)
                 if (mode == "remote" && st.config.remote.url.isNotEmpty()) VoicePanel(st, model)
                 if (mode == "api") DirectPanel(st, model)
-                ReminderPanel(model)
                 Panel {
                     SectionLabel("关于格式")
                     Text(
@@ -103,43 +96,6 @@ fun SettingsScreen(st: AppState, model: AppModel) {
                 Spacer(Modifier.height(bottom))
             }
         }
-    }
-}
-
-// 复习提醒：这台设备自己的设置，默认关闭；打开时才请求通知权限（Android 13 起）
-@Composable
-private fun ReminderPanel(model: AppModel) {
-    val context = LocalContext.current
-    var prefs by remember { mutableStateOf(Reminders.prefs(context)) }
-    fun apply(p: ReminderPrefs) {
-        prefs = p
-        Reminders.save(context, p)
-    }
-    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) {
-            apply(prefs.copy(enabled = true))
-        } else {
-            model.learning.toast("没有通知权限，提醒发不出来。可以在系统设置里给思辨场打开通知。")
-        }
-    }
-    Panel {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f)) { SectionLabel("复习提醒") }
-            StatusTag(if (prefs.enabled) "已打开" else "已关闭", if (prefs.enabled) "ok" else "")
-        }
-        Segmented(listOf("off" to "不提醒", "on" to "每天提醒"), if (prefs.enabled) "on" else "off", "复习提醒") { id ->
-            when {
-                id == "off" -> apply(prefs.copy(enabled = false))
-                Reminders.canNotify(context) -> apply(prefs.copy(enabled = true))
-                else -> ask.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        }
-        if (prefs.enabled) {
-            Row(Modifier.fillMaxWidth().scrollRow(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                for ((h, m, label) in REMINDER_TIMES) Chip(label, prefs.hour == h && prefs.minute == m, { apply(prefs.copy(hour = h, minute = m)) })
-            }
-        }
-        FinePrint("每天到点看一眼知识库：有到期的卡片才发一条通知，写着要复习哪几个概念；没有就不打扰。通知里没有讨论内容。")
     }
 }
 

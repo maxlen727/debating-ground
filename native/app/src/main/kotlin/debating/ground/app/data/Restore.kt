@@ -13,10 +13,13 @@ import kotlinx.serialization.json.put
 // 读回存档时先检查结构。逐行对应网页版的 src/lib/restore.ts 和 src/store.ts 的 load()，
 // 输出和网页版完全一致（FixturesTest 用网页版生成的标准答案逐字比对）。
 // 存档可能来自旧版本（缺字段），也可能写到一半被打断：缺的补上默认值，坏到没法用的那一块才丢掉。
-// 原则：知识卡片能救就救（宁可补空字段，也不整张丢掉）；计划和进行中的讨论坏了就作废，不让界面一打开就崩溃。
+// 原则：知识库能救就救（宁可补空字段，也不整篇丢掉）；计划和进行中的讨论坏了就作废，不让界面一打开就崩溃。
 
 /** 存档的键名，和网页版 localStorage 里的一样。 */
-const val STORE_KEY = "sibian-v3"
+const val STORE_KEY = "sibian-v4"
+
+/** 概念笔记以前（v0.10 及以前）的存档：知识库是一张张卡片，读到时迁移成笔记，原来的文件不动。 */
+const val CARDS_STORE_KEY = "sibian-v3"
 const val OLD_STORE_KEY = "sibian-v2"
 
 private fun JsonElement?.obj(): JsonObject? = this as? JsonObject
@@ -47,28 +50,121 @@ private fun sourceOf(v: JsonElement?) = JsonPrimitive(if (v.text() == "api") "ap
 // 一个角色至少要有 id 和名字
 private fun personasOf(v: JsonElement?) = objects(v).filter { it["id"].isStr() && it["name"].isStr() }
 
-fun restoreLibrary(v: JsonElement?, now: Long): JsonArray = JsonArray(
-    objects(v).filter { it["id"].text().orEmpty().isNotEmpty() }.map { c ->
-        JsonObject(
-            c + mapOf(
-                "concept" to str(c["concept"]),
-                "topic" to str(c["topic"]),
-                "oneLine" to str(c["oneLine"]),
-                "sessionId" to str(c["sessionId"]),
-                "mode" to (if (c["mode"].isMode()) c["mode"]!! else JsonPrimitive("socratic")),
-                "created" to num(c["created"], now),
-                "level" to num(c["level"]),
-                "due" to num(c["due"]),
-                // 卡片来自复盘，只有这两种来源
-                "source" to sourceOf(c["source"]),
-                "points" to JsonArray(objects(c["points"])),
-                "misconceptions" to JsonArray(objects(c["misconceptions"])),
-                "quiz" to JsonArray(objects(c["quiz"]).filter { it["options"] is JsonArray }),
-                "reviews" to JsonArray(objects(c["reviews"])),
-            ),
-        )
+private val STATUSES = setOf("mastered", "partial", "missing")
+
+private fun JsonElement?.nonEmptyStr() = isStr() && (this as JsonPrimitive).content.isNotEmpty()
+
+private fun pointsOf(v: JsonElement?) = JsonArray(
+    objects(v).filter { it["label"].nonEmptyStr() }.map { p ->
+        buildJsonObject {
+            put("label", p.getValue("label"))
+            put("status", if (p["status"].text() in STATUSES) p.getValue("status") else JsonPrimitive("partial"))
+            put("note", str(p["note"]))
+            if (p["evidence"].nonEmptyStr()) put("evidence", p.getValue("evidence"))
+            if (p["checked"].number() != null) put("checked", p.getValue("checked"))
+        }
     },
 )
+
+private fun pairsOf(v: JsonElement?, a: String, b: String) = JsonArray(
+    objects(v).filter { it[a].nonEmptyStr() }.map { JsonObject(mapOf(a to it.getValue(a), b to str(it[b]))) },
+)
+
+private fun termsOf(v: JsonElement?) = JsonArray(
+    objects(v).filter { it["term"].nonEmptyStr() }.map {
+        JsonObject(mapOf("term" to it.getValue("term"), "definition" to str(it["definition"]), "relation" to str(it["relation"])))
+    },
+)
+
+private fun modeOf(v: JsonElement?) = if (v.isMode()) v!! else JsonPrimitive("socratic")
+
+/** 旧的知识卡片（sibian-v3 及以前）：检查结构，之后按概念合并成笔记（[notesFromCards]）。 */
+fun restoreCards(v: JsonElement?, now: Long): JsonArray = JsonArray(
+    objects(v).filter { it["id"].nonEmptyStr() }.map { c ->
+        buildJsonObject {
+            put("id", c.getValue("id"))
+            put("sessionId", str(c["sessionId"]))
+            put("concept", str(c["concept"]))
+            put("topic", str(c["topic"]))
+            put("mode", modeOf(c["mode"]))
+            put("created", num(c["created"], now))
+            // 卡片来自复盘，只有这两种来源
+            put("source", sourceOf(c["source"]))
+            if (c["model"].isStr()) put("model", c.getValue("model"))
+            put("oneLine", str(c["oneLine"]))
+            put("points", pointsOf(c["points"]))
+            put("misconceptions", pairsOf(c["misconceptions"], "said", "fix"))
+            put("stances", pairsOf(c["stances"], "said", "note"))
+            put(
+                "quiz",
+                JsonArray(
+                    objects(c["quiz"]).filter { it["options"] is JsonArray }.map { q ->
+                        JsonObject(mapOf("q" to str(q["q"]), "options" to strings(q["options"]), "answer" to num(q["answer"]), "why" to str(q["why"])))
+                    },
+                ),
+            )
+            put("terms", termsOf(c["terms"]))
+            if (c["context"].nonEmptyStr()) put("context", c.getValue("context"))
+        }
+    },
+)
+
+/** 概念笔记（sibian-v4）。 */
+fun restoreNotes(v: JsonElement?, now: Long): JsonArray = JsonArray(
+    objects(v).filter { it["id"].nonEmptyStr() && it["concept"].isStr() }.map { n ->
+        val created = num(n["created"], now)
+        buildJsonObject {
+            put("id", n.getValue("id"))
+            put("concept", n.getValue("concept"))
+            put("summary", str(n["summary"]))
+            put("useWhen", str(n["useWhen"]))
+            put("points", pointsOf(n["points"]))
+            put("examples", strings(n["examples"]))
+            put("misconceptions", pairsOf(n["misconceptions"], "said", "fix"))
+            put("boundaries", strings(n["boundaries"]))
+            put("related", strings(n["related"]))
+            put("stances", pairsOf(n["stances"], "said", "note"))
+            put(
+                "checks",
+                JsonArray(
+                    objects(n["checks"]).filter { it["q"].nonEmptyStr() }.map { c ->
+                        buildJsonObject {
+                            put("q", c.getValue("q"))
+                            put("answer", str(c["answer"]))
+                            if (c["point"].nonEmptyStr()) put("point", c.getValue("point"))
+                        }
+                    },
+                ),
+            )
+            put("terms", termsOf(n["terms"]))
+            put(
+                "sources",
+                JsonArray(
+                    objects(n["sources"]).filter { it["sessionId"].isStr() }.map { x ->
+                        buildJsonObject {
+                            put("sessionId", x.getValue("sessionId"))
+                            put("at", if (x["at"].number() != null) x.getValue("at") else created)
+                            put("mode", modeOf(x["mode"]))
+                            put("topic", str(x["topic"]))
+                            put("oneLine", str(x["oneLine"]))
+                            put("source", sourceOf(x["source"]))
+                            if (x["model"].isStr()) put("model", x.getValue("model"))
+                        }
+                    },
+                ),
+            )
+            if (n["context"].nonEmptyStr()) put("context", n.getValue("context"))
+            put("created", created)
+            put("updated", if (n["updated"].number() != null) n.getValue("updated") else created)
+        }
+    },
+)
+
+/** 旧卡片合并成笔记，写成和网页版一样的 JSON。 */
+fun migrateCards(v: JsonElement?, now: Long, json: Json = SibianJson): JsonArray {
+    val cards = restoreCards(v, now).mapNotNull { runCatching { json.decodeFromJsonElement(OldCard.serializer(), it) }.getOrNull() }
+    return JsonArray(notesFromCards(cards).map { json.encodeToJsonElement(Note.serializer(), it) })
+}
 
 fun restorePlan(v: JsonElement?): JsonElement {
     val p = v.obj() ?: return JsonNull
@@ -165,10 +261,11 @@ fun restoreConfig(v: JsonElement?, base: JsonObject): JsonObject {
 
 /**
  * 读回整份存档：对应网页版 store.ts 的 load()。
- * [saved] 是 sibian-v3 的内容，[oldSaved] 是更早的 sibian-v2（只取知识卡片）；读坏了就从头开始。
+ * [saved] 是 sibian-v4 的内容；没有时用 [cards]（sibian-v3，知识库是卡片，按概念合并成笔记），
+ * 再没有就用更早的 [oldSaved]（sibian-v2，只取知识卡片）；读坏了就从头开始。
  * 返回和网页版一样的 { config, plan, session, library, screen }。
  */
-fun restoreSaved(saved: String?, oldSaved: String?, now: Long, json: Json = SibianJson): JsonObject {
+fun restoreSaved(saved: String?, cards: String?, oldSaved: String?, now: Long, json: Json = SibianJson): JsonObject {
     val base = defaultConfigJson(json)
     fun fresh(library: JsonArray = JsonArray(emptyList())) = buildJsonObject {
         put("config", base)
@@ -178,7 +275,8 @@ fun restoreSaved(saved: String?, oldSaved: String?, now: Long, json: Json = Sibi
         put("screen", "learn")
     }
     return runCatching {
-        val root = saved?.let { json.parseToJsonElement(it) }.obj()
+        val v4 = saved?.let { json.parseToJsonElement(it) }.obj()
+        val root = v4 ?: cards?.let { json.parseToJsonElement(it) }.obj()
         if (root != null) {
             val s = root.toMutableMap()
             // 反向讲解并进了苏格拉底追问（“换我来讲”）：选着它的设置改过来，按它准备的计划作废；进行中的讨论和知识卡片照旧
@@ -191,12 +289,12 @@ fun restoreSaved(saved: String?, oldSaved: String?, now: Long, json: Json = Sibi
                 put("config", restoreConfig(s["config"], base))
                 put("plan", restorePlan(s["plan"]))
                 put("session", session)
-                put("library", restoreLibrary(s["library"], now))
+                put("library", if (v4 != null) restoreNotes(s["library"], now) else migrateCards(s["library"], now, json))
                 put("screen", if (s["screen"].text() == "session" && resumable) "session" else "learn")
             }
         } else {
             val old = oldSaved?.let { json.parseToJsonElement(it) }.obj()
-            if (old != null && old["library"] is JsonArray) fresh(restoreLibrary(old["library"], now)) else fresh()
+            if (old != null && old["library"] is JsonArray) fresh(migrateCards(old["library"], now, json)) else fresh()
         }
     }.getOrElse { fresh() }
 }

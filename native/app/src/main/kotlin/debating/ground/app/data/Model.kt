@@ -9,7 +9,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 
-// 数据结构：一一对应网页版的 shared/types.ts 和 src/store.ts，存档格式完全一致（sibian-v3）。
+// 数据结构：一一对应网页版的 shared/types.ts 和 src/store.ts，存档格式完全一致（sibian-v4）。
 // 网页版里可选的字段（?:）这里是可空、默认 null，写回 JSON 时省略；必有的字段带默认值，总会写出。
 
 /** 读写存档用的 JSON 设置：多余的字段忽略，类型不对的值退回默认值。 */
@@ -81,11 +81,13 @@ data class Reflection(
     override val branch: String? = null,
 ) : Entry
 
+/** 一个要点：掌握到什么程度（mastered / partial / missing）、为什么这么判断、学习者的原话（依据），最后一次自检的时间。 */
 @Serializable
-data class QuizItem(val q: String = "", val options: List<String> = emptyList(), val answer: Int = 0, val why: String = "")
+data class Point(val label: String = "", val status: String = "partial", val note: String = "", val evidence: String? = null, val checked: Long? = null)
 
+/** 自检题：没有选项，先自己答，再看参考答案；[point] 是它检验的要点。 */
 @Serializable
-data class Point(val label: String = "", val status: String = "partial", val note: String = "")
+data class SelfCheck(val q: String = "", val answer: String = "", val point: String? = null)
 
 @Serializable
 data class Misconception(val said: String = "", val fix: String = "")
@@ -103,10 +105,15 @@ data class Previous(val oneLine: String = "", val weak: List<String> = emptyList
 @Serializable
 data class SessionReview(
     val oneLine: String = "",
+    val summary: String? = null,
+    val useWhen: String? = null,
     val points: List<Point> = emptyList(),
+    val examples: List<String>? = null,
     val misconceptions: List<Misconception> = emptyList(),
+    val boundaries: List<String>? = null,
+    val related: List<String>? = null,
     val stances: List<Stance>? = null,
-    val quiz: List<QuizItem> = emptyList(),
+    val checks: List<SelfCheck>? = null,
     val source: String = "demo",
     val model: String? = null,
 )
@@ -151,30 +158,37 @@ data class Session(
     val teaching: Boolean? = null,
 )
 
+/** 笔记是从哪次讨论长出来的（像版本记录）。 */
 @Serializable
-data class ReviewRecord(val at: Long, val remembered: Boolean)
-
-/** 知识卡片：一次讨论的复盘，按间隔复习。 */
-@Serializable
-data class Card(
-    val id: String,
+data class NoteSource(
     val sessionId: String = "",
-    val concept: String = "",
-    val topic: String = "",
+    val at: Long = 0,
     val mode: String = "socratic",
-    val created: Long = 0,
+    val topic: String = "",
+    val oneLine: String = "",
     val source: String = "demo",
     val model: String? = null,
-    val level: Int = 0,
-    val due: Long = 0,
-    val reviews: List<ReviewRecord> = emptyList(),
-    val oneLine: String = "",
+)
+
+/** 概念笔记：一个概念一篇，每次讨论完把复盘合并进来（#140，网页版 src/lib/notes.ts 的 Note）。 */
+@Serializable
+data class Note(
+    val id: String,
+    val concept: String = "",
+    val summary: String = "",
+    val useWhen: String = "",
     val points: List<Point> = emptyList(),
+    val examples: List<String> = emptyList(),
     val misconceptions: List<Misconception> = emptyList(),
-    val stances: List<Stance>? = null,
-    val quiz: List<QuizItem> = emptyList(),
-    val terms: List<TermCard>? = null,
+    val boundaries: List<String> = emptyList(),
+    val related: List<String> = emptyList(),
+    val stances: List<Stance> = emptyList(),
+    val checks: List<SelfCheck> = emptyList(),
+    val terms: List<TermCard> = emptyList(),
+    val sources: List<NoteSource> = emptyList(),
     val context: String? = null,
+    val created: Long = 0,
+    val updated: Long = 0,
 )
 
 @Serializable
@@ -228,18 +242,18 @@ data class SavedState(
     val config: Config = Config(),
     val plan: Plan? = null,
     val session: Session? = null,
-    val library: List<Card> = emptyList(),
+    val library: List<Note> = emptyList(),
     val screen: String = "learn",
 )
 
 fun defaultConfigJson(json: Json = SibianJson): JsonObject = json.encodeToJsonElement(Config.serializer(), Config()).jsonObject
 
-/** 读回存档并转成类型化的数据。结构检查见 [restoreSaved]；检查后仍有个别卡片解析不了，就跳过那一张，不让整个知识库读不出来。 */
-fun loadState(saved: String?, oldSaved: String?, now: Long, json: Json = SibianJson): SavedState {
-    val r = restoreSaved(saved, oldSaved, now, json)
+/** 读回存档并转成类型化的数据。结构检查见 [restoreSaved]；检查后仍有个别笔记解析不了，就跳过那一篇，不让整个知识库读不出来。 */
+fun loadState(saved: String?, cards: String?, oldSaved: String?, now: Long, json: Json = SibianJson): SavedState {
+    val r = restoreSaved(saved, cards, oldSaved, now, json)
     fun <T> part(name: String, ser: kotlinx.serialization.KSerializer<T>): T? = runCatching { json.decodeFromJsonElement(ser, r.getValue(name)) }.getOrNull()
     val library = (r["library"] as? kotlinx.serialization.json.JsonArray).orEmpty().mapNotNull {
-        runCatching { json.decodeFromJsonElement(Card.serializer(), it) }.getOrNull()
+        runCatching { json.decodeFromJsonElement(Note.serializer(), it) }.getOrNull()
     }
     return SavedState(
         config = part("config", Config.serializer()) ?: Config(),

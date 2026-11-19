@@ -1,5 +1,6 @@
 package debating.ground.app.migrate
 
+import debating.ground.app.data.CARDS_STORE_KEY
 import debating.ground.app.data.SavedState
 import debating.ground.app.data.SibianJson
 import debating.ground.app.data.Storage
@@ -18,7 +19,7 @@ fun interface LegacySource {
     suspend fun read(): LegacyData?
 }
 
-/** 搬了什么：[cards] 是搬过来的知识卡片数，告诉用户一声。 */
+/** 搬了什么：[cards] 是搬过来的知识卡片合并成了几篇笔记，告诉用户一声。 */
 data class Imported(val state: SavedState, val cards: Int)
 
 class LegacyImport(private val dir: File, private val source: LegacySource, private val now: () -> Long = System::currentTimeMillis) {
@@ -26,12 +27,14 @@ class LegacyImport(private val dir: File, private val source: LegacySource, priv
     private val marker get() = File(dir, "legacy-imported")
 
     /**
-     * 原生存储里有没有用户自己的东西（知识卡片、讨论、准备好的计划）。只有设置不算：
+     * 原生存储里有没有用户自己的东西（知识库、讨论、准备好的计划）。只有设置不算：
      * 第一次没搬成时用户可能已经改过设置，原生存档就写出来了，下次启动仍然要能重试。
      */
     private fun nativeHasData(): Boolean {
-        val raw = storage.read() ?: return false
-        val s = runCatching { loadState(raw, null, now()) }.getOrNull() ?: return true
+        val raw = storage.read()
+        val cards = storage.read(CARDS_STORE_KEY)
+        if (raw == null && cards == null) return false
+        val s = runCatching { loadState(raw, cards, null, now()) }.getOrNull() ?: return true
         return s.library.isNotEmpty() || s.session != null || s.plan != null
     }
 
@@ -50,7 +53,7 @@ class LegacyImport(private val dir: File, private val source: LegacySource, priv
             mark()
             return null
         }
-        val saved = loadState(data.v3, data.v2, now())
+        val saved = loadState(null, data.v3, data.v2, now())
         // 套壳版里没有“本机服务”；原生版的 "api" 是直接连接，要重新填密钥，先回到演示模式，免得一打开就报错
         val fixed = if (saved.config.aiMode == "api") saved.copy(config = saved.config.copy(aiMode = "demo")) else saved
         storage.write(SibianJson.encodeToString(SavedState.serializer(), fixed))
