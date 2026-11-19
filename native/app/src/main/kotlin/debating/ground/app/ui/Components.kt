@@ -1,6 +1,7 @@
 package debating.ground.app.ui
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
@@ -236,11 +237,14 @@ private fun Double.em() = androidx.compose.ui.unit.TextUnit(this.toFloat(), andr
 @Composable
 fun Panel(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val t = LocalTokens.current
+    val motion = LocalMotion.current
     Column(
         modifier
             .fillMaxWidth()
             .background(t.raised.color(), RoundedCornerShape(R))
             .border(1.dp, t.line.color(), RoundedCornerShape(R))
+            // 里面的内容增减时（添加要点、展开解释……）高度平滑变化，不是一下子跳
+            .then(if (motion) Modifier.animateContentSize(spring(dampingRatio = 0.9f, stiffness = 400f)) else Modifier)
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) { content() }

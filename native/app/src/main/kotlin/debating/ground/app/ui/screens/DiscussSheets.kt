@@ -1,5 +1,7 @@
 package debating.ground.app.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,6 +26,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -133,6 +136,15 @@ private fun QuickSheet(s: Session, m: ChatMessage, busy: Boolean, model: AppMode
                 }
             }
         }
+        // 想把这句话记到别处：复制整句（气泡上点一下是追问，没法长按选字）
+        val context = LocalContext.current
+        GhostButton("复制这句", {
+            val ok = runCatching {
+                context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("发言", m.text))
+            }.isSuccess
+            l.openSheet(null)
+            l.toast(if (ok) "已复制这句话。" else "没能复制。")
+        }, Modifier.fillMaxWidth(), small = true)
         if (!m.terms.isNullOrEmpty()) {
             SectionLabel("这句里的新词")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

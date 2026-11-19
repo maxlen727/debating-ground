@@ -15,6 +15,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -68,7 +69,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -153,7 +156,10 @@ fun AppScaffold(model: AppModel) {
         val s = st.session
         l.go(if (tab == Tab.Discuss && s?.finished == true && s.review != null) "review" else tab.screen)
     }
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    // 点输入框以外的空白处、换页时收起键盘（Compose 默认不处理，键盘会一直开着挡住按钮）
+    val focus = LocalFocusManager.current
+    LaunchedEffect(screen) { focus.clearFocus() }
+    BoxWithConstraints(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { focus.clearFocus() } }) {
         // 整个窗口底下铺一层背景氛围，页面和导航都是透明的，让它透出来
         Atmosphere()
         val style = navStyleFor(maxWidth.value.toInt(), maxHeight.value.toInt())
