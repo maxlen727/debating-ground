@@ -1,11 +1,13 @@
 package debating.ground.app.ui
 
-import androidx.activity.compose.BackHandler
+import androidx.activity.BackEventCompat
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -83,7 +85,10 @@ import debating.ground.app.ui.screens.SettingsScreen
 import debating.ground.app.ui.theme.LocalTokens
 import debating.ground.app.ui.theme.TextStyles
 import debating.ground.app.ui.theme.color
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 @Composable
 fun AppScaffold(model: AppModel) {
@@ -91,7 +96,30 @@ fun AppScaffold(model: AppModel) {
     val l = model.learning
     val screen = st.ui.screen
     // 返回键：先关面板、再回上一页（流程层的 goBack）；已经在最外层就交给系统退出
-    BackHandler(enabled = screen != "learn" || st.ui.sheet != null || st.ui.term != null || st.ui.explain != null) { l.goBack() }
+    // 返回预览（Android 14 起）：手指一滑，面板跟着往下沉、页面跟着缩小，松手才真的返回，反悔就弹回。
+    // 最外层（学习页）交给系统，退出 App 时用系统自己的预览
+    val gesture = remember { BackGesture() }
+    val motionOn = LocalMotion.current
+    val overlay = st.ui.sheet != null || st.ui.term != null || st.ui.explain != null || st.ui.invite
+    PredictiveBackHandler(enabled = screen != "learn" || overlay) { events ->
+        gesture.overlay = l.state.ui.let { it.sheet != null || it.term != null || it.explain != null || it.invite }
+        try {
+            events.collect { e ->
+                if (motionOn) {
+                    gesture.progress = e.progress
+                    gesture.fromLeft = e.swipeEdge == BackEventCompat.EDGE_LEFT
+                }
+            }
+            l.goBack()
+            // 松手：返回的换页动画接着播，跟手的缩放同时收回去；面板等它沉下去再清零
+            if (gesture.overlay) delay(320) else animate(gesture.progress, 0f, animationSpec = tween(300, easing = EaseOut)) { v, _ -> gesture.progress = v }
+            gesture.progress = 0f
+        } catch (e: CancellationException) {
+            // 反悔：弹回原位
+            withContext(NonCancellable) { animate(gesture.progress, 0f, animationSpec = tween(220, easing = EaseOut)) { v, _ -> gesture.progress = v } }
+            throw e
+        }
+    }
     // 短暂提示 3 秒后消失（和网页版 toast 一样）
     LaunchedEffect(st.ui.toast) {
         if (st.ui.toast.isNotEmpty()) {
@@ -103,11 +131,15 @@ fun AppScaffold(model: AppModel) {
     val viaTab = remember { booleanArrayOf(false) }
     val motion = LocalMotion.current
     val pages: @Composable () -> Unit = {
-        PageHost(screen, st, nav = {
-            val kind = navKind(initialState, targetState, viaTab[0])
-            viaTab[0] = false
-            pageTransform(kind, motion)
-        }) { scr, state -> Page(scr, state, model) }
+        CompositionLocalProvider(LocalBackGesture provides gesture) {
+            Box(Modifier.fillMaxSize().followBack(gesture, LocalTokens.current.surface.color())) {
+                PageHost(screen, st, nav = {
+                    val kind = navKind(initialState, targetState, viaTab[0])
+                    viaTab[0] = false
+                    pageTransform(kind, motion)
+                }) { scr, state -> Page(scr, state, model) }
+            }
+        }
     }
     val onTab = { tab: Tab ->
         viaTab[0] = true

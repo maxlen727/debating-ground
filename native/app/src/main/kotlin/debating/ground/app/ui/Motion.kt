@@ -26,9 +26,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -165,4 +171,35 @@ fun RiseIn(id: String, seen: MutableSet<String>, content: @Composable () -> Unit
             translationY = (1 - p.value) * 14.dp.toPx()
         },
     ) { content() }
+}
+
+/**
+ * 返回手势进行到哪了（Android 14 起的返回预览）：[progress] 从 0 到 1，[fromLeft] 是不是从左边缘滑进来的。
+ * 有面板开着时（[overlay]）面板跟着往下沉，否则当前页面跟着缩小、往滑动的方向挪一点。
+ */
+class BackGesture {
+    var progress by mutableFloatStateOf(0f)
+    var fromLeft by mutableStateOf(true)
+    var overlay by mutableStateOf(false)
+}
+
+val LocalBackGesture = staticCompositionLocalOf { BackGesture() }
+
+/**
+ * 页面跟着返回手势缩小到 90%、往滑动方向挪一点、四角变圆（Material 的返回预览）。页面平时是透明的（底下是背景氛围），
+ * 手势进行中垫一层 [card] 底色、带一点阴影，看得出是一整页在往回收。
+ */
+fun Modifier.followBack(g: BackGesture, card: Color): Modifier = graphicsLayer {
+    val p = if (g.overlay) 0f else g.progress
+    if (p == 0f) return@graphicsLayer
+    val s = 1f - 0.1f * p
+    scaleX = s
+    scaleY = s
+    translationX = (if (g.fromLeft) 1f else -1f) * size.width * 0.05f * p
+    shape = androidx.compose.foundation.shape.RoundedCornerShape((28 * p).dp)
+    clip = true
+    shadowElevation = (16 * p).dp.toPx()
+}.drawBehind {
+    val p = if (g.overlay) 0f else g.progress
+    if (p > 0f) drawRect(card.copy(alpha = (p * 4).coerceAtMost(1f)))
 }
