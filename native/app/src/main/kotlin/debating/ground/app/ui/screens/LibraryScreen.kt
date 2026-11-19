@@ -1,5 +1,7 @@
 package debating.ground.app.ui.screens
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -55,6 +57,7 @@ import debating.ground.app.ui.BusyStrip
 import debating.ground.app.ui.ErrorBanner
 import debating.ground.app.ui.GhostButton
 import debating.ground.app.ui.IconPaths
+import debating.ground.app.ui.LocalMotion
 import debating.ground.app.ui.NavSpacer
 import debating.ground.app.ui.Panel
 import debating.ground.app.ui.PrimaryButton
@@ -136,7 +139,16 @@ fun LibraryScreen(st: AppState, model: AppModel, now: Long) {
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     )
                 } else {
-                    for (c in list) CardItem(c, now) { l.openCard(c.id) }
+                    // 切换“待复习 / 全部”时整列淡入淡出，不是一下子换掉
+                    Crossfade(if (searching) "search" else tab, animationSpec = tween(if (LocalMotion.current) 200 else 0), label = "cards") { shown ->
+                        // 淡出的那一列照旧显示它自己的卡片
+                        val cards = when (shown) {
+                            "search" -> list
+                            "due" -> due
+                            else -> library
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { for (c in cards) CardItem(c, now) { l.openCard(c.id) } }
+                    }
                 }
             }
             NavSpacer()

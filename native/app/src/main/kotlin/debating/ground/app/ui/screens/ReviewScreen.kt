@@ -2,6 +2,7 @@ package debating.ground.app.ui.screens
 
 import android.content.Context
 import android.content.Intent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -64,6 +65,7 @@ import debating.ground.app.data.Stance
 import debating.ground.app.data.TermCard
 import debating.ground.app.data.sessionMarkdown
 import debating.ground.app.flow.AppState
+import debating.ground.app.ui.Appear
 import debating.ground.app.ui.BusyStrip
 import debating.ground.app.ui.ErrorBanner
 import debating.ground.app.ui.FinePrint
@@ -327,13 +329,28 @@ fun Quiz(items: List<QuizItem>, picks: Map<Int, Int>, onPick: (Int, Int) -> Unit
                         oi == picked -> "wrong"
                         else -> "dim"
                     }
-                    val (bg, border) = when (state) {
-                        "right" -> t.goodSoft.color() to t.good.color()
-                        "wrong" -> t.badSoft.color() to t.bad.color()
-                        else -> t.surface.color() to t.line.color()
-                    }
+                    // 选了答案后：对错的颜色渐变过去，其余选项慢慢变淡
+                    val bg by animateColorAsState(
+                        when (state) {
+                            "right" -> t.goodSoft.color()
+                            "wrong" -> t.badSoft.color()
+                            else -> t.surface.color()
+                        },
+                        tween(260),
+                        label = "quiz-bg",
+                    )
+                    val border by animateColorAsState(
+                        when (state) {
+                            "right" -> t.good.color()
+                            "wrong" -> t.bad.color()
+                            else -> t.line.color()
+                        },
+                        tween(260),
+                        label = "quiz-edge",
+                    )
+                    val dim by animateFloatAsState(if (state == "dim") 0.55f else 1f, tween(260), label = "quiz-dim")
                     Row(
-                        Modifier.fillMaxWidth().heightIn(min = 46.dp).alpha(if (state == "dim") 0.55f else 1f)
+                        Modifier.fillMaxWidth().heightIn(min = 46.dp).alpha(dim)
                             .background(bg, RoundedCornerShape(12.dp)).border(1.dp, border, RoundedCornerShape(12.dp))
                             .clickable(enabled = picked == null, role = Role.Button) { onPick(qi, oi) }
                             .padding(horizontal = 14.dp, vertical = 10.dp),
@@ -350,8 +367,8 @@ fun Quiz(items: List<QuizItem>, picks: Map<Int, Int>, onPick: (Int, Int) -> Unit
                         Text(o, style = TextStyles.body.copy(fontSize = 15.sp), color = t.ink.color())
                     }
                 }
-                if (picked != null) {
-                    val ok = picked == q.answer
+                Appear(picked) { p ->
+                    val ok = p == q.answer
                     Text(
                         (if (ok) "答对了。" else "正确答案是 ${"ABCD".getOrElse(q.answer) { '?' }}。") + q.why,
                         style = TextStyles.small.copy(fontSize = 13.5.sp, lineHeight = 1.7.em),
