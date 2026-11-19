@@ -5,7 +5,8 @@ name: 安卓 App
 # 第一次打开时会把旧版的知识库搬过来（见 docs/dev/native.md）。
 # PR：构建 debug 包（包名带 .dev，用调试签名，能和正式版同时装），作为构建产物上传，方便试装；不需要任何凭据
 # 合并到 main：构建正式签名的 APK，更新同一个“预览版”Release（标签 preview 跟着 main 走）
-# 打 v* 标签（例如 v0.10.0）：构建正式签名的 APK，发正式 Release
+# 打 v* 标签（例如 v0.10.0），或在 Actions 页面手动运行并勾选“发正式版”（用 package.json 的版本号打标签）：
+# 构建正式签名的 APK，发正式 Release；docs/releases/<版本号>.md 存在时用它做更新说明
 # 正式签名需要仓库 Secrets：ANDROID_KEYSTORE_BASE64、ANDROID_KEYSTORE_PASSWORD、ANDROID_KEY_ALIAS、ANDROID_KEY_PASSWORD
 on:
   pull_request:
@@ -13,6 +14,11 @@ on:
     branches: [main]
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      release:
+        description: 发正式版（用 package.json 的版本号打 v 标签，只能在 main 上）
+        type: boolean
+        default: false
 
 concurrency:
   group: android-${{ github.ref }}
@@ -36,6 +42,14 @@ jobs:
         id: ver
         run: |
           base=$(node -p "require('./package.json').version")
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "${{ inputs.release }}" = true ]; then
+            [ "$GITHUB_REF" = refs/heads/main ] || { echo "::error::正式版只能从 main 发"; exit 1; }
+            echo "code=$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_OUTPUT"
+            echo "name=$base" >> "$GITHUB_OUTPUT"
+            echo "kind=release" >> "$GITHUB_OUTPUT"
+            echo "版本 $base（release，手动发布）"
+            exit 0
+          fi
           case "$GITHUB_EVENT_NAME:$GITHUB_REF" in
             push:refs/tags/v*) name="${GITHUB_REF_NAME#v}"; kind=release ;;
             push:refs/heads/main|workflow_dispatch:*) name="$base-preview.$GITHUB_RUN_NUMBER"; kind=preview ;;
@@ -119,5 +133,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" "${{ steps.apk.outputs.file }}" --verify-tag \
-            --title "思辨场 ${{ steps.ver.outputs.name }}" --generate-notes
+          name="${{ steps.ver.outputs.name }}"
+          tag="v$name"
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            # 手动发布：标签由这里打在这次提交上；同名的正式版已经有了就停下，不覆盖
+            if gh release view "$tag" >/dev/null 2>&1; then echo "::error::$tag 已经发过了。要发新版先改 package.json 的版本号。"; exit 1; fi
+            where=(--target "$GITHUB_SHA")
+          else
+            where=(--verify-tag)
+          fi
+          if [ -f "docs/releases/$name.md" ]; then notes=(--notes-file "docs/releases/$name.md"); else notes=(--generate-notes); fi
+          gh release create "$tag" "${{ steps.apk.outputs.file }}" "${where[@]}" \
+            --title "思辨场 $name" "${notes[@]}"
