@@ -238,6 +238,15 @@ fun inviteLink(backend: String, roomId: String, invite: String, base: String = I
     return base + "#join=" + Base64.encodeToString(json.toByteArray(Charsets.UTF_8), B64)
 }
 
+/**
+ * 从一段文字里找出邀请链接（聊天软件分享过来的常常前后带着别的话，例如“小明邀请你一起讨论：https://…#join=… 点开就能加入”）。
+ * 没有时返回 null。
+ */
+fun inviteIn(text: String): String? = INVITE_IN_TEXT.find(text)?.value
+
+// 链接从 http(s):// 开始，只取网址里能出现的字符（不会把前面紧挨着的“讨论：”算进来）；没有网址时也认单独的 #join=…
+private val INVITE_IN_TEXT = Regex("(https?://[A-Za-z0-9._~:/?@!$&'()*+,;=%-]*)?#join=[A-Za-z0-9_-]+")
+
 /** 读邀请：可以是完整的邀请链接，也可以只是 # 后面那一段。不完整或地址不安全时返回 null。 */
 fun parseInvite(raw: String): JoinTarget? {
     val hash = raw.trim().let {

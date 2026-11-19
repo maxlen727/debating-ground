@@ -34,6 +34,12 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- 在别的 App 里把邀请链接“分享到思辨场”：直接进加入页（只认邀请链接） -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
 
         <!-- 复习提醒：闹钟到点发通知；手机重启、App 更新后重新排上闹钟。只接系统和自己发的广播 -->
