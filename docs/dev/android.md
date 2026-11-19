@@ -20,14 +20,18 @@ cd native && ./gradlew assembleDebug   # debug 包，包名带 .dev，能和正�
 | --- | --- |
 | Pull Request | 构建 debug 包（包名带 `.dev`），作为构建产物上传（14 天），可以直接装来试 |
 | 合并到 `main` | 构建正式签名的 APK，更新同一个“预览版”Release（标签 `preview` 跟着 main 走） |
-| 推送 `v*` 标签 | 构建正式签名的 APK，发正式 Release，自动生成更新说明 |
+| 推送 `v*` 标签，或手动运行并勾选“发正式版” | 构建正式签名的 APK，发正式 Release；`docs/releases/<版本号>.md` 存在时用它做更新说明，否则自动生成 |
 
 版本号：`versionName` 来自 `package.json`（预览版加 `-preview.N`，正式版用标签），`versionCode` 是 `1000 + 工作流运行序号`，保证每次都比上一次大。
 
 发正式版：
 
+1. 把 `package.json` 的 `version` 改成要发的版本，写好 `docs/releases/<版本号>.md`（给用户看的更新说明），合进 main。
+2. 二选一：
+   - 在 GitHub 的 **Actions → 安卓 App → Run workflow**，分支选 `main`，勾上 **发正式版**。工作流会用 `package.json` 的版本号在这次提交上打 `v` 标签。同名的版本已经发过时会停下，不覆盖。
+   - 或者自己打标签推上去：
+
 ```bash
-# 先把 package.json 的 version 改成要发的版本并合进 main，然后
 git tag v0.10.0 && git push origin v0.10.0
 ```
 
