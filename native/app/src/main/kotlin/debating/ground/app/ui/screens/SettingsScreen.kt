@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -49,6 +47,7 @@ import debating.ground.app.ui.Segmented
 import debating.ground.app.ui.StatusTag
 import debating.ground.app.ui.TopBar
 import debating.ground.app.ui.WithFloatingDock
+import debating.ground.app.ui.scrollRow
 import debating.ground.app.ui.scrollWithEdge
 import debating.ground.app.ui.theme.LocalTokens
 import debating.ground.app.ui.theme.TextStyles
@@ -136,7 +135,7 @@ private fun ReminderPanel(model: AppModel) {
             }
         }
         if (prefs.enabled) {
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.fillMaxWidth().scrollRow(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 for ((h, m, label) in REMINDER_TIMES) Chip(label, prefs.hour == h && prefs.minute == m, { apply(prefs.copy(hour = h, minute = m)) })
             }
         }

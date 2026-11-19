@@ -1,6 +1,11 @@
 package debating.ground.app.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -9,14 +14,17 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -40,6 +48,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -48,6 +57,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import debating.ground.app.ui.theme.LocalTokens
@@ -80,7 +90,7 @@ fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifi
         modifier
             .heightIn(min = if (small) 40.dp else 48.dp)
             .scale(pressScale(src, enabled))
-            .alpha(if (enabled) 1f else 0.45f)
+            .alpha(enabledAlpha(enabled))
             .then(if (LocalFloating.current) Modifier.shadow(10.dp, Capsule, spotColor = t.brand.color().copy(alpha = 0.45f)) else Modifier)
             .background(t.brand.color(), Capsule)
             .clickable(src, null, enabled = enabled, role = Role.Button, onClick = onClick)
@@ -104,7 +114,7 @@ fun SecondaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modi
         modifier
             .heightIn(min = if (small) 40.dp else 48.dp)
             .scale(pressScale(src, enabled))
-            .alpha(if (enabled) 1f else 0.45f)
+            .alpha(enabledAlpha(enabled))
             .then(
                 if (LocalFloating.current) {
                     Modifier.glass(
@@ -127,7 +137,7 @@ fun GhostButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier
     Row(
         modifier
             .heightIn(min = if (small) 44.dp else 48.dp)
-            .alpha(if (enabled) 1f else 0.45f)
+            .alpha(enabledAlpha(enabled))
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = if (small) 12.dp else 20.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -148,7 +158,7 @@ fun QuietLink(text: String, onClick: () -> Unit, enabled: Boolean = true) {
         Modifier
             .heightIn(min = 44.dp)
             .then(if (floating) Modifier.glass(RoundedCornerShape(22.dp), 4.dp) else Modifier)
-            .alpha(if (enabled) 1f else 0.45f)
+            .alpha(enabledAlpha(enabled))
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = if (floating) 18.dp else 12.dp),
         contentAlignment = Alignment.Center,
@@ -160,20 +170,24 @@ fun QuietLink(text: String, onClick: () -> Unit, enabled: Boolean = true) {
 fun Chip(text: String, on: Boolean, onClick: () -> Unit, enabled: Boolean = true) {
     val t = LocalTokens.current
     val shape = RoundedCornerShape(20.dp)
+    // 选中和取消时颜色渐变过去，不是一下子跳
+    val fg by animateColorAsState(if (on) t.brand.color() else t.muted.color(), label = "chip-fg")
+    val bg by animateColorAsState(if (on) t.brand.color().copy(alpha = 0.08f).compositeOver(t.surface.color()) else t.surface.color(), label = "chip-bg")
+    val edge by animateColorAsState(if (on) t.brand.color() else t.line.color(), label = "chip-edge")
     Box(
         Modifier
             .sizeIn(minHeight = 44.dp)
-            .alpha(if (enabled) 1f else 0.45f)
+            .alpha(enabledAlpha(enabled))
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text,
-            color = if (on) t.brand.color() else t.muted.color(),
+            color = fg,
             style = TextStyles.small.copy(fontSize = 13.sp),
             modifier = Modifier
-                .background(if (on) t.brand.color().copy(alpha = 0.08f).compositeOver(t.surface.color()) else t.surface.color(), shape)
-                .border(1.dp, if (on) t.brand.color() else t.line.color(), shape)
+                .background(bg, shape)
+                .border(1.dp, edge, shape)
                 .padding(horizontal = 13.dp, vertical = 6.dp),
         )
     }
@@ -324,7 +338,7 @@ fun Stepper(value: Int, min: Int, max: Int, label: String, onChange: (Int) -> Un
 private fun StepButton(path: String, label: String, enabled: Boolean, onClick: () -> Unit) {
     val t = LocalTokens.current
     Box(
-        Modifier.size(44.dp).alpha(if (enabled) 1f else 0.35f).clickable(enabled = enabled, role = Role.Button, onClick = onClick).semantics {
+        Modifier.size(44.dp).alpha(enabledAlpha(enabled, 0.35f)).clickable(enabled = enabled, role = Role.Button, onClick = onClick).semantics {
             contentDescription =
                 label
         },
@@ -332,37 +346,51 @@ private fun StepButton(path: String, label: String, enabled: Boolean, onClick: (
     ) { Icon(lineIcon(path, path), null, Modifier.size(16.dp), tint = t.ink.color()) }
 }
 
-/** 分段选择（.segmented）：几个选项平分一行，选中的那个浮起来。 */
+/** 分段选择（.segmented）：几个选项平分一行，选中的那个浮起来；换一项时浮起的那块滑过去（iOS 的分段控件也是这样）。 */
 @Composable
 fun Segmented(options: List<Pair<String, String>>, selected: String, label: String, enabled: Boolean = true, onSelect: (String) -> Unit) {
     val t = LocalTokens.current
     val haptic = LocalHapticFeedback.current
-    Row(
+    val motion = LocalMotion.current
+    val index = options.indexOfFirst { it.first == selected }
+    BoxWithConstraints(
         Modifier.fillMaxWidth().background(t.bg.color(), RoundedCornerShape(12.dp)).border(1.dp, t.line.color(), RoundedCornerShape(12.dp)).padding(3.dp)
             .semantics { contentDescription = label },
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-        for ((id, text) in options) {
-            val on = id == selected
+        val gap = 3.dp
+        val cell = (maxWidth - gap * (options.size - 1)) / options.size
+        val x by animateDpAsState((cell + gap) * maxOf(0, index), if (motion) spring(dampingRatio = 0.8f, stiffness = 500f) else snap(), label = "segment")
+        if (index >= 0) {
             Box(
-                Modifier.weight(1f).heightIn(min = 40.dp).background(if (on) t.raised.color() else Color.Transparent, RoundedCornerShape(9.dp))
-                    .alpha(if (enabled || on) 1f else 0.45f)
-                    .clickable(enabled = enabled, role = Role.RadioButton) {
-                        // 换了一项：轻轻点一下（系统关了触感就不震）
-                        if (!on) haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                        onSelect(id)
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text,
-                    color = if (on) t.ink.color() else t.muted.color(),
-                    style = TextStyles.small.copy(fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal),
-                )
+                Modifier.offset { IntOffset(x.roundToPx(), 0) }.width(cell).heightIn(min = 40.dp).matchParentSize()
+                    .shadow(1.dp, RoundedCornerShape(9.dp)).background(t.raised.color(), RoundedCornerShape(9.dp)),
+            )
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+            for ((id, text) in options) {
+                val on = id == selected
+                val fg by animateColorAsState(if (on) t.ink.color() else t.muted.color(), label = "segment-fg")
+                Box(
+                    Modifier.weight(1f).heightIn(min = 40.dp)
+                        .alpha(if (enabled || on) 1f else 0.45f)
+                        .clickable(enabled = enabled, role = Role.RadioButton) {
+                            // 换了一项：轻轻点一下（系统关了触感就不震）
+                            if (!on) haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                            onSelect(id)
+                        }
+                        .semantics { this.selected = on },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(text, color = fg, style = TextStyles.small.copy(fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal))
+                }
             }
         }
     }
 }
+
+/** 可点和不可点之间切换时透明度渐变过去。 */
+@Composable
+fun enabledAlpha(enabled: Boolean, off: Float = 0.45f): Float = animateFloatAsState(if (enabled) 1f else off, tween(180), label = "enabled").value
 
 /** 状态小标签（.status）：[tone] 是 ok、warn 或空（灰色）。 */
 @Composable

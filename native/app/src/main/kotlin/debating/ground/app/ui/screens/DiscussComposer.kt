@@ -7,7 +7,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,7 +16,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -72,6 +70,7 @@ import debating.ground.app.ui.RevealText
 import debating.ground.app.ui.glass
 import debating.ground.app.ui.lineIcon
 import debating.ground.app.ui.mix
+import debating.ground.app.ui.scrollRow
 import debating.ground.app.ui.theme.LocalTokens
 import debating.ground.app.ui.theme.TextStyles
 import debating.ground.app.ui.theme.color
@@ -147,7 +146,7 @@ private fun Composer(s: Session, st: AppState, live: Live?, model: AppModel) {
         }
     }
     HintCard(st.ui.hint, live) { l.closeHint() }
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(Modifier.fillMaxWidth().scrollRow(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         if (humanTurn) Tool("给点提示", IconPaths.BULB, enabled = !busy) { model.run { hint() } }
         Tool("写个小结", IconPaths.NOTE, enabled = !busy) { l.addReflection() }
         if (s.mode == "socratic") {

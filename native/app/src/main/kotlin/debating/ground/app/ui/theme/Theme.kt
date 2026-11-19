@@ -1,5 +1,6 @@
 package debating.ground.app.ui.theme
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -12,6 +13,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import debating.ground.app.ui.LocalMotion
+import debating.ground.app.ui.PressIndication
 
 // 字体分工（AGENTS.md）：衬线只写“知识本身”——概念、讨论题、要点、自己的小结、复盘结论、术语、检验题；
 // 对话、按钮、标签、提示用无衬线。只用系统字体（App 要离线可用）：安卓上分别落到 Noto Serif / Sans CJK。
@@ -70,7 +73,10 @@ fun SibianTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -
         )
     }
     CompositionLocalProvider(LocalTokens provides t) {
-        MaterialTheme(colorScheme = scheme, content = content)
+        MaterialTheme(colorScheme = scheme) {
+            // 按下时轻轻缩一下，代替 Material 的方形波纹（见 ui/PressIndication.kt）
+            CompositionLocalProvider(LocalIndication provides PressIndication(LocalMotion.current), content = content)
+        }
     }
 }
 

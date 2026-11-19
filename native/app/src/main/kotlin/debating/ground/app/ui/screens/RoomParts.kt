@@ -7,7 +7,6 @@ import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,7 +19,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -71,6 +69,7 @@ import debating.ground.app.ui.TopBar
 import debating.ground.app.ui.WithFloatingDock
 import debating.ground.app.ui.glass
 import debating.ground.app.ui.lineIcon
+import debating.ground.app.ui.scrollRow
 import debating.ground.app.ui.scrollWithEdge
 import debating.ground.app.ui.theme.LocalTokens
 import debating.ground.app.ui.theme.TextStyles
@@ -90,7 +89,7 @@ fun RoomBar(s: Session, model: AppModel) {
     val room = s.link ?: return
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).semantics { contentDescription = "参与讨论的人" },
+            Modifier.fillMaxWidth().scrollRow().semantics { contentDescription = "参与讨论的人" },
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -357,7 +356,7 @@ fun RoomComposer(s: Session, st: AppState, live: Live?, model: AppModel) {
     }
     HintCard(st.ui.hint, live) { l.closeHint() }
     Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        Modifier.fillMaxWidth().scrollRow(),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -488,7 +487,7 @@ fun InviteFriendsSheet(st: AppState, model: AppModel, onClose: () -> Unit) {
         Text("创建一个讨论房间，把链接发给同学。大家用自己的手机加入，" + if (debate) "按赛制轮流上场。" else "轮流发言，每个人说完由一位 AI 嘉宾接话。", style = TextStyles.small, color = t.ink.color())
         Input(name, { name = it.take(20) }, "你的名字", placeholder = "同学会看到这个名字", maxLength = 20)
         Text("每次发言的时限（到点只提醒，不打断）", style = TextStyles.small.copy(fontSize = 13.sp), color = t.muted.color())
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.fillMaxWidth().scrollRow(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             for ((sec, label) in listOf(0 to "不计时", 30 to "30 秒", 60 to "1 分钟", 90 to "1 分 30 秒", 120 to "2 分钟")) {
                 debating.ground.app.ui.Chip(label, c.turnSeconds == sec, { l.editConfig { it.copy(turnSeconds = sec) } })
             }
