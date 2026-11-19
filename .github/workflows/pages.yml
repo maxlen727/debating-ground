@@ -24,6 +24,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # 和 package.json 的 packageManager、dependabot 用同一个 npm：不同大版本对锁文件里可选依赖的处理不一样（#83）
+      - run: npm install -g npm@11.21.1
       - run: npm ci
       - name: 构建演示版界面
         run: npm run build

@@ -4,8 +4,10 @@
   "private": true,
   "type": "module",
   "description": "思辨场：通过和 AI 讨论、追问、辩论，把一个概念真正弄懂，并把理解落盘、定期回顾。",
+  "packageManager": "npm@11.21.1",
   "engines": {
-    "node": ">=22.18"
+    "node": ">=22.18",
+    "npm": ">=11"
   },
   "scripts": {
     "dev": "vite",
@@ -44,5 +46,8 @@
     "typescript-eslint": "^8.73.0",
     "vite": "^6.4.6",
     "vitepress": "^1.6.4"
+  },
+  "allowScripts": {
+    "esbuild": true
   }
 }

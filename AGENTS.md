@@ -34,7 +34,7 @@
 ## 命令
 
 ```bash
-npm install          # 安装依赖
+npm install          # 安装依赖。开发用 npm 11（package.json 的 packageManager，和 CI、dependabot 一致；npm 10 生成的锁文件和它不兼容，见 #83）
 npm run check        # 类型检查（tsc）
 npm run lint         # 代码检查（ESLint：没处理的 Promise、Hook 依赖、switch 漏分支等，只管对错不管格式）
 npm run format       # 自动整理格式（Prettier）；npm run format:check 只检查
