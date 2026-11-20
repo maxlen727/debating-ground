@@ -1,9 +1,14 @@
 // 知识画布：讨论是一棵树。所有发言仍按时间存在一个列表里，每条带着自己所在的分支；
 // 这里按分支把它们取出来。
+import { BRANCH_MODES } from '../../shared/modes.ts';
 import type { Entry } from '../../shared/types.ts';
 import type { Branch, Session } from '../store.ts';
 
 type S = Pick<Session, 'entries' | 'branches' | 'at'>;
+
+/** 这场讨论能不能展开分支：苏格拉底追问、圆桌讨论（和旧的知识画布）可以；辩论和多人房间不行（#142）。 */
+export const canBranch = (s: Pick<Session, 'mode' | 'room'>) =>
+  BRANCH_MODES.includes(s.mode) && !s.room;
 
 export const branchById = (s: S, id?: string) =>
   id ? s.branches?.find(b => b.id === id) : undefined;

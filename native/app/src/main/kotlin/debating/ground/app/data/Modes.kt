@@ -4,8 +4,8 @@ package debating.ground.app.data
 val MODE_NAMES = mapOf(
     "socratic" to "苏格拉底追问",
     "roundtable" to "圆桌讨论",
-    // 反向讲解已并进苏格拉底追问（讨论中“换我来讲”）；保留名字，旧的讨论和知识卡片还要显示
-    "teach" to "反向讲解",
+    // 讲给 AI 听：从概念笔记里开始（#142）
+    "teach" to "讲给 AI 听",
     "debate" to "正反辩论",
     "canvas" to "知识画布",
 )
@@ -26,15 +26,18 @@ fun modeName(mode: String) = MODE_NAMES[mode] ?: mode
 data class ModeInfo(val name: String, val short: String, val desc: String, val whenToUse: String)
 
 val MODES = mapOf(
-    "socratic" to ModeInfo("苏格拉底追问", "追问", "AI 陪你一步步想，用好问题和例子帮你发现哪里没想清；想检验自己，可以换你来讲给它听。", "刚接触一个概念，或者想检验能不能讲清楚"),
-    "roundtable" to ModeInfo("圆桌讨论", "圆桌", "三位不同学科背景的 AI 各说各的视角，你来主持。", "想从几个角度看同一个概念"),
-    "teach" to ModeInfo("反向讲解", "讲解", "你当老师，AI 扮演困惑的学生，听你讲、复述、提疑问。", "已经有些理解，检验能不能讲清楚"),
+    "socratic" to ModeInfo("苏格拉底追问", "追问", "AI 陪你一步步想，用好问题和例子帮你发现哪里没想清；遇到想深挖的词，从那句话展开一个分支单独聊。", "刚接触一个概念，想一步步把它想清楚"),
+    "roundtable" to ModeInfo("圆桌讨论", "圆桌", "三位不同学科背景的 AI 各说各的视角，你来主持；想听谁细说，就从他那句话展开一个分支。", "想从几个角度看同一个概念"),
+    "teach" to ModeInfo("讲给 AI 听", "讲解", "你来讲，AI 扮演刚接触这个概念的学生，听你讲、复述、提疑问。从概念笔记里开始，讲完的复盘会更新这篇笔记。", "已经有些理解，检验能不能讲清楚"),
     "debate" to ModeInfo("正反辩论", "辩论", "分正反方按赛制交锋，席位和流程都可以自定。", "概念有争议或有多种解释"),
     "canvas" to ModeInfo("知识画布", "画布", "讨论像一棵树：遇到想深挖的词，就从那句话分出一枝单独聊，聊完带回主干。", "一个概念牵出很多新概念，想深挖又怕聊跑题"),
 )
 
-/** 学习页上列出的讨论方式和顺序（反向讲解已并进苏格拉底追问，不再单独列出）。 */
-val MODE_ORDER = listOf("socratic", "roundtable", "debate", "canvas")
+/** 学习页上列出的讨论方式和顺序。“讲给 AI 听”从概念笔记里开始；知识画布并进了追问和圆桌（#142），旧的画布讨论照常显示。 */
+val MODE_ORDER = listOf("socratic", "roundtable", "debate")
+
+/** 能从一句发言展开分支的讨论方式（和 shared/modes.ts 的 BRANCH_MODES 一致）。辩论不带分支。 */
+val BRANCH_MODES = listOf("socratic", "roundtable", "canvas")
 
 /** 讨论方式卡片上的字，和网页版学习页一致。 */
 val MODE_GLYPH = mapOf("socratic" to "问", "roundtable" to "圆", "teach" to "讲", "debate" to "辩", "canvas" to "枝")

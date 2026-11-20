@@ -271,7 +271,7 @@ class ScreenshotTest {
         save("phone-discuss-reflect-dark")
     }
 
-    // 圆桌：点一条发言，打开追问面板
+    // 圆桌：点一条发言，打开追问面板（圆桌也能展开分支了，#142）
     @Test
     fun discussQuickSheet() {
         compose.setContent { Frame(dark = false, width = 390, height = 844) }
@@ -280,7 +280,7 @@ class ScreenshotTest {
         val last = model.state.value.session!!.entries.last { it is debating.ground.app.data.ChatMessage && it.human != true }
         model.learning.openSheet(last.id)
         compose.waitForIdle()
-        compose.onNodeWithText("追问这句").assertIsDisplayed()
+        compose.onNodeWithText("追问或展开").assertIsDisplayed()
         save("phone-discuss-quick")
     }
 
@@ -297,7 +297,7 @@ class ScreenshotTest {
     @Test
     fun canvasBranchAndGraph() {
         compose.setContent { Frame(dark = false, width = 390, height = 844) }
-        model.learning.setMode("canvas")
+        model.learning.setMode("socratic")
         startAndTalk(listOf("少玩了一天"))
         val from = model.state.value.session!!.entries.last { it is debating.ground.app.data.ChatMessage && it.human != true }.id
         model.run { openBranch(from, "稀缺性") }
@@ -308,6 +308,22 @@ class ScreenshotTest {
         compose.waitForIdle()
         compose.onNodeWithText("分支图").assertIsDisplayed()
         save("phone-canvas-graph")
+    }
+
+    // 讲给 AI 听：从概念笔记开始，AI 当学生（#142）
+    @Test
+    fun teachBackFromNote() {
+        compose.setContent { Frame(dark = false, width = 390, height = 844) }
+        finishOne(listOf("机会成本就是做一件事放弃的另一件事最好的价值。"))
+        val note = model.state.value.library.first()
+        model.learning.openCard(note.id)
+        compose.waitForIdle()
+        compose.onNodeWithText("讲给 AI 听").assertIsDisplayed()
+        model.learning.teachBack(note)
+        model.run { send("机会成本就是你选了一样，放弃的选项里最好的那个。") }
+        awaitState { it.ui.busy == null && it.session!!.entries.size >= 3 }
+        compose.onNodeWithText("讲给小满听……").assertExists()
+        save("phone-teach-back")
     }
 
     // 辩论：台面、赛程条和下一位的空讲台

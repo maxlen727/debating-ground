@@ -53,11 +53,10 @@ import debating.ground.app.data.Reflection
 import debating.ground.app.data.Session
 import debating.ground.app.data.SystemLine
 import debating.ground.app.data.branchesFrom
+import debating.ground.app.data.canBranch
 import debating.ground.app.data.levelEntries
 import debating.ground.app.flow.AppState
 import debating.ground.app.flow.Live
-import debating.ground.app.flow.STUDENT
-import debating.ground.app.flow.TEACHING
 import debating.ground.app.flow.seatName
 import debating.ground.app.flow.voiceReady
 import debating.ground.app.room.link
@@ -85,7 +84,7 @@ internal fun Thread(s: Session, st: AppState, live: Live?, model: AppModel, modi
     val ui = st.ui
     val debate = s.mode == "debate"
     // 知识画布只显示正在看的这一层（主干或某个分支）
-    val shown = if (s.mode == "canvas") s.levelEntries(s.at) else s.entries
+    val shown = if (s.canBranch()) s.levelEntries(s.at) else s.entries
     val lastAi = s.entries.lastOrNull { it is ChatMessage && it.human != true }?.id
     val liveMsg = live?.takeIf { it.kind == "msg" && s.entries.none { e -> e.id == it.id } }
     // 朗读：后端配好讯飞时才有（从状态算出来往下传，后端状态变了条目才会跟着重画）
@@ -114,7 +113,7 @@ internal fun Thread(s: Session, st: AppState, live: Live?, model: AppModel, modi
         val rev = shown.asReversed()
         for ((k, m) in rev.withIndex()) {
             // 知识画布：从这句话展开过的分支挂在它下面（倒着排，所以先放）
-            if (s.mode == "canvas" && m is ChatMessage && s.branchesFrom(m.id).isNotEmpty()) {
+            if (s.canBranch() && m is ChatMessage && s.branchesFrom(m.id).isNotEmpty()) {
                 item(key = "chips-${m.id}") { BranchChips(s, m.id, m.human == true, ui.busy != null, model) }
             }
             item(key = m.id) {
@@ -136,7 +135,7 @@ internal fun Thread(s: Session, st: AppState, live: Live?, model: AppModel, modi
                 if (m.stage != prev) item(key = "stage-${m.id}") { StageDivider(s.stages.getOrNull(m.stage)?.name.orEmpty()) }
             }
         }
-        if (s.mode == "canvas" && s.at != null) item(key = "fork-head-${s.at}") { ForkHeader(s) }
+        if (s.canBranch() && s.at != null) item(key = "fork-head-${s.at}") { ForkHeader(s) }
     }
 }
 
@@ -298,8 +297,11 @@ private fun MessageView(m: ChatMessage, s: Session, showTip: Boolean, model: App
             (m.action ?: "") + (target?.let { " → ${seatName(it)}" } ?: "")
         } else {
             when (m.action) {
-                TEACHING -> "讲解"
-                STUDENT -> "当学生"
+                // 以前“换我来讲”留下的发言（#142 去掉了这个开关），旧讨论里照样标出来
+                "讲给伙伴听" -> "讲解"
+
+                "当学生" -> "当学生"
+
                 else -> ""
             }
         },
@@ -362,7 +364,7 @@ private fun MessageView(m: ChatMessage, s: Session, showTip: Boolean, model: App
             }
             if (showTip) {
                 Text(
-                    (if (s.mode == "canvas") "轻点发言可以追问，或从这句展开一个分支单独聊。" else "轻点发言可以追问：没听懂、举例、反驳、分辨事实。") +
+                    (if (s.canBranch()) "轻点发言可以追问，或从这句展开一个分支单独聊。" else "轻点发言可以追问：没听懂、举例、反驳、分辨事实。") +
                         if (!m.terms.isNullOrEmpty()) "带下划线的词，点一下看解释。" else "",
                     style = TextStyles.small.copy(fontSize = 12.sp),
                     color = t.accent.color(),

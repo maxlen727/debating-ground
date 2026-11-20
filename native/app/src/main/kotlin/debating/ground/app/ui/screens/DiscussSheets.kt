@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import debating.ground.app.AppModel
 import debating.ground.app.data.ChatMessage
 import debating.ground.app.data.Session
+import debating.ground.app.data.canBranch
 import debating.ground.app.flow.AppState
 import debating.ground.app.flow.Live
 import debating.ground.app.flow.QUICK
@@ -82,9 +83,9 @@ internal fun Sheets(s: Session, st: AppState, live: Live?, model: AppModel) {
 
         ui.sheet == "roster" && s.mode == "debate" -> SheetSpec("roster") { RosterSheet(s, model) }
 
-        ui.sheet == "tree" && s.mode == "canvas" -> SheetSpec("tree") { GraphSheet(s, ui.busy != null, model) }
+        ui.sheet == "tree" && s.canBranch() -> SheetSpec("tree") { GraphSheet(s, ui.busy != null, model) }
 
-        ui.sheet == "back" && s.mode == "canvas" -> SheetSpec("back") { BackSheet(s, model) }
+        ui.sheet == "back" && s.canBranch() -> SheetSpec("back") { BackSheet(s, model) }
 
         s.link != null && ui.sheet == "seats" && s.mode == "debate" -> SheetSpec("seats") { SeatSheet(s, model) }
 
@@ -120,7 +121,7 @@ private fun QuickSheet(s: Session, m: ChatMessage, busy: Boolean, model: AppMode
     val t = LocalTokens.current
     val l = model.learning
     val debate = s.mode == "debate"
-    Sheet(if (s.mode == "canvas" && !s.finished) "追问或展开" else "追问这句", { l.openSheet(null) }) {
+    Sheet(if (s.canBranch() && !s.finished) "追问或展开" else "追问这句", { l.openSheet(null) }) {
         Quote(if (m.text.length > 80) m.text.take(80) + "…" else m.text)
         Column(Modifier.fillMaxWidth().background(t.raised.color(), RoundedCornerShape(14.dp)).border(1.dp, t.line.color(), RoundedCornerShape(14.dp))) {
             QUICK.forEachIndexed { i, q ->
@@ -151,7 +152,7 @@ private fun QuickSheet(s: Session, m: ChatMessage, busy: Boolean, model: AppMode
                 m.terms.forEach { term -> debating.ground.app.ui.Chip(term, on = false, onClick = { model.run { openTerm(term, m.id) } }) }
             }
         }
-        if (s.mode == "canvas" && !s.finished) ForkForm(m, busy, model)
+        if (s.canBranch() && !s.finished) ForkForm(m, busy, model)
         if (s.room != null) {
             FinePrint("解释由讲解助手单独给你，不打断别人的发言。")
         } else if (debate) {
@@ -179,7 +180,7 @@ private fun TermSheet(s: Session, st: AppState, model: AppModel) {
                 }
             }
             FinePrint((if (s.review != null) "已存进这个概念的笔记。" else "已记下，复盘后会存进这个概念的笔记。") + "查词不占用发言轮次。")
-            if (s.mode == "canvas" && !s.finished) {
+            if (s.canBranch() && !s.finished) {
                 SecondaryButton(
                     "展开一个分支，聊聊「${term.term}」",
                     { model.run { openBranch(term.messageId, term.term) } },

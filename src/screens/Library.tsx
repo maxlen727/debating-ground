@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
 import { useState } from 'react';
 import { MODES } from '../../shared/modes.ts';
-import { discussAgain, openCard, selfCheck } from '../actions.ts';
+import { discussAgain, openCard, selfCheck, teachBack } from '../actions.ts';
 import { BusyStrip, Empty, ErrorBanner, Icon, TopBar } from '../components/ui.tsx';
 import { exportLibrary, exportNote } from '../lib/exporter.ts';
 import { sameConcept, tally, type Note } from '../lib/notes.ts';
@@ -182,7 +182,8 @@ function SelfChecks({ n }: { n: Note }) {
         })}
       </ol>
       <p className="fineprint">
-        先不看答案，用自己的话说一遍，再对照参考要点。只看得懂不算，说得出来才算。
+        先不看答案，用自己的话说一遍，再对照参考要点。只看得懂不算，说得出来才算。想完整地检验一次，点下面的“讲给
+        AI 听”。
       </p>
     </section>
   );
@@ -324,9 +325,18 @@ export function CardView() {
       <div className="dock">
         <ErrorBanner />
         <BusyStrip />
-        <button className="primary block" disabled={!!ui.busy} onClick={() => discussAgain(n)}>
-          {c.partial + c.missing > 0 ? '从模糊的地方再讨论一次' : '再讨论一次，往深里走'}
-        </button>
+        <div className="row">
+          {/* 讲给 AI 听：最能检验是不是真懂；讲完的复盘合并回这篇笔记（#142） */}
+          {n.points.length >= 2 && (
+            <button className="secondary" disabled={!!ui.busy} onClick={() => teachBack(n)}>
+              <Icon name="swap" size={16} />
+              讲给 AI 听
+            </button>
+          )}
+          <button className="primary grow" disabled={!!ui.busy} onClick={() => discussAgain(n)}>
+            {c.partial + c.missing > 0 ? '从模糊处再讨论' : '再讨论一次'}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -191,6 +191,8 @@ export function restoreSession(v: unknown): Session | null {
   } as Loose;
   if (!isObj(out.room)) delete out.room;
   if (!Array.isArray(out.branches)) delete out.branches;
+  // 以前苏格拉底追问里“换我来讲”的开关（#142 去掉了），留着没用
+  delete out.teaching;
   return out as unknown as Session;
 }
 

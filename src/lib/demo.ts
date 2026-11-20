@@ -303,22 +303,7 @@ export async function demoRun<P extends Purpose>(
       const p = payload as PayloadMap['discuss'];
       const role = s.personas.find(r => r.id === p.roleId) ?? s.personas[0];
       const step = nextStep();
-      if (s.mode === 'canvas' && s.at) return branchReply(s, !!p.task);
-      if (p.task?.includes('换他来讲'))
-        return {
-          text: `好，我当学生！我一直没搞懂「${s.concept}」到底在说什么，你能从一个例子讲起吗？`,
-          covered: [],
-        };
-      if (p.task?.includes('讲完了'))
-        return {
-          text: `你刚才的例子挺具体，一听就明白。要更准一点的话，可以把「${s.keyPoints[step % n]}」说清楚。我们接着聊吧。`,
-          covered: [],
-        };
-      if (s.teaching)
-        return {
-          text: `老师，我还是没太懂「${s.keyPoints[step % n]}」。能举个生活里的例子吗？`,
-          covered: [step % n],
-        };
+      if (s.at) return branchReply(s, !!p.task);
       if (cost && (s.mode === 'socratic' || s.mode === 'canvas')) {
         const [text, covered, terms] = COST_REPLIES[step % COST_REPLIES.length];
         return { text, covered, terms };

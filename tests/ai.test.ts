@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import type { Review } from '../shared/types.ts';
 import assert from 'node:assert/strict';
+import { BRANCH_MODES } from '../shared/modes.ts';
 import {
   normalizeConfig,
   buildRequest,
@@ -771,9 +772,10 @@ test('knowledge canvas: a branch turn stays on the branch topic; branch info is 
     r.exclude!.includes('稀缺性'),
     'the branch topic is not marked as an unfamiliar term inside its own branch',
   );
-  // 分支只属于知识画布；字段不对就拒绝
+  // 辩论不带分支（追问和圆桌可以，#142）；字段不对就拒绝
   assert.throws(
-    () => buildRequest('discuss', { session: { ...learning, branch }, roleId: 'r0' }),
+    () =>
+      buildRequest('discuss', { session: { ...learning, mode: 'debate', branch }, roleId: 'r0' }),
     /分支信息无效/,
   );
   assert.throws(() =>
@@ -796,32 +798,45 @@ test('knowledge canvas: a branch turn stays on the branch topic; branch info is 
   assert.match(prep.messages[0].content, /讨论伙伴/);
 });
 
-test('换我来讲: in socratic the same partner turns into a listening student; only socratic may swap', () => {
-  const plain = buildRequest('discuss', { session: learning, roleId: 'r0' });
-  assert.doesNotMatch(plain.messages[0].content, /换学习者来讲/);
-  const r = buildRequest('discuss', { session: { ...learning, teaching: true }, roleId: 'r0' });
-  assert.match(r.messages[0].content, /换学习者来讲/);
+test('讲给 AI 听 (#142): teach mode turns the AI into a listening student; the old swap flag is ignored', () => {
+  const r = buildRequest('discuss', { session: { ...learning, mode: 'teach' }, roleId: 'r0' });
+  assert.match(r.messages[0].content, /你是困惑的学生/);
   assert.match(r.messages[0].content, /不要自己讲解这个概念/);
-  // 学生规则放在伙伴规则后面，后说的算
-  assert.ok(
-    r.messages[0].content.indexOf('换学习者来讲') >
-      r.messages[0].content.indexOf('一起把这个概念想明白的伙伴'),
+  // 苏格拉底追问里不再有“换我来讲”：旧版本发来的 teaching 字段不报错，也不起作用
+  const old = buildRequest('discuss', {
+    session: { ...learning, teaching: true } as typeof learning,
+    roleId: 'r0',
+  });
+  assert.doesNotMatch(old.messages[0].content, /换学习者来讲|困惑的学生/);
+  assert.equal(user(old).learnerIsTeaching, undefined);
+  const review = buildRequest('review', { session: { ...learning, mode: 'teach' } });
+  assert.match(review.messages[0].content, /讲给一个刚接触这个概念的人听/);
+  assert.doesNotMatch(
+    buildRequest('review', { session: learning }).messages[0].content,
+    /讲给伙伴听/,
   );
-  assert.equal(user(r).learnerIsTeaching, true);
+  assert.doesNotThrow(() => buildRequest('prepare', { concept: 'x', mode: 'teach' }));
+});
+
+test('branches (#142): socratic and roundtable can open branches, debate cannot', () => {
+  const branch = { topic: '总效用', from: '那一句', path: [] };
+  for (const mode of ['socratic', 'roundtable', 'canvas'] as const) {
+    const r = buildRequest('discuss', { session: { ...learning, mode, branch }, roleId: 'r0' });
+    assert.match(r.messages[0].content, /从主干岔出去的一个分支/, mode);
+    assert.deepEqual(user(r).branch, branch, mode);
+  }
   assert.throws(
     () =>
-      buildRequest('discuss', {
-        session: { ...learning, mode: 'roundtable', teaching: true },
-        roleId: 'r0',
+      buildRequest('debate', {
+        session: { ...learning, mode: 'debate', branch },
       }),
-    /讲解状态无效/,
+    /分支信息无效/,
   );
-  assert.throws(() =>
-    buildRequest('discuss', { session: { ...learning, teaching: 'yes' }, roleId: 'r0' }),
+  assert.deepEqual(BRANCH_MODES, ['socratic', 'roundtable', 'canvas']);
+  assert.match(
+    buildRequest('review', { session: { ...learning, mode: 'roundtable' } }).messages[0].content,
+    /分支：/,
   );
-  assert.match(buildRequest('review', { session: learning }).messages[0].content, /讲给伙伴听/);
-  // 旧界面还会发反向讲解的请求：后端继续接受
-  assert.doesNotThrow(() => buildRequest('prepare', { concept: 'x', mode: 'teach' }));
 });
 
 test('direct questions get direct answers (#39): no holding back the answer, a turn cue when the learner asks', () => {
@@ -858,10 +873,10 @@ test('direct questions get direct answers (#39): no holding back the answer, a t
   );
 });
 
-test('换我来讲: after two questions in a row the student says what it understood instead of asking again', () => {
+test('讲给 AI 听: after two questions in a row the student says what it understood instead of asking again', () => {
   const asked = {
     ...learning,
-    teaching: true as const,
+    mode: 'teach' as const,
     messages: [
       { kind: 'msg' as const, name: '苏珩', text: '那它和撒谎有什么不一样？' },
       { kind: 'msg' as const, name: '学习者', text: '撒谎是骗别人，认知失调是自己心里别扭。' },

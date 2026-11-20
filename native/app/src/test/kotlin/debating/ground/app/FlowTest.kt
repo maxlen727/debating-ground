@@ -114,7 +114,7 @@ class FlowTest {
                 flow.openTerm(term, m.id)
             }
 
-            "teaching" -> flow.toggleTeaching()
+            "teachBack" -> flow.teachBack(flow.state.library.first())
 
             "nextSpeaker" -> flow.nextSpeaker()
 

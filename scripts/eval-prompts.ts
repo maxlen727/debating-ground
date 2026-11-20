@@ -28,7 +28,6 @@ export interface Scenario {
   roles: SessionSnapshot['roles'];
   opening: string;
   context?: string;
-  teaching?: boolean; // 苏格拉底追问里“换我来讲”：AI 当听讲的学生
   steps: Step[];
   values?: RegExp[]; // 学习者说过的立场：复盘里不该出现在“需要纠正”里
   errors?: RegExp[]; // 学习者说错的事实：复盘里应该被纠正
@@ -147,13 +146,12 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     name: '认真回答',
-    why: '学习者换过来当老师，讲得认真。看 AI 当学生时会不会复述、举例、说具体哪里没懂，而不是每轮都追问。',
-    mode: 'socratic',
-    teaching: true,
+    why: '讲给 AI 听：学习者当老师，讲得认真。看 AI 当学生时会不会复述、举例、说具体哪里没懂，而不是每轮都追问。',
+    mode: 'teach',
     concept: '认知失调',
     topic: '心里想的和做的不一样时，人会怎么办？',
     keyPoints: ['想法和行为冲突', '会让人不舒服', '常见的化解方式', '和撒谎的区别'],
-    roles: [{ id: 'r0', name: '小满', title: '伙伴', persona: '爱较真，说话直' }],
+    roles: [{ id: 'r0', name: '小满', title: '学生', persona: '爱较真，说话直' }],
     opening:
       '好，我当学生！我听说“认知失调”这个词好久了，但一直不知道它到底在说什么，你从一个例子讲起？',
     steps: [
@@ -370,7 +368,6 @@ async function run(s: Scenario, call: Call) {
     roles: s.roles,
     messages: [...messages],
     context: s.context,
-    teaching: s.teaching || undefined,
   });
   const speak = async (task?: string) => {
     const role = s.roles[next % s.roles.length];
@@ -399,7 +396,7 @@ async function run(s: Scenario, call: Call) {
     };
   };
   const metrics = measure(messages, guests, afterGuest);
-  const issues = problemList(metrics, s.teaching ? 'teach' : s.mode);
+  const issues = problemList(metrics, s.mode);
   const wrong = review.data.misconceptions.map(m => m.said);
   if (s.values?.some(v => wrong.some(w => v.test(w))))
     issues.push({ key: 'stanceAsError', text: '复盘把学习者的立场列进了“需要纠正”' });

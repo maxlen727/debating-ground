@@ -686,34 +686,85 @@ test('knowledge canvas (API): a branch request carries only the path and the bra
   );
   assert.match(String(sent.at(-1)!.task), /稀缺性/);
   assert.equal(getState().session!.entries.at(-1)!.branch, getState().session!.at);
-  // 太长的话题、非画布模式都不开分支
+  // 太长的话题不开分支
   await actions.openBranch(first.id, '很'.repeat(41));
   assert.equal(getState().session!.branches!.length, 1);
 });
 
-test('换我来讲 (demo): swap in, learner teaches, swap back with feedback; review sees the teaching turns', async () => {
+test('branches in socratic and roundtable (#142): the guest who said it keeps talking; debate and rooms cannot branch', async () => {
+  update(s => {
+    s.config.concept = '边际效用';
+    s.config.mode = 'roundtable';
+  });
+  await actions.prepare();
+  actions.startSession();
+  await actions.send('越吃越不想吃');
+  let s = getState().session!;
+  const said = s.entries.findLast(e => e.kind === 'msg' && !e.human)!;
+  assert.ok(said.kind === 'msg');
+  const rotation = s.nextRole;
+  await actions.openBranch(said.id, '总效用');
+  s = getState().session!;
+  assert.ok(s.at, 'roundtable can branch now');
+  const opener = s.entries.at(-1)!;
+  assert.ok(opener.kind === 'msg' && opener.who === said.who, 'the guest who said it explains');
+  await actions.send('总效用就是加起来的满足吗？');
+  s = getState().session!;
+  const reply = s.entries.at(-1)!;
+  assert.ok(reply.kind === 'msg' && reply.who === said.who && reply.branch === s.at);
+  assert.equal(s.nextRole, rotation, 'no rotation inside a branch');
+  const before = s.entries.length;
+  await actions.nextSpeaker();
+  assert.equal(getState().session!.entries.length, before, 'no “next guest” inside a branch');
+  assert.equal(actions.branchSpeaker(s).id, said.who);
+  // 辩论和多人房间不带分支
+  const { canBranch } = await import('../src/lib/canvas.ts');
+  assert.equal(canBranch({ mode: 'debate' }), false);
+  assert.equal(canBranch({ mode: 'socratic' }), true);
+  assert.equal(canBranch({ mode: 'roundtable', room: {} as NonNullable<typeof s.room> }), false);
+});
+
+test('讲给 AI 听 (#142): start from a note, teach, review merges back into the same note', async () => {
+  for (const k of Object.keys(store)) delete store[k];
+  resetForTests();
   update(s => {
     s.config.concept = '机会成本';
     s.config.mode = 'socratic';
   });
   await actions.prepare();
   actions.startSession();
-  await actions.toggleTeaching();
+  await actions.send('机会成本就是放弃的东西');
+  await actions.finish();
+  const note = getState().library[0];
+  assert.equal(getState().library.length, 1);
+  actions.teachBack(note);
   let s = getState().session!;
-  assert.equal(s.teaching, true);
-  assert.ok(s.entries.some(e => e.kind === 'sys' && e.text.startsWith('换你来讲')));
-  assert.match((s.entries.at(-1) as { text: string }).text, /当学生/);
-  assert.equal(actions.snapshot(s).teaching, true);
-  await actions.send('机会成本就是你为了一件事放弃的最好的另一件事');
+  assert.equal(s.mode, 'teach');
+  assert.equal(s.personas[0].name, '小满');
+  // 没掌握的要点排在前面，最多 6 个
+  const rank = { missing: 0, partial: 1, mastered: 2 };
+  const weakFirst = note.points
+    .filter(p => p.status !== 'mastered')
+    .sort((a, b) => rank[a.status] - rank[b.status])
+    .map(p => p.label);
+  assert.deepEqual(s.keyPoints.slice(0, weakFirst.length), weakFirst.slice(0, 6));
+  assert.ok(s.entries[0].kind === 'sys' && s.entries[0].text.includes('小满'));
+  await actions.send('机会成本是你选了一样，放弃的选项里最好的那个。');
   s = getState().session!;
-  const mine = s.entries.findLast(e => e.kind === 'msg' && e.human)!;
-  assert.ok(mine.kind === 'msg' && mine.action === actions.TEACHING);
-  await actions.toggleTeaching();
-  s = getState().session!;
-  assert.equal(s.teaching, false);
-  assert.match((s.entries.at(-1) as { text: string }).text, /讲得|例子/);
-  assert.equal(actions.snapshot(s).teaching, undefined);
-  assert.ok(actions.snapshot(s, true).messages.some(m => m.action === actions.TEACHING));
+  assert.ok(s.entries.at(-1)!.kind === 'msg' && !(s.entries.at(-1) as { human?: boolean }).human);
+  await actions.finish();
+  const after = getState().library;
+  assert.equal(after.length, 1, 'merged into the same note');
+  assert.equal(after[0].sources.length, 2);
+  assert.equal(after[0].sources.at(-1)!.mode, 'teach');
+  // 再讨论一次：讲给 AI 听不是学习页的选项，换成苏格拉底追问
+  await actions.discussAgain(after[0]);
+  assert.equal(getState().config.mode, 'socratic');
+  // 要点不到两个时不开始
+  const tiny = { ...after[0], points: after[0].points.slice(0, 1) };
+  const id = getState().session?.id;
+  actions.teachBack(tiny);
+  assert.equal(getState().session?.id, id);
 });
 
 test('反向讲解 is folded into socratic: a saved teach choice opens as socratic', async () => {
@@ -726,9 +777,17 @@ test('反向讲解 is folded into socratic: a saved teach choice opens as socrat
   resetForTests();
   assert.equal(getState().config.mode, 'socratic');
   assert.equal(getState().plan, null);
-  const { MODE_ORDER, MODES } = await import('../shared/modes.ts');
+  const { MODE_ORDER } = await import('../shared/modes.ts');
   assert.ok(!MODE_ORDER.includes('teach'));
-  assert.equal(MODES.teach.name, '反向讲解', 'old cards still show their mode name');
+  assert.ok(!MODE_ORDER.includes('canvas'), 'the canvas is part of socratic and roundtable now');
+  // 选着知识画布的旧设置改成苏格拉底追问（#142）
+  for (const k of Object.keys(store)) delete store[k];
+  store['sibian-v4'] = JSON.stringify({
+    config: { ...defaultConfig(), mode: 'canvas' },
+    library: [],
+  });
+  resetForTests();
+  assert.equal(getState().config.mode, 'socratic');
 });
 
 test('back (Android back button): close the sheet, then leave the branch, then go up a page, then exit', async () => {

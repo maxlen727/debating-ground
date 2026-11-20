@@ -115,7 +115,6 @@ export interface Session {
   glossary?: TermCard[]; // 这次讨论里点开看过的术语
   branches?: Branch[]; // 知识画布：从某句发言展开的分支
   at?: string; // 知识画布：正在看的分支（没有就是主干）
-  teaching?: boolean; // 苏格拉底追问：学习者“换我来讲”，AI 暂时当听讲的学生
 }
 // 知识画布的一个分支：从 from 这条发言展开（它在 parent 那一层），gist 是学习者带回上一层的一句话
 export interface Branch {
@@ -235,8 +234,13 @@ function load(): AppState {
     // v3 及以前的知识库是一张张卡片：按概念合并成笔记
     const library = (lib: unknown) =>
       isObj(raw) ? restoreNotes(lib) : notesFromCards(restoreCards(lib));
-    // 反向讲解并进了苏格拉底追问（“换我来讲”）：选着它的设置改过来，按它准备的计划作废；进行中的讨论和知识卡片照旧
-    if (saved && isObj(saved.config) && saved.config.mode === 'teach')
+    // 学习页不再提供的讨论方式（反向讲解改成从笔记里开始，知识画布并进了追问和圆桌，#142）：
+    // 选着它们的设置改成苏格拉底追问；旧的反向讲解计划作废；进行中的讨论和知识库照旧
+    if (
+      saved &&
+      isObj(saved.config) &&
+      (saved.config.mode === 'teach' || saved.config.mode === 'canvas')
+    )
       saved.config.mode = 'socratic';
     if (saved && isObj(saved.plan) && saved.plan.mode === 'teach') saved.plan = null;
     if (saved) {
