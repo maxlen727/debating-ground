@@ -51,6 +51,9 @@ private val TYPES = mapOf(
     "webmanifest" to "application/manifest+json",
 )
 
+/** 网页版文件的类型（按扩展名）；手机房主和读 PDF 的隐藏页面（#164）共用。 */
+internal fun webType(name: String): String = TYPES[name.substringAfterLast('.', "")] ?: "application/octet-stream"
+
 /** 请求路径对应的界面文件名（相对 dist/）；不是能给出去的文件就是 null。 */
 internal fun staticName(target: String): String? {
     val path = target.substringBefore('?').substringBefore('#')
@@ -131,7 +134,7 @@ class WsServer(private val route: (path: String) -> WsHandler?, private val file
     // 网页版界面：带哈希的 assets/ 永久缓存，其余每次都问；文件不在包里时首页退回说明页
     private fun respond(out: OutputStream, name: String?, head: Boolean) {
         var body = name?.let(files)
-        var type = name?.substringAfterLast('.', "")?.let { TYPES[it] } ?: "application/octet-stream"
+        var type = name?.let(::webType) ?: "application/octet-stream"
         if (body == null && name == "index.html") {
             body = INFO_PAGE.toByteArray(Charsets.UTF_8)
             type = TYPES.getValue("html")

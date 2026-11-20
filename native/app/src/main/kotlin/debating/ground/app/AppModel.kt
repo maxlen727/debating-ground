@@ -6,7 +6,9 @@ import debating.ground.app.ai.DirectAccess
 import debating.ground.app.ai.KeystoreDirectStore
 import debating.ground.app.ai.LinkFetcher
 import debating.ground.app.ai.LinkReader
+import debating.ground.app.ai.PdfImporter
 import debating.ground.app.ai.SandboxPrompts
+import debating.ground.app.ai.WebViewPdf
 import debating.ground.app.data.CARDS_STORE_KEY
 import debating.ground.app.data.FileMaterials
 import debating.ground.app.data.MaterialStore
@@ -54,6 +56,8 @@ class AppModel(
     materials: MaterialStore = MemoryMaterials(),
     /** 读材料的链接（#157；测试里没有）。 */
     links: LinkFetcher? = null,
+    /** 读材料的 PDF（#164；测试里没有）。 */
+    pdf: PdfImporter? = null,
 ) {
     private val storage = Storage(dir)
 
@@ -90,6 +94,7 @@ class AppModel(
             lan = lan,
             materialStore = materials,
             links = links,
+            pdf = pdf,
         )
         this.speech = speech?.invoke(scope, learning)
         wireRoomSpeech()
@@ -167,6 +172,7 @@ class AppModel(
                 // 材料可能很长，也可能是不该外传的内容：放在不进系统备份的目录（#154）
                 materials = FileMaterials(File(context.noBackupFilesDir, "materials")),
                 links = LinkReader(prompts),
+                pdf = WebViewPdf(context.applicationContext),
             ).also { instance = it }
         }
     }

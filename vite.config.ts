@@ -24,5 +24,10 @@ export default defineConfig({
       },
     },
   },
-  build: { outDir: 'dist', target: 'es2020' },
+  build: {
+    outDir: 'dist',
+    target: 'es2020',
+    // pdf.html：安卓 App 读 PDF 用的隐藏页面（#164），和网页版用同一份代码
+    rollupOptions: { input: { main: 'index.html', pdf: 'pdf.html' } },
+  },
 });
