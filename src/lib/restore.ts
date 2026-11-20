@@ -115,6 +115,7 @@ export function restoreNotes(v: unknown): Note[] {
             oneLine: str(x.oneLine),
             source: x.source === 'api' ? 'api' : 'demo',
             ...(typeof x.model === 'string' ? { model: x.model } : {}),
+            ...(typeof x.material === 'string' && x.material ? { material: x.material } : {}),
           })),
         ...(typeof n.context === 'string' && n.context ? { context: n.context } : {}),
         created,
@@ -122,6 +123,14 @@ export function restoreNotes(v: unknown): Note[] {
       };
     });
 }
+
+// 讨论带着的材料节选（#144）：字段不全就不要了，讨论照常
+const materialOk = (m: unknown) =>
+  isObj(m) &&
+  typeof m.id === 'string' &&
+  typeof m.title === 'string' &&
+  typeof m.point === 'string' &&
+  typeof m.excerpt === 'string';
 
 export function restorePlan(v: unknown): Plan | null {
   if (!isObj(v) || !isMode(v.mode) || typeof v.concept !== 'string' || typeof v.topic !== 'string')
@@ -132,14 +141,16 @@ export function restorePlan(v: unknown): Plan | null {
     .filter(p => typeof p.id === 'string' && typeof p.name === 'string');
   // 讨论类模式至少要有一个角色，否则开始讨论时没有人开场
   if (v.mode !== 'debate' && !personas.length) return null;
-  return {
+  const out = {
     ...v,
     keyPoints: strings(v.keyPoints),
     personas,
     opening: str(v.opening),
     source: v.source === 'api' ? 'api' : 'demo',
     previous: isObj(v.previous) ? v.previous : null,
-  } as unknown as Plan;
+  } as Loose;
+  if (!materialOk(out.material)) delete out.material;
+  return out as unknown as Plan;
 }
 
 export function restoreSession(v: unknown): Session | null {
@@ -193,6 +204,7 @@ export function restoreSession(v: unknown): Session | null {
   if (!Array.isArray(out.branches)) delete out.branches;
   // 以前苏格拉底追问里“换我来讲”的开关（#142 去掉了），留着没用
   delete out.teaching;
+  if (!materialOk(out.material)) delete out.material;
   return out as unknown as Session;
 }
 

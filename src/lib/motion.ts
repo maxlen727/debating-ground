@@ -19,6 +19,7 @@ const DEPTH: Record<Screen, number> = {
   join: 0,
   prepare: 1,
   card: 1,
+  material: 1,
   session: 2,
   review: 3,
 };

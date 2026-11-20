@@ -359,6 +359,31 @@ export function Session() {
       {room && ui.sheet === 'seats' && <SeatSheet s={s} />}
       {room?.host && ui.invite && <InviteSheet s={s} />}
       {ui.sheet === 'points' && <PointsSheet s={s} />}
+      {s.material && ui.sheet === 'material' && (
+        <Sheet
+          title={`《${s.material.title}》`}
+          onClose={() =>
+            update(st => {
+              st.ui.sheet = null;
+            })
+          }
+        >
+          <p className="fineprint">
+            关于「{s.material.point}」的原文节选，讨论时 AI 也看着这几段。
+          </p>
+          <div className="material-sections">
+            {s.material.excerpt.split(/\n\n(?=§\d)/).map((b, i) => {
+              const [head, ...rest] = b.split('\n');
+              return (
+                <article key={i}>
+                  <h4>{head}</h4>
+                  <p>{rest.join('\n')}</p>
+                </article>
+              );
+            })}
+          </div>
+        </Sheet>
+      )}
       {debate && ui.sheet === 'roster' && <RosterSheet s={s} />}
       {canvas && ui.sheet === 'tree' && <GraphSheet s={s} />}
       {canvas && ui.sheet === 'back' && <BackSheet s={s} />}
@@ -531,6 +556,20 @@ function Composer({ s }: { s: S }) {
           <Icon name="note" size={16} />
           写个小结
         </button>
+        {/* 从材料开始的讨论：随时翻看这个点的原文（#144） */}
+        {s.material && (
+          <button
+            className="tool"
+            onClick={() =>
+              update(st => {
+                st.ui.sheet = 'material';
+              })
+            }
+          >
+            <Icon name="library" size={16} />
+            原文
+          </button>
+        )}
         {/* 分支里由展开它的那位单独聊，不请下一位 */}
         {!debate && !s.at && s.personas.length > 1 && (
           <button className="tool" disabled={busy} onClick={nextSpeaker}>

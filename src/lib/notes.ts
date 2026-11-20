@@ -25,6 +25,7 @@ export interface NoteSource {
   oneLine: string; // 那次讨论的一句话评价
   source: Source;
   model?: string;
+  material?: string; // 从哪篇材料开始的讨论（材料标题，#144）
 }
 export interface Note {
   id: string;
@@ -84,6 +85,7 @@ export interface MergeFrom {
   model?: string;
   context?: string;
   terms?: TermCard[];
+  material?: string;
 }
 
 /** 一篇空笔记。 */
@@ -137,6 +139,7 @@ export function mergeReview(note: Note, r: Review, from: MergeFrom): Note {
       oneLine: r.oneLine,
       source: from.source,
       ...(from.model ? { model: from.model } : {}),
+      ...(from.material ? { material: from.material } : {}),
     },
   ].sort((a, b) => a.at - b.at);
   return {
@@ -307,7 +310,7 @@ export function noteMarkdown(n: Note, frontmatter = true): string {
     '来源',
     n.sources.map(
       s =>
-        `- ${date(s.at)} ${MODES[s.mode]?.name ?? s.mode}：${s.topic}${s.oneLine ? ` —— ${s.oneLine}` : ''}`,
+        `- ${date(s.at)} ${MODES[s.mode]?.name ?? s.mode}：${s.topic}${s.material ? `（读《${s.material}》）` : ''}${s.oneLine ? ` —— ${s.oneLine}` : ''}`,
     ),
   );
   return out.join('\n').trimEnd() + '\n';

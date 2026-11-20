@@ -1,5 +1,6 @@
 // 演示模式：没有连接 API 时，用本地模板走完整个流程
 import type {
+  ReadAction,
   ModeId,
   PayloadMap,
   PrepareResult,
@@ -277,6 +278,63 @@ function branchReply(s: Session, opening: boolean) {
   };
 }
 
+/* ---------- 读材料（#144）：示例文章和规则式的研读助手 ---------- */
+export const SAMPLE_MATERIAL = {
+  title: '选择的代价：机会成本入门',
+  text: `摘要
+人每天都在做选择。这篇短文从稀缺性讲起，说明机会成本是什么、为什么已经花掉的钱不该影响决定，以及怎样用它比较不同的选择。
+
+1 稀缺性
+时间、钱和精力都是有限的。正因为有限，选了一样就不能同时选另一样。经济学把这种“想要的总比能拿到的多”叫作稀缺性，它是一切取舍的起点。
+
+2 机会成本
+做一个选择时，被放弃的那些选项里价值最高的一个，就是这个选择的机会成本。比如周六可以打工赚 300 元，也可以做家教赚 500 元，选了打工，机会成本是 500 元，而不是 800 元：你一次只能做一件事，所以只算放弃掉的最好的那一个。机会成本不只是钱，也包括时间、休息和经验这些隐性的代价。
+
+3 沉没成本
+已经花掉、拿不回来的钱叫沉没成本。买了不能退的演唱会门票，当天更想去加班，门票钱不该影响你的决定：去不去，这 200 元都回不来了。该比较的是两个选择各自接下来的得失。
+
+4 边际思考
+做决定时，问的不是“总共值不值”，而是“再多做一点值不值”。多学一小时的收获，要和这一小时能做的别的事比；这时机会成本就是比较的尺子。
+
+结论
+理解机会成本，就是在每个选择面前多问一句：为了它，我放弃了什么最好的东西？`,
+};
+
+// 演示的研读助手：第一步读前三节，第二步按标题整理地图（真实模型会自己决定读哪里）
+function demoRead(p: PayloadMap['read']): ReadAction {
+  if (!p.steps.length)
+    return {
+      thought: '先看看开头几节，弄清楚这份材料在讲什么。',
+      action: 'read',
+      sections: p.outline.slice(0, 3).map(o => o.n),
+    };
+  const skip =
+    /^(开头|摘要|引言|前言|结论|总结|参考文献|abstract|introduction|conclusions?|references)/i;
+  const points = p.outline
+    .filter(o => !skip.test(o.heading.replace(/^\d+(\.\d+)*\s*/, '')))
+    .slice(0, 5)
+    .map(o => ({
+      name: o.heading
+        .replace(/^\d+(\.\d+)*\s*/, '')
+        .replace(/（\d+）$/, '')
+        .slice(0, 16),
+      why: '演示模式按小节标题整理；连接 API 后，研读助手会读原文，写出它在材料里起什么作用。',
+      sections: [o.n],
+      needs: [],
+    }));
+  return {
+    thought: '大致读完了，按材料的结构整理成技术点。',
+    action: 'finish',
+    map: {
+      title: p.title,
+      summary: '演示模式：按小节整理的地图。连接 API 后，研读助手会读原文，概括材料在讲什么。',
+      points: points.length
+        ? points
+        : [{ name: p.title.slice(0, 16), why: '演示模式按标题整理。', sections: [1], needs: [] }],
+    },
+  };
+}
+
 export async function demoRun<P extends Purpose>(
   purpose: P,
   payload: PayloadMap[P],
@@ -284,6 +342,7 @@ export async function demoRun<P extends Purpose>(
 ): Promise<unknown> {
   await wait(delay);
   const s = getState().session;
+  if (purpose === 'read') return { data: demoRead(payload as PayloadMap['read']) };
   if (purpose === 'prepare') {
     const p = payload as PayloadMap['prepare'];
     const prep = p.concept === '机会成本' ? costPrep(p.mode) : genericPrep(p.concept, p.mode);
@@ -298,6 +357,7 @@ export async function demoRun<P extends Purpose>(
   switch (purpose) {
     // 准备在上面单独处理（不需要讨论上下文）
     case 'prepare':
+    case 'read':
       return null;
     case 'discuss': {
       const p = payload as PayloadMap['discuss'];

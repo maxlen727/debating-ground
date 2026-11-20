@@ -11,6 +11,7 @@ import { CardView, Library } from './screens/Library.tsx';
 import { Settings } from './screens/Settings.tsx';
 import { Join } from './screens/Join.tsx';
 
+import { MaterialScreen } from './screens/Material.tsx';
 const SCREENS = {
   learn: Learn,
   prepare: Prepare,
@@ -20,6 +21,7 @@ const SCREENS = {
   card: CardView,
   settings: Settings,
   join: Join,
+  material: MaterialScreen,
 };
 
 export function App() {
@@ -40,6 +42,7 @@ export function App() {
     ui.screen === 'session' ||
     ui.screen === 'prepare' ||
     ui.screen === 'card' ||
+    ui.screen === 'material' ||
     ui.screen === 'join';
   return (
     <div className={'app' + (immersive ? ' immersive' : '')}>

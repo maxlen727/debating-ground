@@ -1009,3 +1009,52 @@ test('old knowledge cards (sibian-v3) are merged into one note per concept; the 
   );
   assert.equal(store['sibian-v3'], v3, 'the old save is not touched');
 });
+
+test('读材料 (demo, #144): paste → reading agent → map → discuss a point with the excerpt → note remembers the material', async () => {
+  for (const k of Object.keys(store)) delete store[k];
+  resetForTests();
+  const { SAMPLE_MATERIAL } = await import('../src/lib/demo.ts');
+  await actions.addMaterial('', '太短了');
+  assert.equal(getState().ui.material, null, 'too short: nothing saved');
+  await actions.addMaterial(SAMPLE_MATERIAL.title, SAMPLE_MATERIAL.text);
+  const m = getState().ui.material!;
+  assert.deepEqual(
+    m.sections.map(s => s.heading),
+    ['摘要', '1 稀缺性', '2 机会成本', '3 沉没成本', '4 边际思考', '结论'],
+  );
+  assert.ok(m.map, 'the agent finished with a map');
+  assert.deepEqual(
+    m.map.points.map(p => p.name),
+    ['稀缺性', '机会成本', '沉没成本', '边际思考'],
+  );
+  // 每一步在做什么都记下来，界面上能看到
+  assert.deepEqual(
+    getState().ui.reading!.map(s => s.action),
+    ['读第 1、2、3 节', '整理成地图'],
+  );
+  await actions.loadMaterials();
+  assert.equal(getState().ui.materials[0].points, 4);
+
+  await actions.startFromPoint(m.map.points[1], 'socratic');
+  const s = getState().session!;
+  assert.equal(s.concept, '机会成本');
+  assert.equal(s.material!.id, m.id);
+  assert.match(s.material!.excerpt, /^§3 2 机会成本\n做一个选择时/);
+  assert.deepEqual(actions.snapshot(s).material, {
+    title: SAMPLE_MATERIAL.title,
+    point: '机会成本',
+    excerpt: s.material!.excerpt,
+  });
+  // 讨论带着的节选跟着存档走，读回来还在
+  resetForTests();
+  assert.equal(getState().session!.material!.point, '机会成本');
+  await actions.send('机会成本就是放弃的选项里最好的那个');
+  await actions.finish();
+  const note = getState().library[0];
+  assert.equal(note.sources[0].material, SAMPLE_MATERIAL.title);
+  const { noteMarkdown } = await import('../src/lib/notes.ts');
+  assert.match(noteMarkdown(note), /（读《选择的代价：机会成本入门》）/);
+
+  await actions.removeMaterial(m.id);
+  assert.equal(getState().ui.materials.length, 0);
+});

@@ -316,6 +316,7 @@ export function CardView() {
                     {x.source === 'demo' ? ' · 演示' : ''}
                   </small>
                   <span>{x.topic}</span>
+                  {x.material && <small>读《{x.material}》</small>}
                   {x.oneLine && <small>{x.oneLine}</small>}
                 </li>
               ))}
