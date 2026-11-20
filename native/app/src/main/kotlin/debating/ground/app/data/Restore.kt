@@ -155,6 +155,11 @@ fun restoreNotes(v: JsonElement?, now: Long): JsonArray = JsonArray(
                 ),
             )
             if (n["context"].nonEmptyStr()) put("context", n.getValue("context"))
+            // 材料笔记（#166）
+            if (n["kind"].text() == "material") {
+                put("kind", "material")
+                if (n["materialId"].nonEmptyStr()) put("materialId", n.getValue("materialId"))
+            }
             put("created", created)
             put("updated", if (n["updated"].number() != null) n.getValue("updated") else created)
         }
@@ -188,7 +193,8 @@ fun restorePlan(v: JsonElement?): JsonElement {
 }
 
 // 讨论带着的材料节选（#144）：字段不全就不要了，讨论照常
-private fun materialOk(m: JsonElement?) = m.obj()?.let { o -> listOf("id", "title", "point", "excerpt").all { o[it].isStr() } } == true
+// 讨论带着的材料（#144、#166）：字段不全就不要了，讨论照常。旧版还带着技术点 point，不需要了
+private fun materialOk(m: JsonElement?) = m.obj()?.let { o -> listOf("id", "title", "excerpt").all { o[it].isStr() } } == true
 
 fun restoreSession(v: JsonElement?, now: Long): JsonElement {
     val s = v.obj() ?: return JsonNull

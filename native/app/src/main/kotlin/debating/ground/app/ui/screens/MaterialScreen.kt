@@ -42,10 +42,8 @@ import androidx.compose.ui.unit.sp
 import debating.ground.app.AppModel
 import debating.ground.app.ai.SAMPLE_MATERIAL_TEXT
 import debating.ground.app.ai.SAMPLE_MATERIAL_TITLE
-import debating.ground.app.data.MapPoint
 import debating.ground.app.data.Material
 import debating.ground.app.data.MaterialMeta
-import debating.ground.app.data.ReadStep
 import debating.ground.app.flow.AppState
 import debating.ground.app.ui.BusyStrip
 import debating.ground.app.ui.ErrorBanner
@@ -72,7 +70,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// 读材料（#144、#154）：贴一篇论文或文章，研读助手读完整理出技术点地图，挑一个点开始讨论。
+// 读材料（#144、#154、#166）：贴一篇论文或文章（或者链接、PDF），选追问或圆桌，直接围绕它讨论。
 // 和网页版 src/screens/Material.tsx 一致；只负责展示，操作都在 Learning 里。完整的材料只存在这台设备上。
 
 @Composable
@@ -93,6 +91,9 @@ private fun Paste(st: AppState, model: AppModel) {
     var title by rememberSaveable { mutableStateOf("") }
     var text by rememberSaveable { mutableStateOf("") }
     var link by rememberSaveable { mutableStateOf("") }
+    var mode by rememberSaveable { mutableStateOf("socratic") }
+    // 材料从哪来：读到的链接（存进材料，以后知道它出自哪里）
+    var source by rememberSaveable { mutableStateOf("") }
     // 读链接的结果说明：读到了多少字、是不是全文（warn 时用黄色）
     var note by rememberSaveable { mutableStateOf("") }
     var warn by rememberSaveable { mutableStateOf(false) }
@@ -104,7 +105,7 @@ private fun Paste(st: AppState, model: AppModel) {
                 importPdf(uri.toString())?.let { r ->
                     title = r.title.take(80)
                     text = r.text
-                    note = "从 ${r.pages} 页 PDF 里读到了 ${r.text.count { !it.isWhitespace() }} 字。${r.note}核对一下，没问题就开始研读。"
+                    note = "从 ${r.pages} 页 PDF 里读到了 ${r.text.count { !it.isWhitespace() }} 字。${r.note}核对一下，没问题就开始讨论。"
                     warn = false
                 }
             }
@@ -112,10 +113,11 @@ private fun Paste(st: AppState, model: AppModel) {
     }
     // 内置浏览器打开着的地址（#160）
     var browsing by rememberSaveable { mutableStateOf<String?>(null) }
-    val fill = { r: debating.ground.app.ai.LinkPage ->
+    val fill = { r: debating.ground.app.ai.LinkPage, from: String ->
         title = r.title.take(80)
         text = r.text
-        note = "读到了 ${r.text.count { !it.isWhitespace() }} 字。" + r.note.ifEmpty { "核对一下，没问题就开始研读。" }
+        source = from
+        note = "读到了 ${r.text.count { !it.isWhitespace() }} 字。" + r.note.ifEmpty { "核对一下，没问题就开始讨论。" }
         warn = !r.complete
     }
     browsing?.let { start ->
@@ -128,7 +130,7 @@ private fun Paste(st: AppState, model: AppModel) {
             onUse = { url, html ->
                 model.run {
                     usePage(url, html)?.let {
-                        fill(it)
+                        fill(it, url)
                         link = url
                         browsing = null
                     }
@@ -140,13 +142,19 @@ private fun Paste(st: AppState, model: AppModel) {
     }
     val read = {
         model.run {
-            fetchLink(link)?.let(fill)
+            fetchLink(link)?.let { fill(it, link.trim()) }
         }
     }
     WithFloatingDock(dock = {
         ErrorBanner(st.ui.error) { l.clearError() }
         BusyStrip(st.ui.busy) { l.cancelAI() }
-        PrimaryButton("开始研读", { model.run { addMaterial(title, text) } }, Modifier.fillMaxWidth(), enabled = !busy && chars > 0)
+        ModePick(mode, !busy) { mode = it }
+        PrimaryButton(
+            "围绕这篇材料开始讨论",
+            { model.run { addMaterial(title, text, mode, source.ifEmpty { null }) } },
+            Modifier.fillMaxWidth(),
+            enabled = !busy && chars > 0,
+        )
     }) { bottom ->
         Column(Modifier.fillMaxSize()) {
             TopBar("读材料", "贴一篇论文或文章，一个点一个点弄懂", onBack = { l.go("learn") })
@@ -154,7 +162,7 @@ private fun Paste(st: AppState, model: AppModel) {
                 Modifier.weight(1f).scrollWithEdge().padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                // 读链接（#157）：手机自己去取，取到的正文填进下面的框，核对后再开始研读
+                // 读链接（#157）：手机自己去取，取到的正文填进下面的框，核对后再开始讨论
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Input(
                         link,
@@ -193,7 +201,7 @@ private fun Paste(st: AppState, model: AppModel) {
                     "材料正文",
                     // 论文可能有几万字：框的高度封顶，在框里滚动，不把整页撑得很长
                     Modifier.heightIn(min = 220.dp, max = 420.dp),
-                    placeholder = "把论文或文章的正文贴在这里。带着小节标题更好，研读助手会按节来读。",
+                    placeholder = "把论文或文章的正文贴在这里。带着小节标题更好，讨论时 AI 会按节找到相关的原文。",
                     singleLine = false,
                     minLines = 9,
                     enabled = !busy,
@@ -217,7 +225,7 @@ private fun Paste(st: AppState, model: AppModel) {
                         text = SAMPLE_MATERIAL_TEXT
                     }, enabled = !busy, small = true)
                 }
-                FinePrint("材料只保存在这台设备上。研读时，只把研读助手要读的几节发给 AI；讨论时，只带这个点的原文节选。读链接时由这台手机直接去取那个网页，只读不改。PDF 只在这台手机上解析，不上传。")
+                FinePrint("材料只保存在这台设备上。讨论时只把目录和与眼下话题最相关的几节发给 AI，不会每次都发整篇。读链接时由这台手机直接去取那个网页，只读不改。PDF 只在这台手机上解析，不上传。")
                 if (st.ui.materials.isNotEmpty()) {
                     Spacer(Modifier.height(6.dp))
                     SectionLabel("读过的材料")
@@ -243,7 +251,7 @@ private fun MaterialItem(m: MaterialMeta, busy: Boolean, onOpen: () -> Unit, onD
         ) {
             Text(m.title, style = TextStyles.body.copy(fontFamily = Serif, fontWeight = FontWeight.Bold), color = t.ink.color())
             Text(
-                dateFormat.format(Date(m.created)) + if (m.points > 0) " · ${m.points} 个技术点" else " · 还没读完",
+                dateFormat.format(Date(m.created)) + " · ${m.sections} 节",
                 style = TextStyles.small.copy(fontSize = 12.sp),
                 color = t.muted.color(),
             )
@@ -257,51 +265,36 @@ private fun MaterialItem(m: MaterialMeta, busy: Boolean, onOpen: () -> Unit, onD
     }
 }
 
-// 读一份材料：研读助手每一步在做什么、整理出的技术点地图、原文
+// 怎么讨论：追问（一位 AI 一路追问）或圆桌（几位 AI 各有角度）
+@Composable
+private fun ModePick(mode: String, enabled: Boolean, onSelect: (String) -> Unit) =
+    Segmented(listOf("socratic" to "追问", "roundtable" to "圆桌"), mode, "怎么讨论", enabled = enabled, onSelect = onSelect)
+
+// 读过的一份材料：从哪来、原文，继续围绕它讨论
 @Composable
 private fun Reading(st: AppState, m: Material, model: AppModel) {
     val t = LocalTokens.current
     val l = model.learning
     val busy = st.ui.busy != null
-    val steps = st.ui.reading ?: m.steps.orEmpty()
-    val map = m.map
-    var picked by rememberSaveable(m.id) { mutableStateOf<String?>(null) }
     var mode by rememberSaveable { mutableStateOf("socratic") }
-    val point = map?.points?.find { it.name == picked } ?: map?.points?.firstOrNull()
     WithFloatingDock(dock = {
         ErrorBanner(st.ui.error) { l.clearError() }
         BusyStrip(st.ui.busy) { l.cancelAI() }
-        if (map != null && point != null) {
-            Segmented(listOf("socratic" to "追问", "roundtable" to "圆桌"), mode, "怎么讨论", enabled = !busy) { mode = it }
-            PrimaryButton("从「${point.name}」开始讨论", { model.run { startFromPoint(point, mode) } }, Modifier.fillMaxWidth(), enabled = !busy)
-        }
+        ModePick(mode, !busy) { mode = it }
+        PrimaryButton("围绕这篇材料讨论", { model.run { discussMaterial(mode) } }, Modifier.fillMaxWidth(), enabled = !busy)
     }) { bottom ->
         Column(Modifier.fillMaxSize()) {
-            TopBar(
-                map?.title?.ifEmpty { null } ?: m.title,
-                "${m.sections.size} 节" + (map?.let { " · ${it.points.size} 个技术点" } ?: ""),
-                onBack = { model.run { openMaterials() } },
-            )
+            TopBar(m.title, "${m.sections.size} 节 · ${dateFormat.format(Date(m.created))}", onBack = { model.run { openMaterials() } })
             Column(
                 Modifier.weight(1f).scrollWithEdge().padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                map?.summary?.takeIf { it.isNotEmpty() }?.let {
-                    Text(it, style = TextStyles.body.copy(fontFamily = Serif, lineHeight = 1.75.em), color = t.ink.color())
-                }
-                if (steps.isNotEmpty()) Trace(steps, openAtFirst = map == null)
-                if (map == null && !busy) {
-                    Panel {
-                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("研读助手还没整理出技术点。", style = TextStyles.body, color = t.ink.color())
-                            PrimaryButton("让研读助手读一遍", { model.run { readMaterial() } })
-                        }
-                    }
-                }
-                if (map != null) {
-                    SectionLabel("技术点地图 · 挑一个开始")
-                    for (p in map.points) MapPointItem(p, p.name == point?.name, !busy) { picked = p.name }
-                }
+                m.source?.let { FinePrint("出自：$it") }
+                Text(
+                    "AI 会看着这篇材料的目录，每轮翻到和你们正在聊的最相关的几节。讨论完的复盘会沉淀进核心概念的笔记，也会沉淀进这篇材料的笔记。",
+                    style = TextStyles.small.copy(lineHeight = 1.6.em),
+                    color = t.muted.color(),
+                )
                 Original(m)
                 Spacer(Modifier.height(bottom))
             }
@@ -332,48 +325,6 @@ private fun Fold(title: String, startOpen: Boolean, content: @Composable () -> U
             Icon(lineIcon("chevron", IconPaths.CHEVRON), null, Modifier.size(16.dp).rotate(turn), tint = t.muted.color())
         }
         if (open) content()
-    }
-}
-
-@Composable
-private fun Trace(steps: List<ReadStep>, openAtFirst: Boolean) {
-    val t = LocalTokens.current
-    Fold("研读过程 · ${steps.size} 步", openAtFirst) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            steps.forEachIndexed { i, s ->
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("${i + 1}.", style = TextStyles.small, color = t.muted.color())
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(s.action, style = TextStyles.small.copy(fontWeight = FontWeight.Bold), color = t.ink.color())
-                        if (s.thought.isNotEmpty()) Text(s.thought, style = TextStyles.small, color = t.muted.color())
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun MapPointItem(p: MapPoint, on: Boolean, enabled: Boolean, onPick: () -> Unit) {
-    val t = LocalTokens.current
-    val shape = RoundedCornerShape(14.dp)
-    val where = listOfNotNull(
-        p.sections.takeIf { it.isNotEmpty() }?.joinToString(" ") { "§$it" },
-        p.needs.takeIf { it.isNotEmpty() }?.let { "要先懂：" + it.joinToString("、") },
-    ).joinToString(" · ")
-    Column(
-        Modifier.fillMaxWidth()
-            .background(if (on) t.brand.color().mix(0.08f, t.raised.color()) else t.raised.color(), shape)
-            .border(1.dp, if (on) t.brand.color() else t.line.color(), shape)
-            .clickable(enabled = enabled, role = Role.RadioButton, onClick = onPick)
-            .semantics { selected = on }
-            .heightIn(min = 56.dp)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Text(p.name, style = TextStyles.body.copy(fontFamily = Serif, fontWeight = FontWeight.Bold, fontSize = 17.sp), color = t.ink.color())
-        if (p.why.isNotEmpty()) Text(p.why, style = TextStyles.small.copy(lineHeight = 1.6.em), color = t.ink.color())
-        if (where.isNotEmpty()) Text(where, style = TextStyles.small.copy(fontSize = 12.5.sp), color = t.muted.color())
     }
 }
 

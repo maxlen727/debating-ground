@@ -122,12 +122,12 @@ export function Learn() {
               <small className="muted">AI 只按你写的经过来讨论，不会自己编细节。</small>
             </div>
           )}
-          {/* 读材料（#144）：从一篇论文或文章开始，研读助手先拆出技术点 */}
+          {/* 读材料（#144、#166）：从一篇论文或文章开始，直接围绕它讨论 */}
           <button className="material-entry" disabled={busy} onClick={openMaterials}>
             <Icon name="note" size={18} />
             <span className="grow">
               <b>从一篇论文或文章开始</b>
-              <small>贴上正文，研读助手拆出技术点，一个一个讨论</small>
+              <small>贴上正文、链接或 PDF，直接围绕它讨论</small>
             </span>
             <Icon name="chevron" size={18} />
           </button>

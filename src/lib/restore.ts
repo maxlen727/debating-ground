@@ -118,18 +118,22 @@ export function restoreNotes(v: unknown): Note[] {
             ...(typeof x.material === 'string' && x.material ? { material: x.material } : {}),
           })),
         ...(typeof n.context === 'string' && n.context ? { context: n.context } : {}),
+        // 材料笔记（#166）
+        ...(n.kind === 'material' ? { kind: 'material' as const } : {}),
+        ...(n.kind === 'material' && typeof n.materialId === 'string' && n.materialId
+          ? { materialId: n.materialId }
+          : {}),
         created,
         updated: num(n.updated, created),
       };
     });
 }
 
-// 讨论带着的材料节选（#144）：字段不全就不要了，讨论照常
+// 讨论带着的材料（#144、#166）：字段不全就不要了，讨论照常。旧版还带着技术点 point，不需要了
 const materialOk = (m: unknown) =>
   isObj(m) &&
   typeof m.id === 'string' &&
   typeof m.title === 'string' &&
-  typeof m.point === 'string' &&
   typeof m.excerpt === 'string';
 
 export function restorePlan(v: unknown): Plan | null {

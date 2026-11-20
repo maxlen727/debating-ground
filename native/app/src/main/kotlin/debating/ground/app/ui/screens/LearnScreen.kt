@@ -156,7 +156,7 @@ fun LearnScreen(st: AppState, model: AppModel) {
                             FinePrint("AI 只按你写的经过来讨论，不会自己编细节。")
                         }
                     }
-                    // 读材料（#144、#154）：从一篇论文或文章开始，研读助手先拆出技术点
+                    // 读材料（#144、#154、#166）：从一篇论文或文章开始，直接围绕它讨论
                     MaterialEntry(enabled = !busy) { model.run { openMaterials() } }
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -292,7 +292,7 @@ private fun MaterialEntry(enabled: Boolean, onClick: () -> Unit) {
         Icon(lineIcon("note", IconPaths.NOTE), null, Modifier.size(18.dp), tint = t.ink.color())
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text("从一篇论文或文章开始", style = TextStyles.body.copy(fontWeight = FontWeight.Bold, fontSize = 15.sp), color = t.ink.color())
-            Text("贴上正文，研读助手拆出技术点，一个一个讨论", style = TextStyles.small.copy(fontSize = 13.sp), color = t.muted.color())
+            Text("贴上正文、链接或 PDF，直接围绕它讨论", style = TextStyles.small.copy(fontSize = 13.sp), color = t.muted.color())
         }
         Icon(lineIcon("chevron", IconPaths.CHEVRON), null, Modifier.size(18.dp), tint = t.muted.color())
     }

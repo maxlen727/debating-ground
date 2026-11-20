@@ -47,10 +47,9 @@ fun Session.pathEntries(at: String? = this.at): List<Entry> {
     }
 }
 
-/** 发给 AI 的节选：不带材料的 id（id 只用来在这台设备上找回完整的材料）。 */
+/** 发给 AI 的材料：不带 id（id 只用来在这台设备上找回完整的材料）。 */
 fun SessionMaterial.forAi() = buildJsonObject {
     put("title", title)
-    put("point", point)
     put("excerpt", excerpt)
 }
 

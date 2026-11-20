@@ -52,6 +52,21 @@ data class MergeFrom(
     val material: String? = null,
 )
 
+/** 这篇是不是材料笔记（#166）。 */
+fun Note.isMaterialNote() = kind == "material"
+
+/** 这篇概念笔记是不是讲 [concept] 的（材料笔记不算）。 */
+fun Note.isNoteFor(concept: String) = !isMaterialNote() && sameConcept(this.concept, concept)
+
+/**
+ * 把一次讨论的复盘合并进材料笔记（#166）：和概念笔记同样的规则，但“一句话”和“什么时候想到它”不用这次的
+ * （那是讲核心概念的，不是讲材料的），这次讨论的核心概念记进“相关概念”。和网页版 mergeIntoMaterial 一致。
+ */
+fun mergeIntoMaterial(note: Note, r: SessionReview, from: MergeFrom, materialId: String): Note {
+    val merged = mergeReview(note, r.copy(summary = "", useWhen = ""), from)
+    return merged.copy(kind = "material", materialId = materialId, related = mergeList(merged.related, listOf(from.concept), NoteLimits.RELATED) { it })
+}
+
 fun emptyNote(id: String, concept: String, at: Long) = Note(id = id, concept = concept, created = at, updated = at)
 
 private fun String?.orKeep(old: String) = this?.jsTrim()?.takeIf { it.isNotEmpty() } ?: old
@@ -176,7 +191,8 @@ fun noteMarkdown(n: Note, frontmatter: Boolean = true, zone: TimeZone = TimeZone
         if (n.useWhen.isNotEmpty()) out += "description: ${yaml(n.useWhen)}"
         out += listOf("---", "")
     }
-    out += listOf("# ${n.concept}", "")
+    // 材料笔记（#166）：标题加书名号，写明是材料笔记
+    out += if (n.isMaterialNote()) listOf("# 《${n.concept}》", "", "材料笔记：围绕这篇材料的讨论都沉淀在这里。", "") else listOf("# ${n.concept}", "")
     if (n.summary.isNotEmpty()) out += listOf(n.summary, "")
     if (n.useWhen.isNotEmpty()) out += listOf("**什么时候想到它**：${n.useWhen}", "")
     fun section(title: String, lines: List<String>) {

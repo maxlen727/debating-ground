@@ -2413,6 +2413,15 @@ select:focus {
   gap: 2px;
   font-size: var(--t-sm);
 }
+.kind-tag {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--c-bg);
+  color: var(--c-fg);
+}
 .weak-tag {
   font-size: 12px;
   color: var(--warn);

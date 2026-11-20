@@ -143,9 +143,7 @@ class FlowTest {
 
             "discussAgain" -> flow.discussAgain(flow.state.library.first())
 
-            "addMaterial" -> flow.addMaterial(str("title"), str("text"))
-
-            "startFromPoint" -> flow.startFromPoint(flow.state.ui.material!!.map!!.points[o.getValue("index").jsonPrimitive.int], str("mode"))
+            "addMaterial" -> flow.addMaterial(str("title"), str("text"), str("mode"))
 
             else -> error("未知操作 ${str("op")}")
         }
@@ -203,7 +201,7 @@ class FlowTest {
     }
 
     // 和 scripts/native-fixtures.ts 的 canonical() 一样：键按字母顺序遍历，id 换成按出现顺序编号的占位符，时间戳换成 <t>
-    private val idKeys = setOf("id", "sessionId", "from", "parent", "branch", "back", "messageId", "openCard", "sheet", "at")
+    private val idKeys = setOf("id", "sessionId", "materialId", "from", "parent", "branch", "back", "messageId", "openCard", "sheet", "at")
     private val timeKeys = setOf("created", "due", "at", "updated", "checked")
 
     private fun canonical(v: JsonElement, ids: MutableMap<String, String> = mutableMapOf(), key: String = ""): JsonElement = when (v) {

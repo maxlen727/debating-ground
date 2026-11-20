@@ -2,7 +2,6 @@
 import type {
   ChatMessage,
   ExplainKind,
-  MapPoint,
   ModeId,
   PointSuggestion,
   Previous,
@@ -14,7 +13,7 @@ import type {
 import { getState, go, toast, typing, uid, update } from './store.ts';
 import { forceNav } from './lib/motion.ts';
 import { MODE_ORDER } from '../shared/modes.ts';
-import { excerptFor, READER_LIMITS, runReader, splitMaterial } from './lib/reader.ts';
+import { READER_LIMITS, splitMaterial, startContext } from './lib/reader.ts';
 import {
   deleteMaterial,
   getMaterial,
@@ -33,7 +32,16 @@ import { cancelListening, listeningPhase, startListening, stopListening } from '
 import * as room from './lib/room.ts';
 import { debateTurns, seatName, slots } from './lib/debate.ts';
 import { branchById, branchChain, canBranch, pathEntries } from './lib/canvas.ts';
-import { checkPoint, emptyNote, mergeReview, sameConcept, weakOf, type Note } from './lib/notes.ts';
+import {
+  checkPoint,
+  emptyNote,
+  isMaterialNote,
+  isNoteFor,
+  mergeIntoMaterial,
+  mergeReview,
+  weakOf,
+  type Note,
+} from './lib/notes.ts';
 
 const TONES = ['c', 'a', 'b'] as const;
 const session = () => getState().session;
@@ -76,11 +84,7 @@ export function snapshot(s: Session, whole = false): SessionSnapshot {
     stages: s.mode === 'debate' ? s.stages : undefined,
     finished: s.finished,
     context: s.context || undefined,
-    material: s.material && {
-      title: s.material.title,
-      point: s.material.point,
-      excerpt: s.material.excerpt,
-    },
+    material: s.material && { title: s.material.title, excerpt: s.material.excerpt },
     branch: here
       ? {
           topic: here.topic,
@@ -124,11 +128,7 @@ export async function prepare(
       mode: config.mode,
       previous,
       context,
-      material: material && {
-        title: material.title,
-        point: material.point,
-        excerpt: material.excerpt,
-      },
+      material: material && { title: material.title, excerpt: material.excerpt },
     },
     context ? '正在按你说的经过准备讨论' : '正在拆解要点、准备讨论',
   );
@@ -1017,9 +1017,9 @@ export async function openTerm(term: string, messageId: string) {
     const ss = st.session;
     if (ss?.id !== s.id) return;
     ss.glossary = [...(ss.glossary ?? []).filter(g => g.term !== term), card];
-    // 已经复盘过的讨论，直接补进它所在的概念笔记
-    const saved = st.library.find(n => n.sources.some(x => x.sessionId === ss.id));
-    if (saved) saved.terms = [...saved.terms.filter(t => t.term !== term), card];
+    // 已经复盘过的讨论，直接补进它所在的笔记（概念笔记，和围绕材料讨论时的材料笔记）
+    for (const saved of st.library.filter(n => n.sources.some(x => x.sessionId === ss.id)))
+      saved.terms = [...saved.terms.filter(t => t.term !== term), card];
   });
 }
 
@@ -1073,9 +1073,7 @@ export async function generateReview() {
     const ss = st.session!;
     ss.review = { ...res.data, source: res.source, model: res.model };
     const now = Date.now();
-    const i = st.library.findIndex(n => sameConcept(n.concept, ss.concept));
-    const base = i >= 0 ? st.library[i] : emptyNote(uid(), ss.concept, now);
-    const note = mergeReview(base, res.data, {
+    const from = {
       sessionId: ss.id,
       at: now,
       mode: ss.mode,
@@ -1086,15 +1084,30 @@ export async function generateReview() {
       context: ss.context,
       terms: ss.glossary,
       material: ss.material?.title,
-    });
+    };
+    const i = st.library.findIndex(n => isNoteFor(n, ss.concept));
+    const base = i >= 0 ? st.library[i] : emptyNote(uid(), ss.concept, now);
+    const note = mergeReview(base, res.data, from);
     // 刚更新的笔记排到最前面
-    st.library = [note, ...st.library.filter((_, j) => j !== i)];
+    let library = [note, ...st.library.filter((_, j) => j !== i)];
+    // 围绕材料的讨论（#166）：也沉淀进这篇材料的笔记，排在概念笔记后面
+    const mat = ss.material;
+    if (mat) {
+      const k = library.findIndex(n => isMaterialNote(n) && n.materialId === mat.id);
+      const old = k >= 0 ? library[k] : emptyNote(uid(), mat.title, now);
+      const merged = mergeIntoMaterial(old, res.data, from, mat.id);
+      library = library.filter((_, j) => j !== k);
+      library.splice(1, 0, merged);
+    }
+    st.library = library;
   });
 }
 
 /** 这次复盘沉淀进笔记的情况：新增了几个要点、更新了几个（复盘页上告诉学习者）。 */
 export function settledInto(s: Session) {
-  const note = getState().library.find(n => n.sources.some(x => x.sessionId === s.id));
+  const note = getState().library.find(
+    n => !isMaterialNote(n) && n.sources.some(x => x.sessionId === s.id),
+  );
   return note ?? null;
 }
 
@@ -1189,30 +1202,33 @@ export async function loadMaterials() {
 export function openMaterials() {
   update(st => {
     st.ui.material = null;
-    st.ui.reading = null;
   });
   go('material');
   void loadMaterials();
 }
-/** 粘贴进来的材料：切成节、存在这台设备上，然后让研读助手读。 */
-export async function addMaterial(title: string, text: string) {
+/**
+ * 贴进来的材料（#166）：切成节、存在这台设备上，然后直接围绕它开始讨论。
+ * 讨论开始不了（比如 AI 出错）时材料已经存好，停在这篇材料上，可以再点“开始讨论”。
+ */
+export async function addMaterial(title: string, text: string, mode: ModeId, source?: string) {
   text = text.trim();
   if (getState().ui.busy) return;
   if (text.length < 200) return toast('材料太短了，至少贴两三段正文。');
   if (text.length > READER_LIMITS.text)
     return toast(`材料太长了，先贴最想弄懂的部分（${READER_LIMITS.text / 10000} 万字以内）。`);
-  const sections = splitMaterial(text);
   const m: Material = {
     id: uid(),
     title: title.trim().slice(0, 80) || text.split('\n')[0].trim().slice(0, 40),
-    sections,
+    sections: splitMaterial(text),
     created: Date.now(),
+    ...(source ? { source: source.slice(0, 300) } : {}),
   };
   await saveMaterial(m);
   update(st => {
     st.ui.material = m;
   });
-  await readMaterial();
+  void loadMaterials();
+  await discussMaterial(mode);
 }
 /**
  * 读取一个链接的正文（#157）：交给本机服务或你的后端去取（浏览器不能直接取别的网站），取到了交给页面填进框里，
@@ -1264,46 +1280,23 @@ export async function importPdf(file: File): Promise<Extract<PdfResult, { ok: tr
   return r;
 }
 
-/** 让研读助手读当前的材料，整理出技术点地图。每一步在做什么都显示出来。 */
-export async function readMaterial() {
-  const m = getState().ui.material;
-  if (!m || getState().ui.busy) return;
-  update(st => {
-    st.ui.reading = [];
-  });
-  const res = await runReader(
-    m.title,
-    m.sections,
-    async payload => {
-      const last = payload.steps.at(-1);
-      const r = await runAI(
-        'read',
-        payload,
-        last ? `研读助手${last.action}了，在想下一步` : '研读助手正在看大纲',
-      );
-      return r?.data ?? null;
-    },
-    steps =>
-      update(st => {
-        st.ui.reading = steps;
-      }),
-  );
-  if (!res) return;
-  const done: Material = { ...m, map: res.map, steps: res.steps };
-  await saveMaterial(done);
-  update(st => {
-    if (st.ui.material?.id === m.id) st.ui.material = done;
-  });
-  void loadMaterials();
-}
 export async function openMaterial(id: string) {
   const m = await getMaterial(id);
   if (!m) return toast('找不到这份材料，它可能已经被删除。');
   update(st => {
     st.ui.material = m;
-    st.ui.reading = m.steps ?? null;
   });
   go('material');
+}
+/** 讨论页的“原文”：把这场讨论的材料读进来，打开面板（材料删了就只显示讨论开始时存下的那份）。 */
+export async function openMaterialSheet() {
+  const id = session()?.material?.id;
+  if (!id) return;
+  const m = getState().ui.material?.id === id ? getState().ui.material : await getMaterial(id);
+  update(st => {
+    if (m) st.ui.material = m;
+    st.ui.sheet = 'material';
+  });
 }
 export async function removeMaterial(id: string) {
   await deleteMaterial(id);
@@ -1312,13 +1305,17 @@ export async function removeMaterial(id: string) {
   });
   await loadMaterials();
 }
-/** 从地图上的一个技术点开始讨论：带上它的原文节选去准备，准备好就开始。 */
-export async function startFromPoint(point: MapPoint, mode: ModeId) {
+/**
+ * 围绕当前的材料开始讨论（#166）：带上目录和开头几节去准备，AI 从材料里定出讨论题、核心概念和要点，准备好就开始。
+ * 讨论里每次请求 AI 时，再按话题换成最相关的几节（lib/ai.ts 的 withMaterial）。
+ */
+export async function discussMaterial(mode: ModeId) {
   const m = getState().ui.material;
   if (!m || getState().ui.busy) return;
-  const material = { id: m.id, ...excerptFor(m.map?.title || m.title, m.sections, point) };
+  const material = { id: m.id, title: m.title, excerpt: startContext(m.sections) };
   update(st => {
-    st.config.concept = point.name;
+    // 学习者没写概念：先用材料标题占位，AI 准备时会定出这次讨论的核心概念
+    st.config.concept = m.title;
     st.config.mode = mode;
     st.ui.context = null;
   });

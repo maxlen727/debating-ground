@@ -6,6 +6,8 @@ import { getState, update } from '../store.ts';
 import { apiRequest, apiStream } from './api.ts';
 import { demoRun } from './demo.ts';
 import { clearLive, setLive, updateLive, type StreamKind } from './stream.ts';
+import { getMaterial, type Material } from './materials.ts';
+import { contextQuery, materialContext } from './reader.ts';
 
 let controller: AbortController | null = null;
 export const cancelAI = () => controller?.abort();
@@ -53,6 +55,27 @@ export async function task<T>(
   }
 }
 
+// 围绕材料的讨论（#166）：每次请求 AI 前，按讨论题和最近的发言换成材料里最相关的几节。
+// 完整的材料在这台设备上（IndexedDB），读一次留在内存里；找不到（被删了）就用讨论开始时存下的那份
+let cachedMaterial: Material | null = null;
+const hasMaterial = (payload: unknown) =>
+  !!(payload as { session?: { material?: unknown } }).session?.material &&
+  !!getState().session?.material;
+export async function withMaterial<T>(payload: T): Promise<T> {
+  const p = payload as { session?: { material?: { title: string; excerpt: string } } };
+  const s = p.session;
+  const id = getState().session?.material?.id;
+  if (!s?.material || !id) return payload;
+  const m = cachedMaterial?.id === id ? cachedMaterial : await getMaterial(id);
+  if (!m) return payload;
+  cachedMaterial = m;
+  const excerpt = materialContext(
+    m.sections,
+    contextQuery(s as Parameters<typeof contextQuery>[0]),
+  );
+  return { ...p, session: { ...s, material: { title: s.material.title, excerpt } } } as T;
+}
+
 // live：传了就边生成边显示（id 会沿用为正式发言的 id）。失败时撤回已显示的文字；成功时由调用方在写入结果后清掉。
 export async function runAI<P extends Purpose>(
   purpose: P,
@@ -62,7 +85,9 @@ export async function runAI<P extends Purpose>(
 ): Promise<(ResultMap[P] & { source: Source }) | null> {
   const stream = live && STREAMABLE.includes(purpose) ? live : undefined;
   if (stream) setLive({ ...stream, label, text: '' });
-  const result = await runAIInner(purpose, payload, label, stream);
+  // 只有围绕材料的讨论才要先读材料；其余请求不多等这一下（取消按钮立刻就能用）
+  const ready = hasMaterial(payload) ? await withMaterial(payload) : payload;
+  const result = await runAIInner(purpose, ready, label, stream);
   if (!result && stream) clearLive(stream.id);
   return result;
 }

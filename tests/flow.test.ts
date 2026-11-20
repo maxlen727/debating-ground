@@ -1010,51 +1010,76 @@ test('old knowledge cards (sibian-v3) are merged into one note per concept; the 
   assert.equal(store['sibian-v3'], v3, 'the old save is not touched');
 });
 
-test('读材料 (demo, #144): paste → reading agent → map → discuss a point with the excerpt → note remembers the material', async () => {
+test('读材料 (demo, #166): paste → discuss the material directly → review settles into the concept note and the material note', async () => {
   for (const k of Object.keys(store)) delete store[k];
   resetForTests();
   const { SAMPLE_MATERIAL } = await import('../src/lib/demo.ts');
-  await actions.addMaterial('', '太短了');
+  await actions.addMaterial('', '太短了', 'socratic');
   assert.equal(getState().ui.material, null, 'too short: nothing saved');
-  await actions.addMaterial(SAMPLE_MATERIAL.title, SAMPLE_MATERIAL.text);
+  await actions.addMaterial(
+    SAMPLE_MATERIAL.title,
+    SAMPLE_MATERIAL.text,
+    'socratic',
+    'https://example.com/a',
+  );
   const m = getState().ui.material!;
+  assert.equal(m.source, 'https://example.com/a');
   assert.deepEqual(
     m.sections.map(s => s.heading),
     ['摘要', '1 稀缺性', '2 机会成本', '3 沉没成本', '4 边际思考', '结论'],
   );
-  assert.ok(m.map, 'the agent finished with a map');
-  assert.deepEqual(
-    m.map.points.map(p => p.name),
-    ['稀缺性', '机会成本', '沉没成本', '边际思考'],
-  );
-  // 每一步在做什么都记下来，界面上能看到
-  assert.deepEqual(
-    getState().ui.reading!.map(s => s.action),
-    ['读第 1、2、3 节', '整理成地图'],
-  );
-  await actions.loadMaterials();
-  assert.equal(getState().ui.materials[0].points, 4);
-
-  await actions.startFromPoint(m.map.points[1], 'socratic');
+  // 不再先拆技术点地图：直接开始讨论，核心概念由准备时定出来（演示模式按示例文章定为机会成本）
   const s = getState().session!;
+  assert.equal(getState().ui.screen, 'session');
   assert.equal(s.concept, '机会成本');
+  assert.equal(s.mode, 'socratic');
   assert.equal(s.material!.id, m.id);
-  assert.match(s.material!.excerpt, /^§3 2 机会成本\n做一个选择时/);
+  assert.equal(s.material!.title, SAMPLE_MATERIAL.title);
+  // 短材料：整篇都在
+  assert.match(s.material!.excerpt, /^§1 摘要\n人每天都在做选择/);
+  assert.match(s.material!.excerpt, /§6 结论\n/);
   assert.deepEqual(actions.snapshot(s).material, {
     title: SAMPLE_MATERIAL.title,
-    point: '机会成本',
     excerpt: s.material!.excerpt,
   });
-  // 讨论带着的节选跟着存档走，读回来还在
+  // 讨论带着的材料跟着存档走，读回来还在
   resetForTests();
-  assert.equal(getState().session!.material!.point, '机会成本');
+  assert.equal(getState().session!.material!.id, m.id);
   await actions.send('机会成本就是放弃的选项里最好的那个');
   await actions.finish();
-  const note = getState().library[0];
-  assert.equal(note.sources[0].material, SAMPLE_MATERIAL.title);
+  const [concept, material] = getState().library;
+  assert.equal(concept.concept, '机会成本');
+  assert.equal(concept.kind, undefined);
+  assert.equal(concept.sources[0].material, SAMPLE_MATERIAL.title);
+  assert.equal(material.kind, 'material');
+  assert.equal(material.materialId, m.id);
+  assert.equal(material.concept, SAMPLE_MATERIAL.title);
+  assert.deepEqual(
+    material.related.at(-1),
+    '机会成本',
+    'the core concept is recorded on the material note',
+  );
+  assert.equal(material.summary, '', 'the concept summary does not become the material summary');
+  assert.deepEqual(
+    material.points.map(p => p.label),
+    concept.points.map(p => p.label),
+  );
+  assert.equal(actions.settledInto(getState().session!)!.id, concept.id);
   const { noteMarkdown } = await import('../src/lib/notes.ts');
-  assert.match(noteMarkdown(note), /（读《选择的代价：机会成本入门》）/);
+  assert.match(noteMarkdown(concept), /（读《选择的代价：机会成本入门》）/);
 
+  // 回到这篇材料再讨论一次（圆桌）：同一篇材料笔记接着沉淀，不新建
+  await actions.openMaterial(m.id);
+  await actions.discussMaterial('roundtable');
+  assert.equal(getState().session!.mode, 'roundtable');
+  await actions.send('机会成本不只是钱，还有时间');
+  await actions.finish();
+  const notes = getState().library;
+  assert.equal(notes.filter(n => n.kind === 'material').length, 1);
+  assert.equal(notes.find(n => n.kind === 'material')!.sources.length, 2);
+
+  await actions.loadMaterials();
+  assert.equal(getState().ui.materials[0].sections, 6);
   await actions.removeMaterial(m.id);
   assert.equal(getState().ui.materials.length, 0);
 });

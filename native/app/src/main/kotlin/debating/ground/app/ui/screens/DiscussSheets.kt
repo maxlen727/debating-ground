@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import debating.ground.app.AppModel
 import debating.ground.app.data.ChatMessage
+import debating.ground.app.data.Material
 import debating.ground.app.data.Session
 import debating.ground.app.data.SessionMaterial
 import debating.ground.app.data.canBranch
@@ -82,7 +83,7 @@ internal fun Sheets(s: Session, st: AppState, live: Live?, model: AppModel) {
 
         ui.sheet == "finish" -> SheetSpec("finish") { FinishSheet(s, model) }
 
-        ui.sheet == "material" && s.material != null -> SheetSpec("material") { MaterialSheet(s.material, model) }
+        ui.sheet == "material" && s.material != null -> SheetSpec("material") { MaterialSheet(s.material, ui.material, model) }
 
         ui.sheet == "roster" && s.mode == "debate" -> SheetSpec("roster") { RosterSheet(s, model) }
 
@@ -264,14 +265,18 @@ private fun PointsSheet(s: Session, st: AppState, model: AppModel) {
     }
 }
 
-// 从材料开始的讨论：这个点的原文节选，讨论时 AI 也看着这几段（#144、#154）
+// 围绕材料的讨论：整篇原文（材料删了就只有讨论开始时存下的目录和开头）（#144、#166）
 @Composable
-private fun MaterialSheet(m: SessionMaterial, model: AppModel) {
+private fun MaterialSheet(m: SessionMaterial, full: Material?, model: AppModel) {
     Sheet("《${m.title}》", { model.learning.openSheet(null) }) {
-        FinePrint("关于「${m.point}」的原文节选，讨论时 AI 也看着这几段。")
-        for (b in m.excerpt.split(Regex("\n\n(?=§\\d)"))) {
-            val lines = b.split("\n")
-            SectionText(lines.first(), lines.drop(1).joinToString("\n"))
+        FinePrint("讨论时 AI 看着这篇材料的目录，每轮翻到和你们正在聊的最相关的几节。")
+        if (full?.id == m.id) {
+            for (x in full.sections) SectionText("§${x.n} ${x.heading}", x.text)
+        } else {
+            for (b in m.excerpt.split(Regex("\\n\\n(?=§\\d)"))) {
+                val lines = b.split("\n")
+                SectionText(lines.first(), lines.drop(1).joinToString("\n"))
+            }
         }
     }
 }

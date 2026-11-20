@@ -219,12 +219,10 @@ export async function generate(): Promise<Record<string, string>> {
   );
   // 演示模式的标准答案：在几种典型的讨论状态下，每种用途各调用一次网页版的 demoRun，
   // 记下调用前的讨论、payload、结果和调用后的 demoStep。原生版 DemoTest 用同样的输入，四样都要一致。
-  // 从材料里的一个技术点开始讨论（#144）：讨论、计划带着原文节选，笔记的来源记下材料标题
+  // 围绕一份材料讨论（#144、#166）：讨论、计划带着材料，复盘沉淀进核心概念的笔记和这篇材料的笔记
   await scenario('from-material', async () => {
     const { SAMPLE_MATERIAL } = await import('../src/lib/demo.ts');
-    await A.addMaterial(SAMPLE_MATERIAL.title, SAMPLE_MATERIAL.text);
-    const point = S.getState().ui.material!.map!.points[1];
-    await A.startFromPoint(point, 'socratic');
+    await A.addMaterial(SAMPLE_MATERIAL.title, SAMPLE_MATERIAL.text, 'socratic');
     await A.send('已经花掉的钱拿不回来，所以不该影响接下来的决定。');
     await A.finish();
   });
@@ -349,7 +347,11 @@ export async function generate(): Promise<Record<string, string>> {
   out['reader-cases.json'] =
     JSON.stringify({
       cases: await readerCases(),
-      demo: await demoReadCases(),
+      query: (await import('../src/lib/reader.ts')).contextQuery({
+        topic: '题目',
+        branch: { topic: '分支' },
+        messages: [{ text: '很早的话' }, { text: '倒数第二' }, { text: '最后一句' }],
+      }),
       sample: (await import('../src/lib/demo.ts')).SAMPLE_MATERIAL,
     }) + '\n';
   // 读链接（#157）：哪些 IPv4 地址不能连，原生版在 DNS 这一步用同样的规则
@@ -841,9 +843,8 @@ export const FLOW_SCRIPTS: { name: string; ops: Op[] }[] = [
   {
     name: 'from-material',
     ops: [
-      { op: 'addMaterial', title: '', text: '太短了' },
-      { op: 'addMaterial', title: '', text: MATERIAL_TEXT },
-      { op: 'startFromPoint', index: 0, mode: 'roundtable' },
+      { op: 'addMaterial', title: '', text: '太短了', mode: 'socratic' },
+      { op: 'addMaterial', title: '', text: MATERIAL_TEXT, mode: 'roundtable' },
       { op: 'send', text: '稀缺就是想要的比能有的多，所以选了一样就得放下另一样。' },
       { op: 'finish' },
     ],
@@ -1030,6 +1031,7 @@ const lastReflection = (st: St) => st.session!.entries.findLast(e => e.kind === 
 const ID_KEYS = new Set([
   'id',
   'sessionId',
+  'materialId',
   'from',
   'parent',
   'branch',
@@ -1179,13 +1181,7 @@ async function recordFlows(
           A.selfCheck(S.getState().library[0].id, o.index as number, o.ok as boolean);
           break;
         case 'addMaterial':
-          await A.addMaterial(o.title as string, o.text as string);
-          break;
-        case 'startFromPoint':
-          await A.startFromPoint(
-            S.getState().ui.material!.map!.points[o.index as number],
-            o.mode as never,
-          );
+          await A.addMaterial(o.title as string, o.text as string, o.mode as never);
           break;
         case 'discussAgain':
           await A.discussAgain(S.getState().library[0]);
@@ -1249,6 +1245,31 @@ async function readerCases() {
     ).join('\n\n'),
     onlyIntro: '开头的一段话，没有任何标题。\n\n第二段也没有。',
   };
+  // 长材料：十二节，每节讲不同的东西，按话题挑相关的几节
+  const topics = [
+    '稀缺',
+    '取舍',
+    '边际',
+    '沉没成本',
+    '比较优势',
+    '激励',
+    '市场',
+    '价格',
+    '外部性',
+    '公共品',
+    'attention',
+    'transformer',
+  ];
+  texts.long = topics
+    .map((t, i) => `## ${i + 1} 讲${t}\n` + `这一节讨论${t}，${t}和选择有关。`.repeat(60))
+    .join('\n\n');
+  const queries = [
+    '',
+    '沉没成本为什么不该影响决定',
+    '讨论题：外部性\n我觉得外部性就是副作用',
+    'How does attention work in a transformer?',
+    '完全不相关的问题',
+  ];
   return Object.entries(texts).map(([name, text]) => {
     const sections = R.splitMaterial(text);
     const n = sections.length;
@@ -1256,53 +1277,17 @@ async function readerCases() {
       name,
       text,
       sections,
-      outline: R.outlineOf(sections),
+      outlineText: R.outlineText(sections),
       reads: [
         { ns: [1], max: 12000 },
         { ns: [1, 2, 99], max: 12000 },
         { ns: sections.map(x => x.n), max: 600 },
         { ns: [n, 1], max: 80 },
       ].map(r => ({ ...r, out: R.readSections(sections, r.ns, r.max) })),
-      searches: ['机会成本', 'ＣＯＮＣＬＵＳＩＯＮ', '稀缺', '不存在的词', '  ', 'd'].map(q => ({
-        q,
-        out: R.searchMaterial(sections, q),
-      })),
-      excerpts: [
-        { name: '缩放', why: '', sections: [4, 5], needs: [] },
-        { name: '机会成本', why: '', sections: [], needs: [] },
-        { name: '找不到的点', why: '', sections: [999], needs: [] },
-      ].map(point => ({ point, out: R.excerptFor(name, sections, point) })),
-      tools: [
-        { thought: '先读', action: 'read' as const, sections: [1, 2] },
-        { thought: '搜一下', action: 'search' as const, query: '成本' },
-      ].map(a => ({ a, out: R.runTool(sections, a) })),
+      contexts: queries.map(q => ({ q, out: R.materialContext(sections, q) })),
+      start: R.startContext(sections),
     };
   });
-}
-
-async function demoReadCases() {
-  const R = await import('../src/lib/reader.ts');
-  const { demoRun, SAMPLE_MATERIAL } = await import('../src/lib/demo.ts');
-  const out = [];
-  for (const [title, text] of [
-    [SAMPLE_MATERIAL.title, SAMPLE_MATERIAL.text],
-    ['只有开头', '开头的一段话，没有任何标题。\n\n第二段也没有。'],
-    [
-      '注意力',
-      '# 注意力机制\n\n## 1 背景\n\n序列模型。\n\n## 2.1 方法（续）\n\n矩阵。\n\n## Conclusions\n\n完。',
-    ],
-  ]) {
-    const outline = R.outlineOf(R.splitMaterial(text));
-    const first = { title, outline, steps: [] };
-    const second = {
-      title,
-      outline,
-      steps: [{ thought: 't', action: 'a', observation: 'o' }],
-    };
-    out.push({ payload: first, out: await demoRun('read', first, 0) });
-    out.push({ payload: second, out: await demoRun('read', second, 0) });
-  }
-  return out;
 }
 
 async function linkCases() {

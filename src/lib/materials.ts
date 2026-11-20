@@ -1,16 +1,15 @@
 // 读材料（#144）：完整的材料只存在这台设备上（IndexedDB），不进存档、导出和讨论记录；
-// 讨论里只带一个技术点的原文节选。没有 IndexedDB 的环境（测试、隐私模式）退回内存里，关掉页面就没了。
-import type { MaterialMap, MaterialSection, ReadStep } from '../../shared/types.ts';
+// 讨论里只带目录和与眼下话题相关的几节。没有 IndexedDB 的环境（测试、隐私模式）退回内存里，关掉页面就没了。
+import type { MaterialSection } from '../../shared/types.ts';
 
 export interface Material {
   id: string;
   title: string;
   sections: MaterialSection[];
-  map?: MaterialMap;
-  steps?: ReadStep[];
   created: number;
+  source?: string; // 从哪里来：链接地址，或者 PDF 的文件名（#166）
 }
-export type MaterialMeta = Pick<Material, 'id' | 'title' | 'created'> & { points: number };
+export type MaterialMeta = Pick<Material, 'id' | 'title' | 'created'> & { sections: number };
 
 const DB = 'sibian-materials';
 const STORE = 'materials';
@@ -60,6 +59,6 @@ export async function listMaterials(): Promise<MaterialMeta[]> {
     ...memory.values(),
   ];
   return all
-    .map(m => ({ id: m.id, title: m.title, created: m.created, points: m.map?.points.length ?? 0 }))
+    .map(m => ({ id: m.id, title: m.title, created: m.created, sections: m.sections.length }))
     .sort((a, b) => b.created - a.created);
 }
