@@ -62,10 +62,15 @@ fun Modifier.glass(shape: Shape, elevation: Dp = 8.dp): Modifier {
         .border(1.dp, t.line.color().copy(alpha = 0.7f), shape)
 }
 
+/** 滚动边缘：控件边缘以上淡出的一段，和伸进控件上方空隙里的一段（那里本来就快被控件盖住）。 */
+private val EDGE = 20.dp
+private val EDGE_UNDER = 8.dp
+
 /**
- * 内容滚到悬浮控件附近时淡出（只改内容自己的透明度，不铺底色，背景氛围照样透出来）。
- * [height] 是底部悬浮控件占掉的高度：从它上方 64dp 开始变淡，离控件还有几 dp 时就完全看不见了，
- * 文字不会半透明地贴着按钮、再被按钮硬生生截断（#170）。
+ * 内容滚到悬浮控件下面时淡出（只改内容自己的透明度，不铺底色，背景氛围照样透出来）。
+ * [height] 是底部悬浮控件占掉的高度（含它上方的空隙）。参照 iOS 的滚动边缘效果：只在控件边上
+ * 一小段（[EDGE]）里变淡，控件上方的内容保持完整清楚；以前从控件上方 64dp 就开始淡，
+ * 卡片和按钮被拉成一大片发灰的渐变（#174）。
  */
 fun Modifier.fadeBottom(height: Dp): Modifier = if (height <= 0.dp) {
     this
@@ -79,8 +84,8 @@ fun Modifier.fadeBottom(height: Dp): Modifier = if (height <= 0.dp) {
                 Brush.verticalGradient(
                     0f to Color.Black,
                     1f to Color.Transparent,
-                    startY = size.height - h - 64.dp.toPx(),
-                    endY = size.height - h - 2.dp.toPx(),
+                    startY = size.height - h - EDGE.toPx(),
+                    endY = size.height - h + EDGE_UNDER.toPx(),
                 ),
                 blendMode = BlendMode.DstIn,
             )
@@ -175,7 +180,7 @@ fun Modifier.fadeUnder(top: Dp, bottom: Dp): Modifier = this
         val tp = top.toPx()
         if (tp > 0f) {
             drawRect(
-                Brush.verticalGradient(0f to Color.Transparent, 1f to Color.Black, startY = tp - 4.dp.toPx(), endY = tp + 40.dp.toPx()),
+                Brush.verticalGradient(0f to Color.Transparent, 1f to Color.Black, startY = tp - EDGE_UNDER.toPx(), endY = tp + EDGE.toPx()),
                 blendMode = BlendMode.DstIn,
             )
         }
@@ -185,8 +190,8 @@ fun Modifier.fadeUnder(top: Dp, bottom: Dp): Modifier = this
                 Brush.verticalGradient(
                     0f to Color.Black,
                     1f to Color.Transparent,
-                    startY = size.height - bp - 48.dp.toPx(),
-                    endY = size.height - bp + 4.dp.toPx(),
+                    startY = size.height - bp - EDGE.toPx(),
+                    endY = size.height - bp + EDGE_UNDER.toPx(),
                 ),
                 blendMode = BlendMode.DstIn,
             )
