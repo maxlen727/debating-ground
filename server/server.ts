@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { synthesizeXfyun } from './tts.ts';
 import { listenRelay } from './stt.ts';
 import { acceptWebSocket, rejectUpgrade } from './wsserver.ts';
+import { LAN_PORT, LanRooms, lanAddress } from './lan.ts';
 import { SPEECH_SEGMENT } from '../shared/speech.ts';
 import {
   ApiError,
@@ -47,11 +48,47 @@ const TYPES: Record<string, string> = {
   '.webmanifest': 'application/manifest+json',
 };
 
+// 托管界面（dist/）里的静态文件：本机服务和局域网房间的入口共用
+function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, url: URL, root: string) {
+  const fail = (status: number, error: string) => {
+    res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error }));
+  };
+  if (req.method !== 'GET' && req.method !== 'HEAD') return fail(405, '方法不支持');
+  let name: string;
+  try {
+    name = decodeURIComponent(url.pathname);
+  } catch {
+    return fail(400, '地址无效');
+  }
+  const file = path.resolve(root, '.' + (name === '/' ? '/index.html' : name));
+  if (!file.startsWith(root + path.sep)) return fail(403, '禁止访问');
+  fs.readFile(file, (err, data) => {
+    if (err) {
+      if (name === '/') return fail(503, '还没有构建界面。请先运行 npm run build。');
+      return fail(404, '文件不存在');
+    }
+    res.setHeader(
+      'Cache-Control',
+      name.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
+    );
+    res.setHeader('Content-Type', TYPES[path.extname(file)] ?? 'application/octet-stream');
+    res.end(req.method === 'HEAD' ? undefined : data);
+  });
+}
+
 export function createServer({
   fetchImpl = fetch,
   timeoutMs = 90000,
   root = path.join(here, '..', 'dist'),
-}: { fetchImpl?: typeof fetch; timeoutMs?: number; root?: string } = {}) {
+  lan = null,
+}: {
+  fetchImpl?: typeof fetch;
+  timeoutMs?: number;
+  root?: string;
+  // 局域网房间（#148）：打开时房主可以在本机页面上开房间，同学从 origin 加入
+  lan?: { rooms: LanRooms; origin: string } | null;
+} = {}) {
   const sessions = new Map<string, SessionState>();
   const json = (res: http.ServerResponse, status: number, data: unknown) => {
     res.writeHead(status, {
@@ -103,6 +140,7 @@ export function createServer({
     model: s.config?.model ?? '',
     ttsConfigured: !!ttsOf(s),
     sttConfigured: !!ttsOf(s),
+    lan: lan?.origin ?? '',
   });
 
   // 认出这个浏览器的会话；没有就新建一个，用 HttpOnly Cookie 记住。顺手清掉 8 小时没用过的会话
@@ -219,6 +257,23 @@ export function createServer({
       s.tts = { appId, apiKey, apiSecret };
       json(res, 200, { ttsConfigured: true, sttConfigured: true });
     },
+    // 局域网房间：只有本机页面能开；房间里的 AI 用这个会话连好的 API，Key 不会发给同学
+    'POST /api/rooms': async (s, req, res) => {
+      if (!lan) throw new ApiError('本机服务没有打开局域网房间。用 npm run server:lan 启动。', 404);
+      if (!s.config) throw new ApiError('请先在“设置”里连接 API，房间里的 AI 要用它。', 409);
+      const data = await body(req);
+      const created = await lan.rooms.create(
+        { setup: data.setup, hostName: data.hostName },
+        async (purpose, payload, onText) => {
+          const config = s.config;
+          if (!config) throw new ApiError('房主的 API 已经断开，请房主在“设置”里重新连接。', 409);
+          const request = buildRequest(purpose, payload);
+          const result = await complete(config, request.messages, { fetchImpl, timeoutMs, onText });
+          return finalize(request, result);
+        },
+      );
+      json(res, 200, { ...created, backend: lan.origin });
+    },
     'POST /api/test': (s, req, res) => generate(s, req, res, true),
     'POST /api/generate': (s, req, res) => generate(s, req, res, false),
   };
@@ -255,29 +310,7 @@ export function createServer({
       return;
     }
 
-    if (req.method !== 'GET' && req.method !== 'HEAD')
-      return json(res, 405, { error: '方法不支持' });
-    let name: string;
-    try {
-      name = decodeURIComponent(url.pathname);
-    } catch {
-      return json(res, 400, { error: '地址无效' });
-    }
-    const file = path.resolve(root, '.' + (name === '/' ? '/index.html' : name));
-    if (!file.startsWith(root + path.sep)) return json(res, 403, { error: '禁止访问' });
-    fs.readFile(file, (err, data) => {
-      if (err) {
-        if (name === '/')
-          return json(res, 503, { error: '还没有构建界面。请先运行 npm run build。' });
-        return json(res, 404, { error: '文件不存在' });
-      }
-      res.setHeader(
-        'Cache-Control',
-        name.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
-      );
-      res.setHeader('Content-Type', TYPES[path.extname(file)] ?? 'application/octet-stream');
-      res.end(req.method === 'HEAD' ? undefined : data);
-    });
+    serveStatic(req, res, url, root);
   }
   // 请求处理是异步的：兜底接住没预料到的异常，回一个 500，而不是留下没人处理的 Promise
   const server = http.createServer((req, res) => {
@@ -317,8 +350,53 @@ export function createServer({
   return server;
 }
 
+/**
+ * 局域网房间的入口（#148）：开在 0.0.0.0 上，同一个 Wi-Fi 里的同学用浏览器打开它加入房间。
+ * 它只给界面文件和房间的 WebSocket，不提供 /api/generate、设置这些接口：API Key 和本机的会话都碰不到。
+ */
+export function createLanServer({
+  rooms,
+  root = path.join(here, '..', 'dist'),
+}: {
+  rooms: LanRooms;
+  root?: string;
+}) {
+  const server = http.createServer((req, res) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    const url = new URL(req.url ?? '/', 'http://lan');
+    if (url.pathname.startsWith('/api/')) {
+      res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ error: '局域网入口只用来加入房间。' }));
+    }
+    serveStatic(req, res, url, root);
+  });
+  server.on('upgrade', (req: http.IncomingMessage, socket: import('node:stream').Duplex) => {
+    const m = (req.url ?? '').match(/^\/api\/rooms\/([^/?]+)\/ws$/);
+    if (!m) return rejectUpgrade(socket, 404, 'Not Found');
+    rooms.upgrade(req, socket, m[1]);
+  });
+  return server;
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const server = createServer();
+  // npm run server:lan：同时打开局域网房间的入口（#148）
+  const lanIp = process.argv.includes('--lan') ? lanAddress() : null;
+  if (process.argv.includes('--lan') && !lanIp)
+    console.log('没找到这台电脑的局域网地址（连上 Wi-Fi 或有线网了吗？），局域网房间没有打开。');
+  const rooms = lanIp ? new LanRooms() : null;
+  const lan = rooms && lanIp ? { rooms, origin: `http://${lanIp}:${LAN_PORT}` } : null;
+  const server = createServer({ lan });
+  if (lan) {
+    const entry = createLanServer({ rooms: lan.rooms });
+    entry.on('error', () => console.error(`端口 ${LAN_PORT} 已被占用，局域网房间没有打开。`));
+    entry.listen(LAN_PORT, '0.0.0.0', () =>
+      console.log(
+        `局域网房间已打开：同一个 Wi-Fi 里的同学打开你分享的邀请链接（${lan.origin}）就能加入。\n` +
+          '局域网里走的是不加密的 HTTP：只在信得过的网络里用（家里、宿舍、教室），别在公共 Wi-Fi 上开。',
+      ),
+    );
+  }
   server.on('error', (e: NodeJS.ErrnoException) => {
     console.error(
       e.code === 'EADDRINUSE'

@@ -312,8 +312,10 @@ export async function inviteFriends(name: string) {
   const { plan, config, ui } = getState();
   if (!plan || ui.busy) return;
   if (!canInvite(plan.mode)) return toast('多人讨论支持圆桌讨论和正反辩论。');
-  if (config.aiMode !== 'remote' || !config.remote.url)
-    return toast('多人讨论需要先在“设置”里连接你的后端。');
+  if (!(config.aiMode === 'remote' && config.remote.url) && !room.lanReady())
+    return toast(
+      '多人讨论需要先在“设置”里连接你的后端，或者用 npm run server:lan 启动本机服务开局域网房间。',
+    );
   const problem = planProblem(true);
   if (problem) return toast(problem);
   name = name.trim();

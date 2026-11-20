@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { joinRoom } from '../actions.ts';
+import { isLanBackend } from '../lib/room.ts';
 import { ErrorBanner, Icon, TopBar } from '../components/ui.tsx';
 import { go, update, useApp } from '../store.ts';
 
@@ -57,8 +58,10 @@ export function Join() {
           <small>只在这场讨论里显示。</small>
         </label>
         <p className="fineprint">
-          讨论内容会临时保存在房主的后端（{host}），讨论结束 1
-          小时后自动删除。你的小结和复盘只保存在这台设备上。
+          {ui.join && isLanBackend(ui.join.backend)
+            ? `这是局域网房间，开在房主的电脑上（${host}）：讨论内容只在那台电脑的内存里，房主的本机服务停了就没了。局域网里不加密，别在公共 Wi-Fi 上用。`
+            : `讨论内容会临时保存在房主的后端（${host}），讨论结束 1 小时后自动删除。`}
+          你的小结和复盘只保存在这台设备上。
           {ongoing && '加入后，你正在进行的讨论会结束。'}
         </p>
       </div>
