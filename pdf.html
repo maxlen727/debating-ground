@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <!-- 安卓 App 读 PDF 用的隐藏页面（#164）：App 在看不见的 WebView 里打开它，用和网页版同一份代码取出文字。
+         只加载 App 自己打包的文件，网络请求都被 App 拦下；不显示任何东西。 -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; worker-src 'self' blob:; connect-src 'self'; style-src 'none'; img-src 'none'"
+    />
+    <title>思辨场 PDF</title>
+  </head>
+  <body>
+    <script type="module" src="/src/pdf-entry.ts"></script>
+  </body>
+</html>

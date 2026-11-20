@@ -108,6 +108,7 @@ jobs:
           out="sibian-${{ steps.ver.outputs.name }}.apk"
           cp "$src" "$out"
           unzip -l "$out" | grep -q 'assets/web/index.html' || { echo "::error::安装包里没有网页版界面（assets/web/），手机当房主时同学的浏览器打不开"; exit 1; }
+          unzip -l "$out" | grep -q 'assets/web/pdf.html' || { echo "::error::安装包里没有读 PDF 用的 pdf.html（assets/web/），App 里读不了 PDF"; exit 1; }
           echo "file=$out" >> "$GITHUB_OUTPUT"
           echo "sha256: $(sha256sum "$out" | cut -d' ' -f1)"
 

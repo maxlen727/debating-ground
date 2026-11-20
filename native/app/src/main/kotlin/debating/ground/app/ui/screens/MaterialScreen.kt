@@ -1,5 +1,7 @@
 package debating.ground.app.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -95,6 +97,19 @@ private fun Paste(st: AppState, model: AppModel) {
     var note by rememberSaveable { mutableStateOf("") }
     var warn by rememberSaveable { mutableStateOf(false) }
     val chars = text.trim().length
+    // 选 PDF 文件（#164）：系统的文件选择器，只读学习者选的这一个文件
+    val pickPdf = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            model.run {
+                importPdf(uri.toString())?.let { r ->
+                    title = r.title.take(80)
+                    text = r.text
+                    note = "从 ${r.pages} 页 PDF 里读到了 ${r.text.count { !it.isWhitespace() }} 字。${r.note}核对一下，没问题就开始研读。"
+                    warn = false
+                }
+            }
+        }
+    }
     // 内置浏览器打开着的地址（#160）
     var browsing by rememberSaveable { mutableStateOf<String?>(null) }
     val fill = { r: debating.ground.app.ai.LinkPage ->
@@ -161,6 +176,7 @@ private fun Paste(st: AppState, model: AppModel) {
                         browsing = link.trim().let { if (it.contains("://")) it else "https://$it" }
                     }, enabled = !busy)
                 }
+                GhostButton("选一个 PDF 文件", { pickPdf.launch(arrayOf("application/pdf")) }, enabled = !busy, small = true, icon = IconPaths.NOTE)
                 if (note.isNotEmpty()) {
                     Text(
                         note,
@@ -201,7 +217,7 @@ private fun Paste(st: AppState, model: AppModel) {
                         text = SAMPLE_MATERIAL_TEXT
                     }, enabled = !busy, small = true)
                 }
-                FinePrint("材料只保存在这台设备上。研读时，只把研读助手要读的几节发给 AI；讨论时，只带这个点的原文节选。读链接时由这台手机直接去取那个网页，只读不改。PDF 还在做，先把正文复制过来。")
+                FinePrint("材料只保存在这台设备上。研读时，只把研读助手要读的几节发给 AI；讨论时，只带这个点的原文节选。读链接时由这台手机直接去取那个网页，只读不改。PDF 只在这台手机上解析，不上传。")
                 if (st.ui.materials.isNotEmpty()) {
                     Spacer(Modifier.height(6.dp))
                     SectionLabel("读过的材料")

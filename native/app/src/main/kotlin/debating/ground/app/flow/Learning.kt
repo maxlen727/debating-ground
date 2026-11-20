@@ -6,9 +6,12 @@ import debating.ground.app.ai.AiOutcome
 import debating.ground.app.ai.DirectSettings
 import debating.ground.app.ai.LinkFetcher
 import debating.ground.app.ai.LinkPage
+import debating.ground.app.ai.PdfImporter
+import debating.ground.app.ai.PdfPage
 import debating.ground.app.ai.checkRemoteUrl
 import debating.ground.app.ai.linkPageOf
 import debating.ground.app.ai.linkReasonOf
+import debating.ground.app.ai.pdfPageOf
 import debating.ground.app.data.Branch
 import debating.ground.app.data.ChatMessage
 import debating.ground.app.data.Config
@@ -189,6 +192,8 @@ class Learning(
     private val materialStore: MaterialStore = MemoryMaterials(),
     /** 读材料的链接（#157）：手机自己取，规则用共用的 JS。测试里换成假的；没有时（设备不支持 JS 沙箱）读不了链接。 */
     private val links: LinkFetcher? = null,
+    /** 读材料的 PDF（#164）：在隐藏的 WebView 里用网页版的代码读。测试里换成假的。 */
+    private val pdf: PdfImporter? = null,
 ) {
     var state: AppState = initial
         private set
@@ -1321,6 +1326,29 @@ class Learning(
             ui { it.copy(busy = null) }
         }
         return linkPageOf(r) ?: run {
+            ui { it.copy(error = linkReasonOf(r)) }
+            null
+        }
+    }
+
+    /** 读学习者选的 PDF 文件（#164）：只在这台手机上解析，取出的文字交给页面填进框里，核对后再开始研读。 */
+    suspend fun importPdf(uri: String): PdfPage? {
+        if (state.ui.busy != null) return null
+        val reader = pdf ?: run {
+            ui { it.copy(error = "这台设备不支持读取 PDF。可以把正文复制过来贴上。") }
+            return null
+        }
+        ui { it.copy(busy = "正在读取 PDF", error = "") }
+        val r = try {
+            reader.read(uri)
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            ui { it.copy(error = "这个文件打不开，可能不是 PDF 或者已经损坏。") }
+            return null
+        } finally {
+            ui { it.copy(busy = null) }
+        }
+        return pdfPageOf(r) ?: run {
             ui { it.copy(error = linkReasonOf(r)) }
             null
         }
