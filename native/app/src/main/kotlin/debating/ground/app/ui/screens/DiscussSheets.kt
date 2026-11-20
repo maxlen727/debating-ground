@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import debating.ground.app.AppModel
 import debating.ground.app.data.ChatMessage
 import debating.ground.app.data.Session
+import debating.ground.app.data.SessionMaterial
 import debating.ground.app.data.canBranch
 import debating.ground.app.flow.AppState
 import debating.ground.app.flow.Live
@@ -80,6 +81,8 @@ internal fun Sheets(s: Session, st: AppState, live: Live?, model: AppModel) {
         ui.sheet == "points" -> SheetSpec("points") { PointsSheet(s, st, model) }
 
         ui.sheet == "finish" -> SheetSpec("finish") { FinishSheet(s, model) }
+
+        ui.sheet == "material" && s.material != null -> SheetSpec("material") { MaterialSheet(s.material, model) }
 
         ui.sheet == "roster" && s.mode == "debate" -> SheetSpec("roster") { RosterSheet(s, model) }
 
@@ -258,6 +261,18 @@ private fun PointsSheet(s: Session, st: AppState, model: AppModel) {
                 "采纳后会点亮追踪，并进入复盘。"
             },
         )
+    }
+}
+
+// 从材料开始的讨论：这个点的原文节选，讨论时 AI 也看着这几段（#144、#154）
+@Composable
+private fun MaterialSheet(m: SessionMaterial, model: AppModel) {
+    Sheet("《${m.title}》", { model.learning.openSheet(null) }) {
+        FinePrint("关于「${m.point}」的原文节选，讨论时 AI 也看着这几段。")
+        for (b in m.excerpt.split(Regex("\n\n(?=§\\d)"))) {
+            val lines = b.split("\n")
+            SectionText(lines.first(), lines.drop(1).joinToString("\n"))
+        }
     }
 }
 

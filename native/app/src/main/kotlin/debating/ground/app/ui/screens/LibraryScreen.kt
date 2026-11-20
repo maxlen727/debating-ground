@@ -400,6 +400,7 @@ fun CardScreen(st: AppState, model: AppModel) {
                                     color = t.muted.color(),
                                 )
                                 Text(x.topic, style = TextStyles.small, color = t.ink.color())
+                                x.material?.let { Text("读《$it》", style = TextStyles.small.copy(fontSize = 12.5.sp), color = t.muted.color()) }
                                 if (x.oneLine.isNotEmpty()) Text(x.oneLine, style = TextStyles.small.copy(fontSize = 12.5.sp), color = t.muted.color())
                             }
                         }

@@ -142,6 +142,8 @@ private fun Composer(s: Session, st: AppState, live: Live?, model: AppModel) {
     Row(Modifier.fillMaxWidth().scrollRow(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         if (humanTurn) Tool("给点提示", IconPaths.BULB, enabled = !busy) { model.run { hint() } }
         Tool("写个小结", IconPaths.NOTE, enabled = !busy) { l.addReflection() }
+        // 从材料开始的讨论：随时翻看这个点的原文（#144、#154）
+        if (s.material != null) Tool("原文", IconPaths.LIBRARY, enabled = true) { l.openSheet("material") }
         // 分支里由展开它的那位单独聊，不请下一位
         if (!debate && s.at == null && s.personas.size > 1) Tool("请下一位", IconPaths.PEOPLE, enabled = !busy) { model.run { nextSpeaker() } }
         if (debate) Tool("跳过本席", null, enabled = !busy) { l.skipSeat() }

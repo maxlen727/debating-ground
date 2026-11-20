@@ -67,6 +67,7 @@ import debating.ground.app.ui.LocalMotion
 import debating.ground.app.ui.SecondaryButton
 import debating.ground.app.ui.SectionLabel
 import debating.ground.app.ui.WithFloatingDock
+import debating.ground.app.ui.enabledAlpha
 import debating.ground.app.ui.lineIcon
 import debating.ground.app.ui.scrollRow
 import debating.ground.app.ui.scrollWithEdge
@@ -155,6 +156,8 @@ fun LearnScreen(st: AppState, model: AppModel) {
                             FinePrint("AI 只按你写的经过来讨论，不会自己编细节。")
                         }
                     }
+                    // 读材料（#144、#154）：从一篇论文或文章开始，研读助手先拆出技术点
+                    MaterialEntry(enabled = !busy) { model.run { openMaterials() } }
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     SectionLabel("怎么讨论")
@@ -266,5 +269,31 @@ private fun ModeCard(mode: String, on: Boolean, enabled: Boolean, modifier: Modi
         )
         Text(info.desc, color = t.muted.color(), style = TextStyles.small.copy(fontSize = 13.sp))
         Text("适合：${info.whenToUse}", color = t.muted.color().copy(alpha = 0.85f), style = TextStyles.small.copy(fontSize = 11.5.sp))
+    }
+}
+
+// 读材料的入口（.material-entry）：内容层的一张卡片，点开去贴材料
+@Composable
+private fun MaterialEntry(enabled: Boolean, onClick: () -> Unit) {
+    val t = LocalTokens.current
+    val shape = RoundedCornerShape(16.dp)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .alpha(enabledAlpha(enabled))
+            .background(t.raised.color(), shape)
+            .border(1.dp, t.line.color(), shape)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(lineIcon("note", IconPaths.NOTE), null, Modifier.size(18.dp), tint = t.ink.color())
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("从一篇论文或文章开始", style = TextStyles.body.copy(fontWeight = FontWeight.Bold, fontSize = 15.sp), color = t.ink.color())
+            Text("贴上正文，研读助手拆出技术点，一个一个讨论", style = TextStyles.small.copy(fontSize = 13.sp), color = t.muted.color())
+        }
+        Icon(lineIcon("chevron", IconPaths.CHEVRON), null, Modifier.size(18.dp), tint = t.muted.color())
     }
 }

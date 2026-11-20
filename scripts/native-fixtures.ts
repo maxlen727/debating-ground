@@ -347,7 +347,11 @@ export async function generate(): Promise<Record<string, string>> {
   out['notes-cases.json'] = JSON.stringify(await notesCases()) + '\n';
   // 读材料（#144、#154）：切节、工具、节选和演示模式的研读，原生版 ReaderTest 逐字比对
   out['reader-cases.json'] =
-    JSON.stringify({ cases: await readerCases(), demo: await demoReadCases() }) + '\n';
+    JSON.stringify({
+      cases: await readerCases(),
+      demo: await demoReadCases(),
+      sample: (await import('../src/lib/demo.ts')).SAMPLE_MATERIAL,
+    }) + '\n';
   // 邀请二维码（#151）：同样的链接，原生版挑的版本、掩码和每一格都要一样
   out['qr-cases.json'] = JSON.stringify(qrCases()) + '\n';
   out['meta.json'] = JSON.stringify({ now: NOW, timeZone: TIME_ZONE }, null, 2) + '\n';
