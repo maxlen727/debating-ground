@@ -118,9 +118,7 @@ export function InviteSheet({ s }: { s: S }) {
     <Sheet title="邀请同学" onClose={close}>
       {url ? (
         <>
-          <p className="sheet-text">
-            让同学用手机扫二维码，或者把链接发给同学，打开后写个名字就能加入。
-          </p>
+          <p className="sheet-text">同学扫码或打开链接，写个名字就能加入。</p>
           <InviteQr url={url} />
           <code className="invite-link">{url}</code>
           <div className="row">

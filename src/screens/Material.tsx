@@ -237,10 +237,7 @@ function Reading({ m }: { m: Material }) {
       />
       <div className="stack pad">
         {m.source && <p className="fineprint material-source">出自：{m.source}</p>}
-        <p className="muted">
-          AI
-          会看着这篇材料的目录，每轮翻到和你们正在聊的最相关的几节。讨论完的复盘会沉淀进核心概念的笔记，也会沉淀进这篇材料的笔记。
-        </p>
+        <p className="fineprint">讨论时 AI 会翻到相关的段落，复盘记进概念和材料的笔记。</p>
         <details className="panel">
           <summary className="section-label">原文 · {m.sections.length} 节</summary>
           <div className="material-sections">

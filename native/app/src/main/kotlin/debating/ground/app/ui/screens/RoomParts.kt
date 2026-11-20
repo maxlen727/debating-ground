@@ -42,6 +42,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -198,12 +199,15 @@ fun InviteSheet(s: Session, model: AppModel) {
             return@Sheet
         }
         val t = LocalTokens.current
-        Text("让同学用手机扫二维码，或者把链接发给同学，打开后写个名字就能加入。", style = TextStyles.small, color = t.ink.color())
+        Text("同学扫码或打开链接，写个名字就能加入。", style = TextStyles.small, color = t.ink.color())
         InviteQr(url)
         Text(
             url,
             style = TextStyles.small.copy(fontSize = 12.sp),
             color = t.muted.color(),
+            // 一行，超出省略：链接靠复制和分享发出去，不用整条铺开（#172）
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.fillMaxWidth().background(t.bg.color(), RoundedCornerShape(10.dp)).padding(10.dp),
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
