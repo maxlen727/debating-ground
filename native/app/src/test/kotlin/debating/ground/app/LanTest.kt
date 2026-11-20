@@ -13,6 +13,7 @@ import debating.ground.app.lan.RoomEngine
 import debating.ground.app.lan.engineCall
 import debating.ground.app.lan.parseEngineOut
 import debating.ground.app.lan.randomRoomId
+import debating.ground.app.lan.staticName
 import debating.ground.app.room.CreatedRoom
 import debating.ground.app.room.RoomDialer
 import debating.ground.app.room.RoomEvents
@@ -175,7 +176,7 @@ class LanTest {
         while ("alarm" !in engine.calls && waited++ < 100) Thread.sleep(20)
         assertTrue("alarm" in engine.calls)
 
-        // 只有房间的连接：别的路径、不存在的房间都是 404；浏览器打开链接看到一页说明
+        // 只有房间的连接：别的路径、不存在的房间都是 404；包里没有网页版时，浏览器打开链接看到一页说明
         val (_, other) = client("ws://127.0.0.1:$port/api/rooms/${"z".repeat(22)}/ws")
         assertEquals("failed:404", other.poll(5, TimeUnit.SECONDS))
         val page = OkHttpClient().newCall(Request.Builder().url("http://127.0.0.1:$port/").build()).execute()
@@ -185,6 +186,57 @@ class LanTest {
 
         ws.close(1000, null)
         host.stop()
+    }
+
+    @Test
+    fun hostServesTheWebUiToBrowsersButNoOtherApi() = runBlocking {
+        // 没装 App 的同学用浏览器打开邀请链接：手机给出打包进 APK 的网页版（#151）
+        val web = mapOf("index.html" to "<!doctype html>思辨场", "assets/index-abc.js" to "console.log(1)")
+        val host = LanHost(
+            FakeEngine(),
+            generate = { _, _ -> JsonObject(emptyMap()) },
+            bind = InetAddress.getLoopbackAddress(),
+            port = 0,
+            files = { web[it]?.toByteArray() },
+        )
+        host.create("r".repeat(22), setup, "房主")
+        val base = "http://127.0.0.1:${host.listening}"
+        val http = OkHttpClient()
+        fun get(path: String) = http.newCall(Request.Builder().url(base + path).build()).execute()
+
+        get("/").use {
+            assertEquals(200, it.code)
+            assertEquals("text/html; charset=utf-8", it.header("Content-Type"))
+            assertEquals("no-cache", it.header("Cache-Control"))
+            assertEquals("nosniff", it.header("X-Content-Type-Options"))
+            assertEquals("<!doctype html>思辨场", it.body!!.string())
+        }
+        // 邀请码在 # 后面，浏览器不会发过来；带查询参数也还是首页
+        get("/?from=qr").use { assertEquals(200, it.code) }
+        get("/assets/index-abc.js").use {
+            assertEquals(200, it.code)
+            assertEquals("text/javascript; charset=utf-8", it.header("Content-Type"))
+            assertTrue(it.header("Cache-Control")!!.contains("immutable"))
+        }
+        get("/assets/missing.js").use { assertEquals(404, it.code) }
+        get("/%2e%2e/sibian-ai.js").use { assertEquals(404, it.code) }
+        // 只给界面和房间连接，不代调 AI
+        get("/api/generate").use { assertEquals(404, it.code) }
+        host.stop()
+    }
+
+    @Test
+    fun staticNamesStayInsideTheWebFolder() {
+        assertEquals("index.html", staticName("/"))
+        assertEquals("index.html", staticName("/?x=1"))
+        assertEquals("assets/a.js", staticName("/assets/a.js"))
+        assertNull(staticName("/api/config"))
+        assertNull(staticName("/../x"))
+        assertNull(staticName("/assets/%2e%2e/%2e%2e/x"))
+        assertNull(staticName("/a//b"))
+        assertNull(staticName("/a\\b"))
+        assertNull(staticName("http://evil/x"))
+        assertNull(staticName("/%zz"))
     }
 
     @Test

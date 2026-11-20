@@ -10,9 +10,10 @@ import java.security.MessageDigest
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
-// 局域网房间（#148）用的最小 WebSocket 服务端（RFC 6455），和电脑上 server/wsserver.ts 做的事一样：
-// 只认 GET /api/rooms/<id>/ws 的升级请求，只收文本帧、关闭、ping，消息最大 64 KB。不提供别的接口。
-// 不加依赖（Ktor、NanoHTTPD 这些都比要用的大得多），每个连接一个线程。
+// 局域网房间（#148）用的最小服务端，和电脑上的 createLanServer（server/server.ts）做的事一样：
+// 房间连接是 GET /api/rooms/<id>/ws 的 WebSocket 升级（RFC 6455），只收文本帧、关闭、ping，消息最大 64 KB；
+// 其余的 GET 给网页版界面（APK 里打包的 dist/，#151），没装 App 的同学用浏览器打开邀请链接就能加入；
+// /api/ 下的别的地址一律 404，不提供别的接口。不加依赖（Ktor、NanoHTTPD 这些都比要用的大得多），每个连接一个线程。
 
 /** 一条连接：发文字、关掉。 */
 interface WsConn {
@@ -30,17 +31,43 @@ interface WsHandler {
     fun onClose()
 }
 
+// 这个包里没有打包网页版时（本地没先 npm run build）退回这一页
 private const val INFO_PAGE =
     "<!doctype html><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><title>思辨场局域网房间</title>" +
         "<p style=\"font:17px/1.7 system-ui;margin:24px\">这是思辨场的局域网房间，开在同学的手机上。<br>" +
         "打开思辨场 App，在学习页点“加入同学的讨论”，把这个链接贴进去就能加入。</p>"
 
+private val TYPES = mapOf(
+    "html" to "text/html; charset=utf-8",
+    "js" to "text/javascript; charset=utf-8",
+    "css" to "text/css; charset=utf-8",
+    "json" to "application/json; charset=utf-8",
+    "svg" to "image/svg+xml",
+    "png" to "image/png",
+    "webp" to "image/webp",
+    "ico" to "image/x-icon",
+    "woff2" to "font/woff2",
+    "webmanifest" to "application/manifest+json",
+)
+
+/** 请求路径对应的界面文件名（相对 dist/）；不是能给出去的文件就是 null。 */
+internal fun staticName(target: String): String? {
+    val path = target.substringBefore('?').substringBefore('#')
+    if (!path.startsWith("/") || path.startsWith("/api/")) return null
+    val name = runCatching { java.net.URLDecoder.decode(path.replace("+", "%2B"), "UTF-8") }.getOrNull() ?: return null
+    if (name == "/") return "index.html"
+    val rel = name.removePrefix("/")
+    // 只认普通的文件名：不许 ..、反斜杠、空段，免得读到 assets/web 以外的东西
+    val ok = rel.split('/').all { it.isNotEmpty() && it != "." && it != ".." && it.none { c -> c == '\\' || c.code < 0x20 } }
+    return rel.takeIf { ok }
+}
+
 private const val GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 private const val MAX_MESSAGE = 64 * 1024
 private const val MAX_HEADER = 8 * 1024
 
-/** [route] 按请求路径给出处理者；返回 null 时回 404。 */
-class WsServer(private val route: (path: String) -> WsHandler?) {
+/** [route] 按请求路径给出房间连接的处理者，返回 null 时回 404；[files] 按文件名（相对 dist/）给出网页版界面的文件。 */
+class WsServer(private val route: (path: String) -> WsHandler?, private val files: (name: String) -> ByteArray? = { null }) {
     private var server: ServerSocket? = null
     private val pool = Executors.newCachedThreadPool { r -> Thread(r, "sibian-lan").apply { isDaemon = true } }
 
@@ -82,16 +109,8 @@ class WsServer(private val route: (path: String) -> WsHandler?) {
             val key = headers["sec-websocket-key"]
             val handler = if (lines.first().startsWith("GET ") && headers["upgrade"]?.lowercase() == "websocket" && key != null) route(path) else null
             if (handler == null) {
-                // 有人在浏览器里打开了邀请链接：告诉他用 App 加入（手机上不提供网页版）
-                if (lines.first().startsWith("GET / ")) {
-                    val page = INFO_PAGE.toByteArray(Charsets.UTF_8)
-                    out.write(
-                        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: ${page.size}\r\nConnection: close\r\n\r\n".toByteArray(),
-                    )
-                    out.write(page)
-                } else {
-                    out.write("HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n".toByteArray())
-                }
+                val get = lines.first().startsWith("GET ") || lines.first().startsWith("HEAD ")
+                respond(out, if (get) staticName(path) else null, head = lines.first().startsWith("HEAD "))
                 return
             }
             val accept = base64(MessageDigest.getInstance("SHA-1").digest((key + GUID).toByteArray()))
@@ -106,6 +125,29 @@ class WsServer(private val route: (path: String) -> WsHandler?) {
                 handler.onClose()
             }
         }
+    }
+
+    // 网页版界面：带哈希的 assets/ 永久缓存，其余每次都问；文件不在包里时首页退回说明页
+    private fun respond(out: OutputStream, name: String?, head: Boolean) {
+        var body = name?.let(files)
+        var type = name?.substringAfterLast('.', "")?.let { TYPES[it] } ?: "application/octet-stream"
+        if (body == null && name == "index.html") {
+            body = INFO_PAGE.toByteArray(Charsets.UTF_8)
+            type = TYPES.getValue("html")
+        }
+        if (body == null) {
+            out.write("HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n".toByteArray())
+            return
+        }
+        val cache = if (name!!.startsWith("assets/")) "public, max-age=31536000, immutable" else "no-cache"
+        out.write(
+            (
+                "HTTP/1.1 200 OK\r\nContent-Type: $type\r\nContent-Length: ${body.size}\r\nCache-Control: $cache\r\n" +
+                    "X-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nConnection: close\r\n\r\n"
+                ).toByteArray(),
+        )
+        if (!head) out.write(body)
+        out.flush()
     }
 
     // 请求头读到空行为止；太长就不要了
