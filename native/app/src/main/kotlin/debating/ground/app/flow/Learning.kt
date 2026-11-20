@@ -9,6 +9,7 @@ import debating.ground.app.data.Branch
 import debating.ground.app.data.ChatMessage
 import debating.ground.app.data.Config
 import debating.ground.app.data.Entry
+import debating.ground.app.data.MODE_ORDER
 import debating.ground.app.data.MergeFrom
 import debating.ground.app.data.Misconception
 import debating.ground.app.data.Note
@@ -28,6 +29,8 @@ import debating.ground.app.data.Stage
 import debating.ground.app.data.Stance
 import debating.ground.app.data.SystemLine
 import debating.ground.app.data.TermCard
+import debating.ground.app.data.branchById
+import debating.ground.app.data.canBranch
 import debating.ground.app.data.checkPoint
 import debating.ground.app.data.emptyNote
 import debating.ground.app.data.mergeReview
@@ -122,8 +125,6 @@ data class Live(val id: String, val kind: String, val label: String, val text: S
 const val MAX_POINTS = 6
 private const val CONNECT_TIMEOUT_MS = 100_000L
 
-const val TEACHING = "讲给伙伴听"
-const val STUDENT = "当学生"
 private const val BRANCH_TOPIC_MAX = 40
 private val TONES = listOf("c", "a", "b")
 
@@ -140,6 +141,9 @@ private val PARENT = mapOf(
 data class Quick(val kind: String, val label: String)
 
 val QUICK = listOf(Quick("unclear", "没听懂"), Quick("example", "举个例子"), Quick("disagree", "我不同意"), Quick("fact", "这是事实还是观点？"))
+
+/** 讲给 AI 听里的学生（和网页版 actions.ts 的 TEACH_STUDENT 一样）。 */
+val TEACH_STUDENT = Persona(id = "r0", name = "小满", title = "学生", persona = "高二学生，聪明但从没接触过这个概念，爱较真，听不懂就直说", tone = "c")
 
 class Learning(
     initial: AppState,
@@ -494,7 +498,6 @@ class Learning(
                     text = text,
                     source = "human",
                     branch = s.at,
-                    action = if (s.teaching == true) TEACHING else null,
                 ),
                 learnerTurns = s.learnerTurns + 1,
                 draft = "",
@@ -518,6 +521,11 @@ class Learning(
         }
         if (s.mode == "debate") return submitSeat(text)
         pushLearner(text)
+        // 分支里由展开它的那位接着单独聊，不轮流
+        if (s.at != null) {
+            speak(branchSpeaker(s).id)
+            return maybeReflect()
+        }
         val role = s.personas[s.nextRole % s.personas.size]
         if (s.personas.size > 1) updateSession { it.copy(nextRole = (s.nextRole + 1) % s.personas.size) }
         speak(role.id)
@@ -529,7 +537,6 @@ class Learning(
         val role = s.personas.first { it.id == roleId }
         val id = uid()
         val at = s.at // 生成期间换了分支，回复仍然放回提问的那个分支
-        val student = s.teaching == true
         val payload = buildJsonObject {
             put("session", snapshot(s))
             put("roleId", roleId)
@@ -550,7 +557,6 @@ class Learning(
                         model = res.result.str("model"),
                         terms = terms.ifEmpty { null },
                         branch = at,
-                        action = if (student) STUDENT else null,
                     ),
                 ),
                 res.result.ints("covered"),
@@ -562,7 +568,8 @@ class Learning(
     /** 圆桌：请下一位嘉宾接着上一位的话说。 */
     suspend fun nextSpeaker() {
         val s = session ?: return
-        if (state.ui.busy != null) return
+        // 分支里由展开它的那位单独聊，不请下一位
+        if (s.at != null || state.ui.busy != null) return
         val role = s.personas[s.nextRole % s.personas.size]
         updateSession { it.copy(nextRole = (s.nextRole + 1) % s.personas.size) }
         // 请下一位嘉宾：接上一位的话说，不再向学习者提问（否则问题会一个接一个叠起来）
@@ -866,40 +873,19 @@ class Learning(
         onLive(null)
     }
 
-    /* ---------- 换我来讲 ---------- */
+    /* ---------- 知识画布：追问和圆桌里都能展开分支（#142） ---------- */
 
-    // 费曼学习法：苏格拉底追问里，学习者可以换过来当老师，伙伴暂时当听讲的学生
-    suspend fun toggleTeaching() {
-        val s = session ?: return
-        if (s.mode != "socratic" || s.finished || state.ui.busy != null) return
-        val name = s.personas.first().name
-        val on = s.teaching != true
-        updateSession { ss ->
-            ss.copy(
-                teaching = on,
-                entries = ss.entries + SystemLine(
-                    uid(),
-                    if (on) "换你来讲：${name}现在是听讲的学生，把「${ss.concept}」讲给他听。" else "换回来了，${name}接着和你一起想。",
-                ),
-            )
-        }
-        speak(
-            s.personas.first().id,
-            if (on) {
-                "学习者要换他来讲了。用一句话表示你准备好当学生听讲，可以先说一个你作为初学者对这个概念最大的疑惑。"
-            } else {
-                "学习者讲完了，你换回讨论伙伴。用两三句话说说他刚才的讲解哪里讲清楚了、哪里还可以讲得更准，然后接着讨论。"
-            },
-        )
+    /** 分支里谁来聊：展开它的那句话是哪位说的就是哪位（圆桌里“请这位细说”）；从学习者的话展开的，由第一位接。 */
+    fun branchSpeaker(s: Session, at: String? = s.at): Persona {
+        val from = s.branchById(at)?.let { b -> s.entries.find { it.id == b.from } } as? ChatMessage
+        return s.personas.find { it.id == from?.who } ?: s.personas.first()
     }
-
-    /* ---------- 知识画布 ---------- */
 
     /** 从一条发言展开一个分支，AI 先把这个话题讲个大概。 */
     suspend fun openBranch(fromId: String, rawTopic: String) {
         val s = session
         val topic = rawTopic.trim()
-        if (s == null || s.mode != "canvas" || s.finished || state.ui.busy != null) return
+        if (s == null || !s.canBranch() || s.finished || state.ui.busy != null) return
         if (topic.isEmpty()) return toast("写下这个分支想弄懂什么。")
         if (topic.length > BRANCH_TOPIC_MAX) return toast("分支话题写短一点，$BRANCH_TOPIC_MAX 字以内。")
         val from = s.entries.find { it.id == fromId } as? ChatMessage ?: return
@@ -911,13 +897,13 @@ class Learning(
                 ui = st.ui.copy(sheet = null, term = null, hint = null),
             )
         }
-        speak(s.personas.first().id, "学习者从这句话展开了一个分支，想弄懂「$topic」。先用两三句话说说它大概是什么，最好带一个具体例子，再听听他怎么想。")
+        speak(branchSpeaker(session!!, id).id, "学习者从这句话展开了一个分支，想弄懂「$topic」。先用两三句话说说它大概是什么，最好带一个具体例子，再听听他怎么想。")
     }
 
     /** 跳到某个分支（null 是主干）。 */
     fun goToBranch(at: String?) {
         val s = session ?: return
-        if (s.mode != "canvas" || state.ui.busy != null) return
+        if (!s.canBranch() || state.ui.busy != null) return
         if (at != null && s.branches?.none { it.id == at } != false) return
         update { st -> st.copy(session = st.session!!.copy(at = at, draft = ""), ui = st.ui.copy(sheet = null, hint = null)) }
     }
@@ -1208,8 +1194,44 @@ class Learning(
     /** 再讨论一次：带上上次的一句话和还没弄清的地方，用上次的讨论方式。 */
     suspend fun discussAgain(note: Note) {
         val last = note.sources.lastOrNull()
-        update { it.copy(config = it.config.copy(concept = note.concept, mode = last?.mode ?: it.config.mode)) }
+        // 学习页不再提供的方式（旧的知识画布、讲给 AI 听）换成苏格拉底追问
+        val mode = last?.mode?.let { if (it in MODE_ORDER) it else "socratic" }
+        update { it.copy(config = it.config.copy(concept = note.concept, mode = mode ?: it.config.mode)) }
         prepare(Previous(last?.oneLine ?: note.summary, note.weak()), note.context)
+    }
+
+    /**
+     * 讲给 AI 听：AI 扮演刚接触这个概念的学生，学习者来讲。要点清单就是这篇笔记的要点（没掌握的排前面），
+     * 不用 AI 准备，演示模式也能用；讲完照常复盘，按要点名合并回这篇笔记，更新它们的状态（#142）。
+     */
+    fun teachBack(note: Note) {
+        if (state.ui.busy != null) return
+        val rank = mapOf("missing" to 0, "partial" to 1, "mastered" to 2)
+        val keyPoints = note.points.withIndex()
+            .sortedWith(compareBy<IndexedValue<Point>> { rank[it.value.status] ?: 1 }.thenBy { it.index })
+            .map { it.value.label.trim().take(60) }
+            .filter { it.isNotEmpty() }
+            .take(6)
+        if (keyPoints.size < 2) return toast("这篇笔记的要点还不到两个，先再讨论一次。")
+        endOld()
+        val session = Session(
+            id = uid(),
+            created = now(),
+            mode = "teach",
+            concept = note.concept,
+            topic = "把「${note.concept}」讲给一个刚接触它的人听",
+            keyPoints = keyPoints,
+            entries = listOf(SystemLine(uid(), "${TEACH_STUDENT.name}是刚接触「${note.concept}」的高中生。把它从头讲给他听，他听不懂会直说。")),
+            personas = listOf(TEACH_STUDENT),
+            context = note.context,
+        )
+        update {
+            it.copy(
+                config = it.config.copy(concept = note.concept),
+                session = session,
+                ui = it.ui.copy(screen = "session", hint = null, explain = null, sheet = null, error = ""),
+            )
+        }
     }
 
     // 安卓返回键：先关开着的面板，知识画布里先回上一层分支，再回上一页。
@@ -1221,7 +1243,7 @@ class Learning(
             this.ui { it.copy(term = null, explain = null, sheet = null, invite = false) }
             return true
         }
-        if (ui.screen == "session" && s?.mode == "canvas" && s.at != null && ui.busy == null) {
+        if (ui.screen == "session" && s?.at != null && ui.busy == null) {
             goToBranch(s.branches?.find { it.id == s.at }?.parent)
             return true
         }

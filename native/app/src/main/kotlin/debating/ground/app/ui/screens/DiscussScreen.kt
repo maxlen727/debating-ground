@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.sp
 import debating.ground.app.AppModel
 import debating.ground.app.data.MODES
 import debating.ground.app.data.Session
+import debating.ground.app.data.canBranch
 import debating.ground.app.flow.AppState
 import debating.ground.app.room.link
 import debating.ground.app.ui.IconPaths
@@ -142,7 +143,8 @@ private fun SessionTop(s: Session, busy: Boolean, onFinish: () -> Unit, model: A
         PointsProgress(s, model)
         if (s.link != null) RoomBar(s, model)
         if (s.mode == "debate") DebateBoard(s, model)
-        if (s.mode == "canvas") CanvasPath(s, busy, model)
+        // 路径条：旧的知识画布一直显示；追问和圆桌展开过分支才显示（#142）
+        if (s.canBranch() && (s.mode == "canvas" || !s.branches.isNullOrEmpty())) CanvasPath(s, busy, model)
     }
 }
 

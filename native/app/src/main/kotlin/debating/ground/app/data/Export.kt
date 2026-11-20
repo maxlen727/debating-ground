@@ -81,7 +81,7 @@ fun sessionMarkdown(s: Session, zone: TimeZone = TimeZone.getDefault()): String 
     "# 思辨场讨论记录\n\n概念：${s.concept}\n讨论题：${s.topic}\n讨论方式：${modeName(s.mode)}\n要点：" +
         s.keyPoints.withIndex().joinToString(" ") { (i, k) -> (if (i in s.covered) "●" else "○") + k } +
         "\n\n" +
-        (if (s.mode == "canvas") canvasMarkdown(s) else entriesMarkdown(s.entries)) +
+        (if (!s.branches.isNullOrEmpty()) canvasMarkdown(s) else entriesMarkdown(s.entries)) +
         (
             s.review?.let { r ->
                 "\n# 理解复盘\n\n" +

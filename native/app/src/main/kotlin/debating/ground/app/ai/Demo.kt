@@ -308,13 +308,7 @@ fun demoRun(purpose: String, payload: JsonObject, session: Session?): DemoOutcom
             val role = s.personas.find { it.id == payload.str("roleId") } ?: s.personas.first()
             val st = nextStep()
             when {
-                s.mode == "canvas" && s.at != null -> branchReply(s, !task.isNullOrEmpty())
-
-                task?.contains("换他来讲") == true -> reply("好，我当学生！我一直没搞懂「${s.concept}」到底在说什么，你能从一个例子讲起吗？", emptyList())
-
-                task?.contains("讲完了") == true -> reply("你刚才的例子挺具体，一听就明白。要更准一点的话，可以把「${s.keyPoints[st % n]}」说清楚。我们接着聊吧。", emptyList())
-
-                s.teaching == true -> reply("老师，我还是没太懂「${s.keyPoints[st % n]}」。能举个生活里的例子吗？", listOf(st % n))
+                s.at != null -> branchReply(s, !task.isNullOrEmpty())
 
                 cost && (s.mode == "socratic" || s.mode == "canvas") -> COST_REPLIES[st % COST_REPLIES.size].let { reply(it.text, it.covered, it.terms) }
 

@@ -305,7 +305,7 @@ private fun SelfChecks(n: Note, model: AppModel) {
                 }
             }
         }
-        FinePrint("先不看答案，用自己的话说一遍，再对照参考要点。只看得懂不算，说得出来才算。")
+        FinePrint("先不看答案，用自己的话说一遍，再对照参考要点。只看得懂不算，说得出来才算。想完整地检验一次，点下面的“讲给 AI 听”。")
     }
 }
 
@@ -339,12 +339,16 @@ fun CardScreen(st: AppState, model: AppModel) {
     WithFloatingDock(dock = {
         ErrorBanner(st.ui.error) { l.clearError() }
         BusyStrip(st.ui.busy) { l.cancelAI() }
-        PrimaryButton(
-            if (c.partial + c.missing > 0) "从模糊的地方再讨论一次" else "再讨论一次，往深里走",
-            { model.run { discussAgain(n) } },
-            Modifier.fillMaxWidth(),
-            enabled = !busy,
-        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // 讲给 AI 听：最能检验是不是真懂；讲完的复盘合并回这篇笔记（#142）
+            if (n.points.size >= 2) SecondaryButton("讲给 AI 听", { l.teachBack(n) }, enabled = !busy)
+            PrimaryButton(
+                if (c.partial + c.missing > 0) "从模糊处再讨论" else "再讨论一次",
+                { model.run { discussAgain(n) } },
+                Modifier.weight(1f),
+                enabled = !busy,
+            )
+        }
     }) { bottom ->
         Column(Modifier.fillMaxSize()) {
             TopBar(n.concept, "${n.sources.size} 次讨论 · 掌握 ${c.mastered}/${n.points.size}", onBack = { l.go("library") }) {

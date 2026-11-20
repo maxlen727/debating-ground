@@ -220,6 +220,8 @@ fun restoreSession(v: JsonElement?, now: Long): JsonElement {
     if (s["branches"] is JsonArray) out["branches"] = JsonArray(objects(s["branches"]))
     if (out["room"] !is JsonObject) out.remove("room")
     if (out["branches"] !is JsonArray) out.remove("branches")
+    // 以前苏格拉底追问里“换我来讲”的开关（#142 去掉了），留着没用
+    out.remove("teaching")
     return JsonObject(out)
 }
 
@@ -279,8 +281,12 @@ fun restoreSaved(saved: String?, cards: String?, oldSaved: String?, now: Long, j
         val root = v4 ?: cards?.let { json.parseToJsonElement(it) }.obj()
         if (root != null) {
             val s = root.toMutableMap()
-            // 反向讲解并进了苏格拉底追问（“换我来讲”）：选着它的设置改过来，按它准备的计划作废；进行中的讨论和知识卡片照旧
-            s["config"].obj()?.takeIf { it["mode"].text() == "teach" }?.let { s["config"] = JsonObject(it + ("mode" to JsonPrimitive("socratic"))) }
+            // 学习页不再提供的讨论方式（反向讲解改成从笔记里开始，知识画布并进了追问和圆桌，#142）：
+            // 选着它们的设置改成苏格拉底追问；旧的反向讲解计划作废；进行中的讨论和知识库照旧
+            s["config"].obj()?.takeIf { it["mode"].text() == "teach" || it["mode"].text() == "canvas" }?.let {
+                s["config"] =
+                    JsonObject(it + ("mode" to JsonPrimitive("socratic")))
+            }
             s["plan"].obj()?.takeIf { it["mode"].text() == "teach" }?.let { s["plan"] = JsonNull }
             val session = restoreSession(s["session"], now)
             // 讨论还没结束才回到讨论页（restoreSession 已经把 finished 规整成 true/false）

@@ -1,7 +1,7 @@
 {
   "config": {
     "concept": "机会成本",
-    "mode": "canvas",
+    "mode": "socratic",
     "aiMode": "demo",
     "remote": {
       "url": "",

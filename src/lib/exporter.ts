@@ -104,7 +104,7 @@ function canvasMarkdown(s: Session): string {
 export function sessionMarkdown(s: Session) {
   return (
     `# 思辨场讨论记录\n\n概念：${s.concept}\n讨论题：${s.topic}\n讨论方式：${MODES[s.mode].name}\n要点：${s.keyPoints.map((k, i) => (s.covered.includes(i) ? '●' : '○') + k).join(' ')}\n\n` +
-    (s.mode === 'canvas' ? canvasMarkdown(s) : entriesMarkdown(s.entries)) +
+    (s.branches?.length ? canvasMarkdown(s) : entriesMarkdown(s.entries)) +
     (s.review
       ? '\n# 理解复盘\n\n' +
         reviewMarkdown({

@@ -3008,20 +3008,6 @@ select:focus {
   line-height: var(--lh-serif);
 }
 
-/* 换我来讲 */
-.tool.on {
-  background: color-mix(in srgb, var(--brand) 12%, var(--bg));
-  border-color: color-mix(in srgb, var(--brand) 45%, var(--line));
-  color: var(--brand);
-  font-weight: 600;
-}
-.teaching-banner .dot {
-  background: var(--brand);
-}
-.teaching-banner .link {
-  min-height: 32px;
-}
-
 /* ---------- 悬浮的控件层（参考 iOS 液态玻璃规范） ----------
    玻璃只用于导航和控件，浮在内容上；内容层（卡片、气泡）不用。顶栏、讨论页的进度条不垫整条底色，
    内容滚到它们下面时变模糊、变淡（“滚动边缘效果”）。 */

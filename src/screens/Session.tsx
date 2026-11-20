@@ -14,7 +14,6 @@ import {
   nextSpeaker,
   openBranch,
   openTerm,
-  toggleTeaching,
   proposePoint,
   quick,
   skipSeat,
@@ -31,7 +30,7 @@ import {
   ForkHeader,
   GraphSheet,
 } from '../components/Canvas.tsx';
-import { levelEntries } from '../lib/canvas.ts';
+import { canBranch, levelEntries } from '../lib/canvas.ts';
 import {
   DebateBoard,
   NextLectern,
@@ -128,8 +127,8 @@ export function Session() {
     );
 
   const debate = s.mode === 'debate';
-  const canvas = s.mode === 'canvas';
-  // 知识画布只显示正在看的这一层（主干或某个分支）
+  // 追问和圆桌都能展开分支（#142）：只显示正在看的这一层（主干或某个分支）
+  const canvas = canBranch(s);
   const shown = canvas ? levelEntries(s, s.at) : s.entries;
   const room = s.room;
   const sheetMsg = s.entries.find((m): m is ChatMessage => m.id === ui.sheet && m.kind === 'msg');
@@ -214,7 +213,8 @@ export function Session() {
         </div>
         {room && <RoomBar s={s} />}
         {debate && <DebateBoard s={s} />}
-        {canvas && <CanvasPath s={s} />}
+        {/* 路径条：旧的知识画布一直显示；其余展开过分支才显示 */}
+        {canvas && (s.mode === 'canvas' || !!s.branches?.length) && <CanvasPath s={s} />}
       </div>
 
       <main className="thread pad">
@@ -519,12 +519,6 @@ function Composer({ s }: { s: S }) {
           </span>
         </div>
       )}
-      {s.teaching && (
-        <div className="turn-banner teaching-banner">
-          <span className="dot" aria-hidden="true" />
-          你在讲，<b>{s.personas[0]?.name}</b>当学生
-        </div>
-      )}
       <HintCard />
       <div className="tools scroll-x">
         {humanTurn && (
@@ -537,18 +531,8 @@ function Composer({ s }: { s: S }) {
           <Icon name="note" size={16} />
           写个小结
         </button>
-        {s.mode === 'socratic' && (
-          <button
-            className={'tool' + (s.teaching ? ' on' : '')}
-            aria-pressed={!!s.teaching}
-            disabled={busy}
-            onClick={toggleTeaching}
-          >
-            <Icon name="swap" size={16} />
-            {s.teaching ? '换回来' : '换我来讲'}
-          </button>
-        )}
-        {!debate && s.personas.length > 1 && (
+        {/* 分支里由展开它的那位单独聊，不请下一位 */}
+        {!debate && !s.at && s.personas.length > 1 && (
           <button className="tool" disabled={busy} onClick={nextSpeaker}>
             <Icon name="people" size={16} />
             请下一位
@@ -559,7 +543,7 @@ function Composer({ s }: { s: S }) {
             跳过本席
           </button>
         )}
-        {s.mode === 'canvas' && s.at && (
+        {s.at && (
           <button
             className="tool"
             disabled={busy}
@@ -580,7 +564,7 @@ function Composer({ s }: { s: S }) {
           placeholder={
             debate
               ? `${turn?.action ?? '发言'}：我方认为……因为……`
-              : s.mode === 'teach' || s.teaching
+              : s.mode === 'teach'
                 ? `讲给${s.personas[0]?.name ?? '他'}听……`
                 : '说说你的想法……'
           }

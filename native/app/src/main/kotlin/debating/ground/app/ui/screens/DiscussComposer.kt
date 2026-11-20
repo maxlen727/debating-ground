@@ -138,23 +138,14 @@ private fun Composer(s: Session, st: AppState, live: Live?, model: AppModel) {
             turn.target?.let { id -> append(" → " + (s.seats.find { it.id == id }?.let { seatName(it) } ?: id)) }
         }
     }
-    if (s.teaching == true) {
-        TurnBanner(t.brand.color()) {
-            append("你在讲，")
-            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(s.personas.firstOrNull()?.name.orEmpty()) }
-            append("当学生")
-        }
-    }
     HintCard(st.ui.hint, live) { l.closeHint() }
     Row(Modifier.fillMaxWidth().scrollRow(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         if (humanTurn) Tool("给点提示", IconPaths.BULB, enabled = !busy) { model.run { hint() } }
         Tool("写个小结", IconPaths.NOTE, enabled = !busy) { l.addReflection() }
-        if (s.mode == "socratic") {
-            Tool(if (s.teaching == true) "换回来" else "换我来讲", IconPaths.SWAP, enabled = !busy, on = s.teaching == true) { model.run { toggleTeaching() } }
-        }
-        if (!debate && s.personas.size > 1) Tool("请下一位", IconPaths.PEOPLE, enabled = !busy) { model.run { nextSpeaker() } }
+        // 分支里由展开它的那位单独聊，不请下一位
+        if (!debate && s.at == null && s.personas.size > 1) Tool("请下一位", IconPaths.PEOPLE, enabled = !busy) { model.run { nextSpeaker() } }
         if (debate) Tool("跳过本席", null, enabled = !busy) { l.skipSeat() }
-        if (s.mode == "canvas" && s.at != null) {
+        if (s.at != null) {
             val up = if (s.branchById(s.at)?.parent != null) "上一层" else "主干"
             Tool("带回$up", IconPaths.TURN_BACK, enabled = !busy) { l.openSheet("back") }
         }
@@ -162,7 +153,7 @@ private fun Composer(s: Session, st: AppState, live: Live?, model: AppModel) {
     if (humanTurn) {
         val placeholder = when {
             debate -> "${turn?.action ?: "发言"}：我方认为……因为……"
-            s.mode == "teach" || s.teaching == true -> "讲给${s.personas.firstOrNull()?.name ?: "他"}听……"
+            s.mode == "teach" -> "讲给${s.personas.firstOrNull()?.name ?: "他"}听……"
             else -> "说说你的想法……"
         }
         DraftInput(s.draft, placeholder, busy, onChange = { l.setDraft(it) }, mic = {

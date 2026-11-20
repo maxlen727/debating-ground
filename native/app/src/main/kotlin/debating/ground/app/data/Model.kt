@@ -155,7 +155,6 @@ data class Session(
     val glossary: List<TermCard>? = null,
     val branches: List<Branch>? = null,
     val at: String? = null,
-    val teaching: Boolean? = null,
 )
 
 /** 笔记是从哪次讨论长出来的（像版本记录）。 */

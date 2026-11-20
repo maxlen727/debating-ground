@@ -276,10 +276,11 @@ export async function generate(): Promise<Record<string, string>> {
       s.session!.covered = [0, 1, 2, 3, 4];
     });
   });
-  await situation('机会成本', 'socratic', () => {
-    S.update(s => {
-      s.session!.teaching = true;
-    });
+  await situation('机会成本', 'teach');
+  // 追问和圆桌里也能展开分支（#142）
+  await situation('边际效用', 'roundtable', async () => {
+    const said = S.getState().session!.entries.findLast(e => e.kind === 'msg' && !e.human)!;
+    await A.openBranch(said.id, '总效用');
   });
   await situation('边际效用', 'roundtable');
   await situation('边际效用', 'socratic');
@@ -704,14 +705,20 @@ export const FLOW_SCRIPTS: { name: string; ops: Op[] }[] = [
       { op: 'suggestPoint' },
       { op: 'term', term: '稀缺性' },
       { op: 'term', term: '稀缺性' },
-      { op: 'teaching' },
+      { op: 'openBranch', topic: '稀缺性' },
       { op: 'send', text: '比如你周六去打工，就不能去做家教。' },
-      { op: 'teaching' },
+      { op: 'bringBack', gist: '东西有限，所以选了一样就得放弃别的。' },
+      { op: 'send', text: '所以机会成本只算放弃的那个最好的。' },
       { op: 'finish' },
       { op: 'check', index: 0, ok: true },
       { op: 'check', index: 1, ok: false },
       { op: 'discussAgain' },
       { op: 'start' },
+      // 讲给 AI 听：从笔记开始，讲完的复盘合并回同一篇笔记（#142）
+      { op: 'teachBack' },
+      { op: 'send', text: '机会成本就是你选了一样东西，放弃掉的选项里最好的那个。' },
+      { op: 'send', text: '比如周六打工赚 300，放弃了做家教的 500，机会成本是 500，不是 800。' },
+      { op: 'finish' },
     ],
   },
   {
@@ -721,6 +728,12 @@ export const FLOW_SCRIPTS: { name: string; ops: Op[] }[] = [
       { op: 'prepare', then: 'start' },
       { op: 'send', text: '我觉得就是越吃越不想吃。' },
       { op: 'nextSpeaker' },
+      // 圆桌里展开分支：由说那句话的嘉宾单独接着聊，不轮流，也不请下一位（#142）
+      { op: 'openBranch', topic: '总效用' },
+      { op: 'send', text: '总效用就是所有加起来的满足吗？' },
+      { op: 'nextSpeaker' },
+      { op: 'goToBranch', to: 'trunk' },
+      { op: 'send', text: '那第三块蛋糕还值得吃吗？' },
       { op: 'quick', kind: 'example', target: 'lastAi' },
       { op: 'quick', kind: 'fact', target: 'lastAi' },
       { op: 'reflectSubmit', draft: '每多一份带来的满足在变少。' },
@@ -1082,8 +1095,8 @@ async function recordFlows(
           await A.openTerm(o.term as string, m.id);
           break;
         }
-        case 'teaching':
-          await A.toggleTeaching();
+        case 'teachBack':
+          A.teachBack(st.library[0]);
           break;
         case 'nextSpeaker':
           await A.nextSpeaker();

@@ -4,12 +4,11 @@ import type { Entry, Reflection } from '../../shared/types.ts';
 import {
   dropReflection,
   openTerm,
-  TEACHING,
-  STUDENT,
   setReflectionDraft,
   submitReflection,
   toggleVoice,
 } from '../actions.ts';
+import { canBranch } from '../lib/canvas.ts';
 import { Icon } from './ui.tsx';
 import { CaretField } from './SmoothCaret.tsx';
 import { Reveal } from './Reveal.tsx';
@@ -96,9 +95,10 @@ export function EntryView({
   const meta = [
     debate
       ? (m.action ?? '') + (target ? ` → ${seatName(target)}` : '')
-      : m.action === TEACHING
+      : // 以前“换我来讲”留下的发言（#142 去掉了这个开关），旧讨论里照样标出来
+        m.action === '讲给伙伴听'
         ? '讲解'
-        : m.action === STUDENT
+        : m.action === '当学生'
           ? '当学生'
           : '',
     m.source === 'demo' && !me ? '演示' : m.source === 'api' && !me ? m.model : '',
@@ -159,7 +159,7 @@ export function EntryView({
         )}
         {showTip && (
           <small className="tip">
-            {s.mode === 'canvas'
+            {canBranch(s)
               ? '轻点发言可以追问，或从这句展开一个分支单独聊。'
               : '轻点发言可以追问：没听懂、举例、反驳、分辨事实。'}
             {!!m.terms?.length && '带虚线的词，点一下看解释。'}

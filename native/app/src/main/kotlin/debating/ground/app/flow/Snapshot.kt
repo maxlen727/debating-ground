@@ -9,6 +9,7 @@ import debating.ground.app.data.SibianJson
 import debating.ground.app.data.Stage
 import debating.ground.app.data.SystemLine
 import debating.ground.app.data.Turn
+import debating.ground.app.data.canBranch
 import debating.ground.app.data.levelEntries
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonObject
@@ -47,7 +48,7 @@ fun Session.pathEntries(at: String? = this.at): List<Entry> {
 
 /** [whole]：复盘要看整场讨论；知识画布平时只给 AI 看当前分支的路径（主干到分叉点 + 这个分支）。 */
 fun snapshot(s: Session, whole: Boolean = false): JsonObject {
-    val canvas = s.mode == "canvas"
+    val canvas = s.canBranch()
     val entries = if (canvas && !whole) s.pathEntries() else s.entries
     fun topicOf(id: String?) = if (id != null && canvas) s.branches?.find { it.id == id }?.topic else null
     fun label(id: String?) = if (whole) topicOf(id)?.takeIf { it.isNotEmpty() }?.let { "分支：$it" } else null
@@ -105,7 +106,6 @@ fun snapshot(s: Session, whole: Boolean = false): JsonObject {
         }
         put("finished", s.finished)
         if (!s.context.isNullOrEmpty()) put("context", s.context)
-        if (s.mode == "socratic" && s.teaching == true && !whole) put("teaching", true)
         if (here != null) {
             put(
                 "branch",

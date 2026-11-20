@@ -11,6 +11,7 @@ import type {
 } from '../shared/types.ts';
 import { getState, go, toast, typing, uid, update } from './store.ts';
 import { forceNav } from './lib/motion.ts';
+import { MODE_ORDER } from '../shared/modes.ts';
 import type { Config, Screen, Session } from './store.ts';
 import { runAI } from './lib/ai.ts';
 import { clearLive } from './lib/stream.ts';
@@ -18,15 +19,15 @@ import { playingId, speakText, startVoice, stopVoice } from './lib/voice.ts';
 import { cancelListening, listeningPhase, startListening, stopListening } from './lib/listen.ts';
 import * as room from './lib/room.ts';
 import { debateTurns, seatName, slots } from './lib/debate.ts';
-import { branchChain, pathEntries } from './lib/canvas.ts';
+import { branchById, branchChain, canBranch, pathEntries } from './lib/canvas.ts';
 import { checkPoint, emptyNote, mergeReview, sameConcept, weakOf, type Note } from './lib/notes.ts';
 
 const TONES = ['c', 'a', 'b'] as const;
 const session = () => getState().session;
 
-// whole：复盘要看整场讨论；知识画布平时只给 AI 看当前分支的路径（主干到分叉点 + 这个分支）
+// whole：复盘要看整场讨论；能展开分支的讨论平时只给 AI 看当前分支的路径（主干到分叉点 + 这个分支）
 export function snapshot(s: Session, whole = false): SessionSnapshot {
-  const canvas = s.mode === 'canvas';
+  const canvas = canBranch(s);
   const entries = canvas && !whole ? pathEntries(s) : s.entries;
   const topicOf = (id?: string) =>
     id && canvas ? s.branches?.find(b => b.id === id)?.topic : undefined;
@@ -62,7 +63,6 @@ export function snapshot(s: Session, whole = false): SessionSnapshot {
     stages: s.mode === 'debate' ? s.stages : undefined,
     finished: s.finished,
     context: s.context || undefined,
-    teaching: s.mode === 'socratic' && s.teaching && !whole ? true : undefined,
     branch: here
       ? {
           topic: here.topic,
@@ -370,7 +370,6 @@ function pushLearner(text: string) {
       text,
       source: 'human',
       branch: s.at,
-      action: s.teaching ? TEACHING : undefined,
     });
     s.learnerTurns++;
     s.draft = '';
@@ -394,6 +393,11 @@ export async function send(text: string) {
   }
   if (s.mode === 'debate') return submitSeat(text);
   pushLearner(text);
+  // 分支里由展开它的那位接着单独聊，不轮流
+  if (s.at) {
+    await speak(branchSpeaker(s).id);
+    return maybeReflect();
+  }
   const role = s.personas[s.nextRole % s.personas.length];
   if (s.personas.length > 1)
     update(st => {
@@ -409,7 +413,6 @@ export async function speak(roleId: string, task?: string) {
   const role = s.personas.find(r => r.id === roleId)!;
   const id = uid();
   const at = s.at; // 生成期间换了分支，回复仍然放回提问的那个分支
-  const student = s.teaching;
   const res = await runAI(
     'discuss',
     { session: snapshot(s), roleId, task },
@@ -429,7 +432,6 @@ export async function speak(roleId: string, task?: string) {
       model: res.model,
       terms: res.terms?.length ? res.terms : undefined,
       branch: at,
-      action: student ? STUDENT : undefined,
     });
     markCovered(ss, res.covered);
   });
@@ -438,7 +440,8 @@ export async function speak(roleId: string, task?: string) {
 
 export function nextSpeaker() {
   const s = session();
-  if (!s || getState().ui.busy) return;
+  // 分支里由展开它的那位单独聊，不请下一位
+  if (!s || s.at || getState().ui.busy) return;
   const role = s.personas[s.nextRole % s.personas.length];
   update(st => {
     st.session!.nextRole = (s.nextRole + 1) % s.personas.length;
@@ -859,7 +862,7 @@ export function goBack(): boolean {
     });
     return true;
   }
-  if (ui.screen === 'session' && s?.mode === 'canvas' && s.at && !ui.busy) {
+  if (ui.screen === 'session' && s?.at && !ui.busy) {
     goToBranch(s.branches?.find(b => b.id === s.at)?.parent);
     return true;
   }
@@ -870,41 +873,20 @@ export function goBack(): boolean {
   return true;
 }
 
-/* ---------- 换我来讲 ---------- */
-// 费曼学习法：苏格拉底追问里，学习者可以换过来当老师，伙伴暂时当听讲的学生
-export const TEACHING = '讲给伙伴听';
-export const STUDENT = '当学生';
-export async function toggleTeaching() {
-  const s = session();
-  if (!s || s.mode !== 'socratic' || s.finished || getState().ui.busy) return;
-  const name = s.personas[0].name;
-  const on = !s.teaching;
-  update(st => {
-    const ss = st.session!;
-    ss.teaching = on;
-    ss.entries.push({
-      id: uid(),
-      kind: 'sys',
-      text: on
-        ? `换你来讲：${name}现在是听讲的学生，把「${ss.concept}」讲给他听。`
-        : `换回来了，${name}接着和你一起想。`,
-    });
-  });
-  await speak(
-    s.personas[0].id,
-    on
-      ? '学习者要换他来讲了。用一句话表示你准备好当学生听讲，可以先说一个你作为初学者对这个概念最大的疑惑。'
-      : '学习者讲完了，你换回讨论伙伴。用两三句话说说他刚才的讲解哪里讲清楚了、哪里还可以讲得更准，然后接着讨论。',
-  );
-}
-
-/* ---------- 知识画布 ---------- */
+/* ---------- 知识画布：追问和圆桌里都能展开分支（#142） ---------- */
 const BRANCH_TOPIC_MAX = 40;
+// 分支里谁来聊：展开它的那句话是哪位说的就是哪位（圆桌里“请这位细说”）；从学习者的话展开的，由第一位接
+export function branchSpeaker(s: Session, at = s.at) {
+  const b = branchById(s, at);
+  const from = b && s.entries.find(e => e.id === b.from);
+  const who = from?.kind === 'msg' ? from.who : undefined;
+  return s.personas.find(p => p.id === who) ?? s.personas[0];
+}
 // 从一条发言展开一个分支，AI 先把这个话题讲个大概
 export async function openBranch(fromId: string, topic: string) {
   const s = session();
   topic = topic.trim();
-  if (!s || s.mode !== 'canvas' || s.finished || getState().ui.busy) return;
+  if (!s || !canBranch(s) || s.finished || getState().ui.busy) return;
   if (!topic) return toast('写下这个分支想弄懂什么。');
   if (topic.length > BRANCH_TOPIC_MAX)
     return toast(`分支话题写短一点，${BRANCH_TOPIC_MAX} 字以内。`);
@@ -927,14 +909,14 @@ export async function openBranch(fromId: string, topic: string) {
     st.ui.hint = null;
   });
   await speak(
-    s.personas[0].id,
+    branchSpeaker(session()!, id).id,
     `学习者从这句话展开了一个分支，想弄懂「${topic}」。先用两三句话说说它大概是什么，最好带一个具体例子，再听听他怎么想。`,
   );
 }
 // 跳到某个分支（undefined 是主干）
 export function goToBranch(at?: string) {
   const s = session();
-  if (!s || s.mode !== 'canvas' || getState().ui.busy) return;
+  if (!s || !canBranch(s) || getState().ui.busy) return;
   if (at && !s.branches?.some(b => b.id === at)) return;
   update(st => {
     st.session!.at = at;
@@ -1095,9 +1077,65 @@ export function discussAgain(note: Note) {
   const last = note.sources.at(-1);
   update(st => {
     st.config.concept = note.concept;
-    if (last) st.config.mode = last.mode;
+    // 学习页不再提供的方式（旧的知识画布、讲给 AI 听）换成苏格拉底追问
+    if (last) st.config.mode = MODE_ORDER.includes(last.mode) ? last.mode : 'socratic';
   });
   return prepare({ oneLine: last?.oneLine ?? note.summary, weak: weakOf(note) }, note.context);
+}
+// 讲给 AI 听：AI 扮演刚接触这个概念的学生，学习者来讲。要点清单就是这篇笔记的要点（没掌握的排前面），
+// 不用 AI 准备，演示模式也能用；讲完照常复盘，按要点名合并回这篇笔记，更新它们的状态（#142）
+export const TEACH_STUDENT = {
+  id: 'r0',
+  tone: 'c' as const,
+  name: '小满',
+  title: '学生',
+  persona: '高二学生，聪明但从没接触过这个概念，爱较真，听不懂就直说',
+};
+export function teachBack(note: Note) {
+  if (getState().ui.busy) return;
+  const order = { missing: 0, partial: 1, mastered: 2 } as const;
+  const keyPoints = note.points
+    .map((p, i) => ({ p, i }))
+    .sort((a, b) => order[a.p.status] - order[b.p.status] || a.i - b.i)
+    .map(x => x.p.label.trim().slice(0, 60))
+    .filter(Boolean)
+    .slice(0, 6);
+  if (keyPoints.length < 2) return toast('这篇笔记的要点还不到两个，先再讨论一次。');
+  endOld();
+  forceNav('forward');
+  update(st => {
+    st.config.concept = note.concept;
+    st.session = {
+      id: uid(),
+      created: Date.now(),
+      mode: 'teach',
+      concept: note.concept,
+      topic: `把「${note.concept}」讲给一个刚接触它的人听`,
+      keyPoints,
+      covered: [],
+      entries: [
+        {
+          id: uid(),
+          kind: 'sys',
+          text: `${TEACH_STUDENT.name}是刚接触「${note.concept}」的高中生。把它从头讲给他听，他听不懂会直说。`,
+        },
+      ],
+      learnerTurns: 0,
+      nextRole: 0,
+      demoStep: 0,
+      finished: false,
+      draft: '',
+      previous: null,
+      personas: [TEACH_STUDENT],
+      seats: [],
+      stages: [],
+      turns: [],
+      cursor: 0,
+      review: null,
+      context: note.context,
+    };
+    st.ui = { ...st.ui, screen: 'session', hint: null, explain: null, sheet: null, error: '' };
+  });
 }
 export function openCard(id: string) {
   update(st => {
