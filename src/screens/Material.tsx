@@ -5,6 +5,7 @@ import type { MapPoint, ModeId } from '../../shared/types.ts';
 import {
   addMaterial,
   fetchLink,
+  importPdf,
   loadMaterials,
   openMaterial,
   openMaterials,
@@ -37,6 +38,18 @@ function Paste() {
   // 读链接的结果说明：拿到了什么、是不是全文
   const [note, setNote] = useState<{ text: string; warn: boolean } | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
+  // 选了 PDF 文件（#162）：只在这台设备上解析
+  const pickPdf = async (file: File | undefined) => {
+    if (!file) return;
+    const r = await importPdf(file);
+    if (!r) return;
+    setTitle(r.title);
+    setText(r.text);
+    setNote({
+      text: `从 ${r.pages} 页 PDF 里读到了 ${r.text.replace(/\s+/g, '').length} 字。${r.note}核对一下，没问题就开始研读。`,
+      warn: false,
+    });
+  };
   const read = async () => {
     const r = await fetchLink(link);
     if (!r) return;
@@ -78,6 +91,19 @@ function Paste() {
               读取
             </button>
           </div>
+          <label className={'ghost file-pick' + (busy ? ' disabled' : '')}>
+            <Icon name="note" size={16} />
+            选一个 PDF 文件
+            <input
+              type="file"
+              accept="application/pdf,.pdf"
+              disabled={busy}
+              onChange={e => {
+                void pickPdf(e.target.files?.[0]);
+                e.target.value = '';
+              }}
+            />
+          </label>
           {note && (
             <p className={'link-note' + (note.warn ? ' warn' : '')} role="status">
               {note.text}
@@ -119,7 +145,7 @@ function Paste() {
           <p className="fineprint">
             材料只保存在这台设备上。研读时，只把研读助手要读的几节发给
             AI；讨论时，只带这个点的原文节选。读链接时，由本机服务或你的后端去取这个网页，只读不改。PDF
-            还在做，先把正文复制过来。
+            只在这台设备上解析，不上传。
           </p>
         </section>
         {ui.materials.length > 0 && (
