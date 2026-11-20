@@ -26,6 +26,7 @@ import type { Config, Screen, Session, SessionMaterial } from './store.ts';
 import { runAI, task } from './lib/ai.ts';
 import { apiRequest } from './lib/api.ts';
 import type { LinkResult } from '../shared/pages.ts';
+import { readPdf, type PdfResult } from './lib/pdf.ts';
 import { clearLive } from './lib/stream.ts';
 import { playingId, speakText, startVoice, stopVoice } from './lib/voice.ts';
 import { cancelListening, listeningPhase, startListening, stopListening } from './lib/listen.ts';
@@ -1239,6 +1240,20 @@ export async function fetchLink(link: string): Promise<Extract<LinkResult, { ok:
       remote ? 'remote' : 'local',
     ),
   );
+  if (!r) return null;
+  if (!r.ok) {
+    update(st => {
+      st.ui.error = r.reason;
+    });
+    return null;
+  }
+  return r;
+}
+
+/** 读学习者选的 PDF 文件（#162）：只在这台设备上解析，取出的文字交给页面填进框里，核对后再开始研读。 */
+export async function importPdf(file: File): Promise<Extract<PdfResult, { ok: true }> | null> {
+  if (getState().ui.busy) return null;
+  const r = await task('正在读取 PDF', () => readPdf(file));
   if (!r) return null;
   if (!r.ok) {
     update(st => {

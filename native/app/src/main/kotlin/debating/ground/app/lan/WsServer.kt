@@ -40,6 +40,7 @@ private const val INFO_PAGE =
 private val TYPES = mapOf(
     "html" to "text/html; charset=utf-8",
     "js" to "text/javascript; charset=utf-8",
+    "mjs" to "text/javascript; charset=utf-8",
     "css" to "text/css; charset=utf-8",
     "json" to "application/json; charset=utf-8",
     "svg" to "image/svg+xml",

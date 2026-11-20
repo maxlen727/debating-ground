@@ -29,6 +29,7 @@
     "docs:preview": "vitepress preview docs"
   },
   "dependencies": {
+    "pdfjs-dist": "6.5.438",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

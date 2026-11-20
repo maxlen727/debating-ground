@@ -2177,6 +2177,30 @@ select:focus {
 .link-row input {
   min-width: 0;
 }
+.file-pick {
+  position: relative;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  cursor: pointer;
+}
+.file-pick.disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+/* 文件选择框本身不显示，点整块标签就会打开它；键盘仍能聚焦到它 */
+.file-pick input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.file-pick:focus-within {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
 .link-note {
   margin: 0;
   padding: 10px 12px;
