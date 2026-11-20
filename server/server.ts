@@ -9,6 +9,8 @@ import { listenRelay } from './stt.ts';
 import { acceptWebSocket, rejectUpgrade } from './wsserver.ts';
 import { LAN_PORT, LanRooms, lanAddress } from './lan.ts';
 import { SPEECH_SEGMENT } from '../shared/speech.ts';
+import { importLink, type Get } from '../shared/pages.ts';
+import { nodeGet } from './fetchpage.ts';
 import {
   ApiError,
   normalizeConfig,
@@ -33,6 +35,7 @@ interface SessionState {
   active: AbortController | null;
   touched: number;
   tts: TtsConfig | null;
+  fetching?: boolean; // 正在替这个会话取链接（同一时间只取一个）
 }
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -82,12 +85,15 @@ export function createServer({
   timeoutMs = 90000,
   root = path.join(here, '..', 'dist'),
   lan = null,
+  getPage = nodeGet(),
 }: {
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
   root?: string;
   // 局域网房间（#148）：打开时房主可以在本机页面上开房间，同学从 origin 加入
   lan?: { rooms: LanRooms; origin: string } | null;
+  // 读材料的链接（#157）：测试里换成假的
+  getPage?: Get;
 } = {}) {
   const sessions = new Map<string, SessionState>();
   const json = (res: http.ServerResponse, status: number, data: unknown) => {
@@ -273,6 +279,19 @@ export function createServer({
         },
       );
       json(res, 200, { ...created, backend: lan.origin });
+    },
+    // 读材料：取一个链接的正文（#157）。不需要 API；只读、地址经过检查，见 server/fetchpage.ts
+    'POST /api/fetch': async (s, req, res) => {
+      const data = await body(req);
+      if (typeof data.url !== 'string' || !data.url.trim() || data.url.length > 2000)
+        throw new ApiError('请填写要读取的链接。');
+      if (s.fetching) throw new ApiError('正在读取另一个链接，请稍等。', 409);
+      s.fetching = true;
+      try {
+        json(res, 200, await importLink(data.url, getPage));
+      } finally {
+        s.fetching = false;
+      }
     },
     'POST /api/test': (s, req, res) => generate(s, req, res, true),
     'POST /api/generate': (s, req, res) => generate(s, req, res, false),

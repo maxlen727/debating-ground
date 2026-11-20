@@ -23,7 +23,9 @@ import {
   type Material,
 } from './lib/materials.ts';
 import type { Config, Screen, Session, SessionMaterial } from './store.ts';
-import { runAI } from './lib/ai.ts';
+import { runAI, task } from './lib/ai.ts';
+import { apiRequest } from './lib/api.ts';
+import type { LinkResult } from '../shared/pages.ts';
 import { clearLive } from './lib/stream.ts';
 import { playingId, speakText, startVoice, stopVoice } from './lib/voice.ts';
 import { cancelListening, listeningPhase, startListening, stopListening } from './lib/listen.ts';
@@ -1211,6 +1213,42 @@ export async function addMaterial(title: string, text: string) {
   });
   await readMaterial();
 }
+/**
+ * 读取一个链接的正文（#157）：交给本机服务或你的后端去取（浏览器不能直接取别的网站），取到了交给页面填进框里，
+ * 学习者核对后再开始研读。取不到或不是全文，都说明原因。
+ */
+export async function fetchLink(link: string): Promise<Extract<LinkResult, { ok: true }> | null> {
+  const { config, ai, ui } = getState();
+  if (ui.busy) return null;
+  if (!link.trim()) {
+    toast('先贴一个链接。');
+    return null;
+  }
+  const remote = config.aiMode === 'remote';
+  if (!remote && !ai.available) {
+    update(st => {
+      st.ui.error =
+        '读取链接要用到本机服务或你部署的后端（浏览器不能直接读取别的网站）。可以在“设置”里连接，或者把正文复制过来贴上。';
+    });
+    return null;
+  }
+  const r = await task('正在读取链接', signal =>
+    apiRequest<LinkResult>(
+      '/api/fetch',
+      { method: 'POST', signal, body: JSON.stringify({ url: link.trim() }) },
+      remote ? 'remote' : 'local',
+    ),
+  );
+  if (!r) return null;
+  if (!r.ok) {
+    update(st => {
+      st.ui.error = r.reason;
+    });
+    return null;
+  }
+  return r;
+}
+
 /** 让研读助手读当前的材料，整理出技术点地图。每一步在做什么都显示出来。 */
 export async function readMaterial() {
   const m = getState().ui.material;
