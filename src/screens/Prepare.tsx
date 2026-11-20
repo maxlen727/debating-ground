@@ -3,6 +3,7 @@ import type { StageKind, Team } from '../../shared/types.ts';
 import { useRef, useState } from 'react';
 import { CaretField } from '../components/SmoothCaret.tsx';
 import { canInvite, inviteFriends, prepare, refreshRoles, startSession } from '../actions.ts';
+import { lanReady } from '../lib/room.ts';
 import { BusyStrip, ErrorBanner, Icon, Sheet, Stepper, TopBar } from '../components/ui.tsx';
 import { debateTurns, slots } from '../lib/debate.ts';
 import { go, typing, update, useApp } from '../store.ts';
@@ -234,7 +235,9 @@ export function Prepare() {
 function InviteSheet({ onClose }: { onClose: () => void }) {
   const { config, plan, ui } = useApp();
   const [name, setName] = useState(config.name);
-  const ready = config.aiMode === 'remote' && !!config.remote.url;
+  // 局域网房间（#148）：本机服务用 npm run server:lan 启动时，房间开在这台电脑上
+  const lan = lanReady();
+  const ready = (config.aiMode === 'remote' && !!config.remote.url) || lan;
   const debate = plan?.mode === 'debate';
   const peerSeats =
     slots(config).filter(r => r.type === 'peer').length +
@@ -286,11 +289,20 @@ function InviteSheet({ onClose }: { onClose: () => void }) {
               的席位或旁听。可以先关掉这里，把一些席位设成“同学”。
             </p>
           )}
-          <p className="fineprint">
-            AI 使用你的后端和额度，同学不需要访问口令。每个房间最多 8 人、150 次 AI
-            调用；如果配了讯飞朗读，朗读另算，最多 120 次。讨论内容临时保存在你的后端，结束 1
-            小时后自动删除。
-          </p>
+          {lan ? (
+            <p className="fineprint">
+              房间开在你这台电脑上：同一个 Wi-Fi 里的同学用浏览器打开邀请链接就能加入，不需要装
+              App。AI 用你在本机服务里连好的 API，同学拿不到 Key。每个房间最多 8 人、150 次 AI
+              调用。本机服务停了房间就没了。局域网里走的是不加密的
+              HTTP，只在信得过的网络里用（家里、宿舍、教室），别在公共 Wi-Fi 上开。
+            </p>
+          ) : (
+            <p className="fineprint">
+              AI 使用你的后端和额度，同学不需要访问口令。每个房间最多 8 人、150 次 AI
+              调用；如果配了讯飞朗读，朗读另算，最多 120 次。讨论内容临时保存在你的后端，结束 1
+              小时后自动删除。
+            </p>
+          )}
           <ErrorBanner />
           <button
             className="primary block"
@@ -304,7 +316,14 @@ function InviteSheet({ onClose }: { onClose: () => void }) {
         </>
       ) : (
         <>
-          <p className="sheet-text">多人讨论需要一个属于你的后端：房间和 AI 都在那里运行。</p>
+          <p className="sheet-text">
+            多人讨论需要一个运行房间的地方：你自己部署的后端，或者同一个 Wi-Fi
+            里你这台电脑上的本机服务。
+          </p>
+          <p className="note">
+            在电脑上用 <code>npm run server:lan</code> 启动本机服务并连接
+            API，就能开局域网房间，不用部署任何东西。
+          </p>
           <p className="note">
             先在“设置”里选择“我的后端”并连接。还没有后端的话，可以一键部署到你自己的 Cloudflare
             账号（免费额度就够）。

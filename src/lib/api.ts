@@ -119,6 +119,7 @@ export async function apiStream<T>(
 type Public = Pick<AiStatus, 'configured' | 'verified' | 'baseURL' | 'model'> & {
   ttsConfigured?: boolean;
   sttConfigured?: boolean;
+  lan?: string;
 };
 
 export async function refreshStatus() {
@@ -131,6 +132,7 @@ export async function refreshStatus() {
         ...data,
         ttsConfigured: !!data.ttsConfigured,
         sttConfigured: !!data.sttConfigured,
+        lan: typeof data.lan === 'string' ? data.lan : '',
         available: true,
       };
     });

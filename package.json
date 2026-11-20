@@ -12,6 +12,7 @@
   "scripts": {
     "dev": "vite",
     "server": "node server/server.ts",
+    "server:lan": "node server/server.ts --lan",
     "build": "tsc -p . && vite build",
     "start": "node server/server.ts",
     "check": "tsc -p .",

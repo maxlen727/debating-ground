@@ -41,6 +41,7 @@ npm run format       # 自动整理格式（Prettier）；npm run format:check �
 npm test             # 全部测试
 npm run build        # 构建界面到 dist/
 npm run server       # 本机服务 127.0.0.1:4173
+npm run server:lan   # 同时打开局域网房间的入口（0.0.0.0:4174，只给界面和房间连接，见 server/lan.ts、#148）
 npm run dev          # 界面热更新 127.0.0.1:5173（需同时运行 server）
 npm run docs:dev     # 文档站热更新
 npm run sync:worker  # 改了 server/ai.ts 或 shared/ 后，同步到 worker/src/vendor/

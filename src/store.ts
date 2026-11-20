@@ -152,6 +152,7 @@ export interface AiStatus {
   remoteTtsConfigured?: boolean; // 讯飞朗读：本机服务 / 自己部署的后端
   sttConfigured?: boolean;
   remoteSttConfigured?: boolean; // 讯飞语音输入
+  lan?: string; // 本机服务打开了局域网房间时，同学加入用的地址（#148）
 }
 export interface Ui {
   screen: Screen;

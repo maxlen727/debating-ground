@@ -8,6 +8,7 @@ import type {
   ServerMessage,
   Speaker,
 } from '../../shared/room.ts';
+import { isPrivateIPv4 } from '../../shared/room.ts';
 import type { ChatMessage, Entry } from '../../shared/types.ts';
 import { getState, toast, uid, update } from '../store.ts';
 import type { Plan, RoomLink, Session } from '../store.ts';
@@ -29,9 +30,18 @@ const b64 = (s: string) =>
 const unb64 = (s: string) =>
   decodeURIComponent(escape(atob(s.replace(/-/g, '+').replace(/_/g, '/'))));
 
+// 局域网房间（#148）的后端是 http://<局域网地址>:4174：同学的浏览器从那里打开界面
+export const isLanBackend = (backend: string) => {
+  try {
+    const u = new URL(backend);
+    return u.protocol === 'http:' && isPrivateIPv4(u.hostname);
+  } catch {
+    return false;
+  }
+};
 export function inviteLink(
   link: Pick<RoomLink, 'backend' | 'roomId' | 'invite'>,
-  base = location.origin + location.pathname,
+  base = isLanBackend(link.backend) ? link.backend + '/' : location.origin + location.pathname,
 ) {
   return `${base}#join=${b64(JSON.stringify({ b: link.backend, r: link.roomId, c: link.invite }))}`;
 }
@@ -45,7 +55,8 @@ export function parseInvite(
     const u = new URL(typeof v.b === 'string' ? v.b : '');
     const local = ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
     if (
-      (u.protocol !== 'https:' && !(u.protocol === 'http:' && local)) ||
+      (u.protocol !== 'https:' &&
+        !(u.protocol === 'http:' && (local || isPrivateIPv4(u.hostname)))) ||
       typeof v.r !== 'string' ||
       typeof v.c !== 'string'
     )
@@ -457,15 +468,23 @@ export function setupFrom(
   };
 }
 
+/** 局域网房间能不能开：用的是本机服务，而且它打开了局域网入口（npm run server:lan）。 */
+export function lanReady() {
+  const { config, ai } = getState();
+  return config.aiMode === 'api' && ai.available && ai.configured && !!ai.lan;
+}
+
 export async function createRoom(setup: RoomSetup, hostName: string) {
-  const backend = getState().config.remote.url;
+  // 局域网房间开在本机服务上；否则开在自己部署的后端（Cloudflare Worker）上
+  const lan = lanReady();
   const created = await task('正在创建房间', signal =>
-    apiRequest<CreatedRoom>(
+    apiRequest<CreatedRoom & { backend?: string }>(
       '/api/rooms',
       { method: 'POST', signal, body: JSON.stringify({ setup, hostName }) },
-      'remote',
+      lan ? 'local' : 'remote',
     ),
   );
+  const backend = lan ? (created?.backend ?? '') : getState().config.remote.url;
   if (!created) {
     // v0.8 之前的后端不认识“同学”席位
     if (getState().ui.error.includes('辩论席位无效'))
