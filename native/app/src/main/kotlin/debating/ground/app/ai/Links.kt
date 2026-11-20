@@ -89,10 +89,17 @@ fun linkClient(dns: Dns = GuardedDns()): OkHttpClient = OkHttpClient.Builder()
     .callTimeout(LinkLimits.TIMEOUT_MS, TimeUnit.MILLISECONDS)
     .build()
 
-/** 读一个链接：成功时是 {ok: true, title, text, url, kind, complete, note}，否则是 {ok: false, reason}（shared/pages.ts 的 LinkResult）。 */
-fun interface LinkFetcher {
+/** 读链接：成功时是 {ok: true, title, text, url, kind, complete, note}，否则是 {ok: false, reason}（shared/pages.ts 的 LinkResult）。 */
+interface LinkFetcher {
+    /** 手机自己去取这个链接。 */
     suspend fun read(link: String): JsonObject
+
+    /** 内置浏览器里已经打开的一页（学习者自己登录、过了验证）：用同样的规则提取正文、判断是不是全文（#160）。 */
+    suspend fun fromPage(url: String, html: String): JsonObject
 }
+
+/** 内置浏览器交回来的页面最多这么长（和取链接的 3 MB 一样）。 */
+const val PAGE_HTML_MAX = 3_000_000
 
 private class LinkFailure(message: String) : Exception(message)
 
@@ -102,6 +109,22 @@ private fun failed(reason: String) = buildJsonObject {
 }
 
 class LinkReader(private val prompts: Prompts, private val client: OkHttpClient = linkClient()) : LinkFetcher {
+    override suspend fun fromPage(url: String, html: String): JsonObject {
+        if (html.length > PAGE_HTML_MAX) return failed("这一页太大了（超过 3 MB），没法读取。可以把正文复制过来贴上。")
+        val candidate = buildJsonObject {
+            put("url", url)
+            put("kind", "page")
+        }
+        val page = buildJsonObject {
+            put("status", 200)
+            put("url", url)
+            put("contentType", "text/html")
+            put("body", html)
+        }
+        val r = prompts.call("readFetched", candidate, page)
+        return (r as? JsonObject) ?: failed("没能从这一页里读出正文。")
+    }
+
     override suspend fun read(link: String): JsonObject {
         val plan = prompts.call("linkPlan", JsonPrimitive(link))
         if (plan is JsonPrimitive) return failed(plan.content)

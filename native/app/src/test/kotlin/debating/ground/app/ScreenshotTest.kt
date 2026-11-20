@@ -63,7 +63,13 @@ class ScreenshotTest {
     }
 
     // 读链接（#157）：假的，像 arXiv 上没有网页版全文、只拿到摘要那样
-    private val fakeLinks = debating.ground.app.ai.LinkFetcher {
+    private val fakeLinks = object : debating.ground.app.ai.LinkFetcher {
+        override suspend fun read(link: String) = page()
+
+        override suspend fun fromPage(url: String, html: String) = page()
+    }
+
+    private fun page() = run {
         kotlinx.serialization.json.buildJsonObject {
             put("ok", true)
             put("title", "Attention Is All You Need")

@@ -1301,6 +1301,31 @@ class Learning(
         }
     }
 
+    /**
+     * 内置浏览器里打开的一页（#160）：学习者自己登录、过了验证以后点“用这一页”，按同样的规则提取正文。
+     * 页面内容只在这台手机上处理，和贴进来的正文一样，之后研读时才把要读的几节发给 AI。
+     */
+    suspend fun usePage(url: String, html: String): LinkPage? {
+        if (state.ui.busy != null) return null
+        val reader = links ?: run {
+            ui { it.copy(error = "这台设备不支持读取网页（需要 Android 8 以上和较新的“Android System WebView”）。可以把正文复制过来贴上。") }
+            return null
+        }
+        ui { it.copy(busy = "正在读这一页", error = "") }
+        val r = try {
+            reader.fromPage(url, html)
+        } catch (e: AiFailure) {
+            ui { it.copy(error = e.message ?: "没能从这一页里读出正文。") }
+            return null
+        } finally {
+            ui { it.copy(busy = null) }
+        }
+        return linkPageOf(r) ?: run {
+            ui { it.copy(error = linkReasonOf(r)) }
+            null
+        }
+    }
+
     /** 让研读助手读当前的材料，整理出技术点地图。每一步在做什么都显示出来。 */
     suspend fun readMaterial() {
         val m = state.ui.material ?: return
