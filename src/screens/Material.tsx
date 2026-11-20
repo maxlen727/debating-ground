@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { MapPoint, ModeId } from '../../shared/types.ts';
 import {
   addMaterial,
+  fetchLink,
   loadMaterials,
   openMaterial,
   openMaterials,
@@ -32,13 +33,56 @@ function Paste() {
   const { ui } = useApp();
   const [title, setTitle] = useState('');
   const [text, setText] = useState('');
+  const [link, setLink] = useState('');
+  // 读链接的结果说明：拿到了什么、是不是全文
+  const [note, setNote] = useState<{ text: string; warn: boolean } | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const read = async () => {
+    const r = await fetchLink(link);
+    if (!r) return;
+    setTitle(r.title.slice(0, 80));
+    setText(r.text);
+    const chars = r.text.replace(/\s+/g, '').length;
+    setNote({
+      text: `读到了 ${chars} 字。${r.note || '核对一下，没问题就开始研读。'}`,
+      warn: !r.complete,
+    });
+  };
   const busy = !!ui.busy;
   return (
     <div className="screen material">
       <TopBar title="读材料" sub="贴一篇论文或文章，一个点一个点弄懂" back="learn" />
       <div className="stack pad">
         <section className="stack-sm">
+          {/* 读链接（#157）：取到的正文填进下面的框，核对后再开始研读 */}
+          <div className="row link-row">
+            <input
+              type="url"
+              inputMode="url"
+              className="grow"
+              value={link}
+              placeholder="贴一个链接：arXiv 论文、网页文章"
+              aria-label="材料链接"
+              disabled={busy}
+              enterKeyHint="go"
+              onChange={e => setLink(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing) void read();
+              }}
+            />
+            <button
+              className="secondary"
+              disabled={busy || !link.trim()}
+              onClick={() => void read()}
+            >
+              读取
+            </button>
+          </div>
+          {note && (
+            <p className={'link-note' + (note.warn ? ' warn' : '')} role="status">
+              {note.text}
+            </p>
+          )}
           <input
             value={title}
             maxLength={80}
@@ -74,7 +118,8 @@ function Paste() {
           </div>
           <p className="fineprint">
             材料只保存在这台设备上。研读时，只把研读助手要读的几节发给
-            AI；讨论时，只带这个点的原文节选。 链接和 PDF 还在做，先把正文复制过来。
+            AI；讨论时，只带这个点的原文节选。读链接时，由本机服务或你的后端去取这个网页，只读不改。PDF
+            还在做，先把正文复制过来。
           </p>
         </section>
         {ui.materials.length > 0 && (

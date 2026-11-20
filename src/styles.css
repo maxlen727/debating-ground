@@ -2174,6 +2174,22 @@ select:focus {
   color: var(--muted);
   font-size: 13px;
 }
+.link-row input {
+  min-width: 0;
+}
+.link-note {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: var(--t-sm);
+  line-height: 1.6;
+  background: var(--lit);
+  color: var(--lit-ink);
+}
+.link-note.warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
 .material-text {
   min-height: 220px;
   font-size: 16px;
