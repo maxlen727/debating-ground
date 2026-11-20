@@ -273,7 +273,6 @@ private fun ModePick(mode: String, enabled: Boolean, onSelect: (String) -> Unit)
 // 读过的一份材料：从哪来、原文，继续围绕它讨论
 @Composable
 private fun Reading(st: AppState, m: Material, model: AppModel) {
-    val t = LocalTokens.current
     val l = model.learning
     val busy = st.ui.busy != null
     var mode by rememberSaveable { mutableStateOf("socratic") }
@@ -290,11 +289,7 @@ private fun Reading(st: AppState, m: Material, model: AppModel) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 m.source?.let { FinePrint("出自：$it") }
-                Text(
-                    "AI 会看着这篇材料的目录，每轮翻到和你们正在聊的最相关的几节。讨论完的复盘会沉淀进核心概念的笔记，也会沉淀进这篇材料的笔记。",
-                    style = TextStyles.small.copy(lineHeight = 1.6.em),
-                    color = t.muted.color(),
-                )
+                FinePrint("讨论时 AI 会翻到相关的段落，复盘记进概念和材料的笔记。")
                 Original(m)
                 Spacer(Modifier.height(bottom))
             }

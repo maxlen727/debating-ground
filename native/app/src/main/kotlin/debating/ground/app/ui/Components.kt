@@ -45,6 +45,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
@@ -62,6 +63,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import debating.ground.app.ui.theme.DarkTokens
 import debating.ground.app.ui.theme.LocalTokens
 import debating.ground.app.ui.theme.TextSize
 import debating.ground.app.ui.theme.TextStyles
@@ -358,6 +360,9 @@ fun Segmented(options: List<Pair<String, String>>, selected: String, label: Stri
     val haptic = LocalHapticFeedback.current
     val motion = LocalMotion.current
     val index = options.indexOfFirst { it.first == selected }
+    val dark = t == DarkTokens
+    // 深色里白滑块太刺眼，用比卡片亮一档的灰（网页版的 --seg-thumb）
+    val thumb = if (dark) lerp(t.raised.color(), t.ink.color(), 0.28f) else t.raised.color()
     BoxWithConstraints(
         Modifier.fillMaxWidth()
             // 放在悬浮的底部操作里时和别的悬浮控件一样用磨砂底加投影，浮在页面上；
@@ -366,9 +371,11 @@ fun Segmented(options: List<Pair<String, String>>, selected: String, label: Stri
                 if (LocalFloating.current) {
                     Modifier.glass(RoundedCornerShape(12.dp), 4.dp)
                 } else {
-                    Modifier.background(t.bg.color(), RoundedCornerShape(12.dp)).border(1.dp, t.line.color(), RoundedCornerShape(12.dp))
+                    Modifier
                 },
             )
+            // iOS 分段控件：轨道是一层很淡的墨色，选中项是浮起来的中性滑块（#172）
+            .background(t.ink.color().copy(alpha = if (dark) 0.08f else 0.07f), RoundedCornerShape(12.dp))
             .padding(3.dp)
             .semantics { contentDescription = label },
     ) {
@@ -381,15 +388,16 @@ fun Segmented(options: List<Pair<String, String>>, selected: String, label: Stri
             Box(Modifier.matchParentSize()) {
                 Box(
                     Modifier.offset { IntOffset(x.roundToPx(), 0) }.width(cell).fillMaxHeight()
-                        .shadow(1.dp, RoundedCornerShape(9.dp)).background(t.brand.color(), RoundedCornerShape(9.dp)),
+                        .shadow(2.dp, RoundedCornerShape(9.dp), ambientColor = Color.Black.copy(alpha = 0.10f), spotColor = Color.Black.copy(alpha = 0.18f))
+                        .background(thumb, RoundedCornerShape(9.dp)),
                 )
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
             for ((id, text) in options) {
                 val on = id == selected
-                // 选中的那项是品牌色块上的浅字（深色模式反过来），没选中的是轨道上的灰字（#168）
-                val fg by animateColorAsState(if (on) t.brandInk.color() else t.muted.color(), label = "segment-fg")
+                // 选中的那项是滑块上的深色粗字，没选中的是轨道上的灰字；不用品牌色，免得和主按钮抢主次（#172）
+                val fg by animateColorAsState(if (on) t.ink.color() else t.muted.color(), label = "segment-fg")
                 Box(
                     Modifier.weight(1f).heightIn(min = 40.dp)
                         .alpha(if (enabled || on) 1f else 0.45f)

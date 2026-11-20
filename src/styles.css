@@ -59,6 +59,9 @@
   /* 悬浮的东西用“半透明磨砂”：半透明的卡片色加模糊，背景氛围透得出来 */
   --glass-bg: color-mix(in srgb, var(--surface) 80%, transparent);
   --glass-line: color-mix(in srgb, var(--line) 85%, transparent);
+  /* 分段选择（iOS 分段控件）：轨道是一层很淡的墨色，选中项是浮起来的中性滑块（#172） */
+  --seg-track: color-mix(in srgb, var(--ink) 7%, transparent);
+  --seg-thumb: var(--raised);
   --float-shadow: 0 1px 2px rgb(24 36 31 / 6%), 0 10px 30px rgb(24 36 31 / 12%);
   color-scheme: light;
 }
@@ -96,6 +99,9 @@
     --qr-paper: #e4ebe7;
     --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 8px 24px rgb(0 0 0 / 30%);
     --float-shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 10px 30px rgb(0 0 0 / 40%);
+    --seg-track: color-mix(in srgb, var(--ink) 8%, transparent);
+    /* 深色里白滑块太刺眼，用比卡片亮一档的灰，和 iOS 深色的分段控件一样 */
+    --seg-thumb: color-mix(in srgb, var(--ink) 28%, var(--raised));
     color-scheme: dark;
   }
 }
@@ -796,8 +802,7 @@ select:focus {
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
-  background: var(--bg);
-  border: 1px solid var(--line);
+  background: var(--seg-track);
   border-radius: 12px;
   padding: 3px;
   gap: 3px;
@@ -808,12 +813,19 @@ select:focus {
   font-size: 14px;
   color: var(--muted);
 }
-/* 选中的那项用品牌色填满：浅色是深绿块配浅字，深色是浅绿块配深字，一眼就看得出选了哪个（#168） */
+/* 选中的那项是浮起来的中性滑块加深色粗字：靠“浮起”和字重分辨，不用品牌色，
+   免得和下面的主按钮一样重、抢了主次（#168、#172） */
 .segmented button.on {
-  background: var(--brand);
-  color: var(--brand-ink);
+  background: var(--seg-thumb);
+  color: var(--ink);
   font-weight: 650;
-  box-shadow: var(--shadow);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 12%),
+    0 2px 8px rgb(0 0 0 / 6%);
+}
+/* 悬浮在底部操作里时磨砂底上再压一层轨道色，白滑块才看得出浮起来 */
+.dock .segmented {
+  background: linear-gradient(var(--seg-track), var(--seg-track)), var(--glass-bg);
 }
 .segmented.small button {
   min-height: 30px;
@@ -2669,7 +2681,10 @@ select:focus {
   border-radius: 10px;
   font-size: 12.5px;
   line-height: 1.6;
-  word-break: break-all;
+  /* 一行，超出省略：链接靠复制和分享发出去，不用整条铺开（#172） */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   user-select: all;
 }
 .join-card {
