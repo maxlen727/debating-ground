@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
@@ -350,7 +351,7 @@ private fun StepButton(path: String, label: String, enabled: Boolean, onClick: (
     ) { Icon(lineIcon(path, path), null, Modifier.size(16.dp), tint = t.ink.color()) }
 }
 
-/** 分段选择（.segmented）：几个选项平分一行，选中的那个浮起来；换一项时浮起的那块滑过去（iOS 的分段控件也是这样）。 */
+/** 分段选择（.segmented）：几个选项平分一行，选中的那个是品牌色块；换一项时色块滑过去（iOS 的分段控件也是这样）。 */
 @Composable
 fun Segmented(options: List<Pair<String, String>>, selected: String, label: String, enabled: Boolean = true, onSelect: (String) -> Unit) {
     val t = LocalTokens.current
@@ -365,15 +366,20 @@ fun Segmented(options: List<Pair<String, String>>, selected: String, label: Stri
         val cell = (maxWidth - gap * (options.size - 1)) / options.size
         val x by animateDpAsState((cell + gap) * maxOf(0, index), if (motion) spring(dampingRatio = 0.8f, stiffness = 500f) else snap(), label = "segment")
         if (index >= 0) {
-            Box(
-                Modifier.offset { IntOffset(x.roundToPx(), 0) }.width(cell).heightIn(min = 40.dp).matchParentSize()
-                    .shadow(1.dp, RoundedCornerShape(9.dp)).background(t.raised.color(), RoundedCornerShape(9.dp)),
-            )
+            // 外层撑满轨道（和选项一样高），里面的色块只有一个选项宽，按 x 滑到选中的那项。
+            // 以前直接在色块上用 matchParentSize，它会盖掉前面的 width，色块变得和整条轨道一样宽（#168）
+            Box(Modifier.matchParentSize()) {
+                Box(
+                    Modifier.offset { IntOffset(x.roundToPx(), 0) }.width(cell).fillMaxHeight()
+                        .shadow(1.dp, RoundedCornerShape(9.dp)).background(t.brand.color(), RoundedCornerShape(9.dp)),
+                )
+            }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
             for ((id, text) in options) {
                 val on = id == selected
-                val fg by animateColorAsState(if (on) t.ink.color() else t.muted.color(), label = "segment-fg")
+                // 选中的那项是品牌色块上的浅字（深色模式反过来），没选中的是轨道上的灰字（#168）
+                val fg by animateColorAsState(if (on) t.brandInk.color() else t.muted.color(), label = "segment-fg")
                 Box(
                     Modifier.weight(1f).heightIn(min = 40.dp)
                         .alpha(if (enabled || on) 1f else 0.45f)
