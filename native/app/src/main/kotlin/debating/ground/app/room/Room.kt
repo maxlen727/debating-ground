@@ -260,13 +260,29 @@ fun parseInvite(raw: String): JoinTarget? {
         val u = URI(str("b") ?: return null)
         val host = u.host ?: return null
         val local = host in setOf("localhost", "127.0.0.1", "[::1]")
-        if (u.scheme != "https" && !(u.scheme == "http" && local)) return null
+        // 局域网房间（#148）：房主手机或电脑在同一个 Wi-Fi 里，地址是私有 IPv4 上的 http
+        if (u.scheme != "https" && !(u.scheme == "http" && (local || isPrivateIPv4(host)))) return null
         val roomId = str("r") ?: return null
         val invite = str("c") ?: return null
         val port = if (u.port == -1) "" else ":${u.port}"
         JoinTarget("${u.scheme}://$host$port${(u.rawPath ?: "").trimEnd('/')}", roomId, invite)
     }.getOrNull()
 }
+
+/** 局域网（私有）IPv4 地址：10/8、172.16/12、192.168/16。和 shared/room.ts 的 isPrivateIPv4 一样。 */
+fun isPrivateIPv4(ip: String): Boolean {
+    val p = ip.split('.')
+    if (p.size != 4 || p.any { !Regex("^\\d{1,3}$").matches(it) || it.toInt() > 255 }) return false
+    val a = p[0].toInt()
+    val b = p[1].toInt()
+    return a == 10 || (a == 172 && b in 16..31) || (a == 192 && b == 168)
+}
+
+/** 局域网房间的后端地址（http 加私有地址）。 */
+fun isLanBackend(backend: String): Boolean = runCatching {
+    val u = URI(backend)
+    u.scheme == "http" && isPrivateIPv4(u.host.orEmpty())
+}.getOrDefault(false)
 
 /* ---------- 房主创建房间 ---------- */
 

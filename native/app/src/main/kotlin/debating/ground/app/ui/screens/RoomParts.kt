@@ -48,9 +48,11 @@ import debating.ground.app.flow.AppState
 import debating.ground.app.flow.Live
 import debating.ground.app.flow.seatName
 import debating.ground.app.flow.slots
+import debating.ground.app.room.INVITE_BASE
 import debating.ground.app.room.QUICK_MESSAGES
 import debating.ground.app.room.Speaker
 import debating.ground.app.room.inviteLink
+import debating.ground.app.room.isLanBackend
 import debating.ground.app.room.link
 import debating.ground.app.room.mySeat
 import debating.ground.app.room.mySpeakingTurn
@@ -143,7 +145,17 @@ fun InviteSheet(s: Session, model: AppModel) {
     val room = s.link ?: return
     val context = LocalContext.current
     val l = model.learning
-    val url = if (room.invite.isNotEmpty()) inviteLink(room.backend, room.roomId, room.invite) else ""
+    // 局域网房间的链接直接指向房主那台设备（手机上是一页说明，电脑上是网页版）
+    val url = if (room.invite.isNotEmpty()) {
+        inviteLink(
+            room.backend,
+            room.roomId,
+            room.invite,
+            if (isLanBackend(room.backend)) room.backend + "/" else INVITE_BASE,
+        )
+    } else {
+        ""
+    }
     Sheet("邀请同学", { l.rooms.openInvite(false) }) {
         if (url.isEmpty()) {
             Text("这台设备上没有保存邀请链接。请在创建房间的设备上分享。", style = TextStyles.small, color = LocalTokens.current.ink.color())
@@ -470,14 +482,16 @@ fun InviteFriendsSheet(st: AppState, model: AppModel, onClose: () -> Unit) {
     val t = LocalTokens.current
     val l = model.learning
     val c = st.config
-    val ready = c.aiMode == "remote" && c.remote.url.isNotEmpty()
+    // 用“直接连接”时，房间开在这台手机上（局域网房间，#148）
+    val lan = c.aiMode == "api" && st.ui.direct.saved
+    val ready = (c.aiMode == "remote" && c.remote.url.isNotEmpty()) || lan
     val debate = st.plan?.mode == "debate"
     var name by rememberSaveable { mutableStateOf(c.name) }
     val busy = st.ui.busy != null
     Sheet("邀请同学一起讨论", onClose) {
         if (!ready) {
-            Text("多人讨论需要一个属于你的后端：房间和 AI 都在那里运行。", style = TextStyles.small, color = t.ink.color())
-            FinePrint("先在“设置”里选择“我的后端”并连接。还没有后端的话，可以一键部署到你自己的 Cloudflare 账号（免费额度就够）。")
+            Text("多人讨论需要一个运行房间的地方：你自己部署的后端，或者这台手机（同一个 Wi-Fi 里的局域网房间）。", style = TextStyles.small, color = t.ink.color())
+            FinePrint("在“设置”里选“直接连接”并连好，就能在这台手机上开局域网房间，不用部署任何东西；也可以选“我的后端”，一键部署到你自己的 Cloudflare 账号（免费额度就够）。")
             PrimaryButton("去设置", {
                 onClose()
                 l.go("settings")
@@ -505,7 +519,13 @@ fun InviteFriendsSheet(st: AppState, model: AppModel, onClose: () -> Unit) {
                 )
             }
         }
-        FinePrint("AI 使用你的后端和额度，同学不需要访问口令。每个房间最多 8 人、150 次 AI 调用；如果配了讯飞朗读，朗读另算，最多 120 次。讨论内容临时保存在你的后端，结束 1 小时后自动删除。")
+        if (lan) {
+            FinePrint(
+                "房间开在这台手机上：和你连同一个 Wi-Fi 的同学，在思辨场 App 里打开邀请链接就能加入。AI 用你的直接连接和额度，同学拿不到 API Key。每个房间最多 8 人、150 次 AI 调用。讨论时别退出 App，退出房间就没了。局域网里走的是不加密的连接，只在信得过的网络里用（家里、宿舍、教室），别在公共 Wi-Fi 上开。",
+            )
+        } else {
+            FinePrint("AI 使用你的后端和额度，同学不需要访问口令。每个房间最多 8 人、150 次 AI 调用；如果配了讯飞朗读，朗读另算，最多 120 次。讨论内容临时保存在你的后端，结束 1 小时后自动删除。")
+        }
         ErrorBanner(st.ui.error) { l.clearError() }
         PrimaryButton(st.ui.busy ?: "创建房间", { model.run { inviteFriends(name) } }, Modifier.fillMaxWidth(), enabled = !busy && name.isNotBlank())
     }

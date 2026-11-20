@@ -15,6 +15,8 @@ import debating.ground.app.flow.DirectStatus
 import debating.ground.app.flow.Learning
 import debating.ground.app.flow.Live
 import debating.ground.app.flow.Ui
+import debating.ground.app.lan.AndroidLan
+import debating.ground.app.lan.LanRooms
 import debating.ground.app.room.OkHttpRoomDialer
 import debating.ground.app.room.RoomDialer
 import debating.ground.app.speech.Heard
@@ -42,6 +44,7 @@ class AppModel(
     direct: DirectAccess? = null,
     speech: ((CoroutineScope, Learning) -> Speech)? = null,
     roomDialer: RoomDialer? = null,
+    lan: LanRooms? = null,
 ) {
     private val storage = Storage(dir)
 
@@ -75,6 +78,7 @@ class AppModel(
             onLive = { _live.value = it },
             roomDialer = roomDialer,
             launch = { block -> scope.launch { block() } },
+            lan = lan,
         )
         this.speech = speech?.invoke(scope, learning)
         wireRoomSpeech()
@@ -139,12 +143,14 @@ class AppModel(
         fun loaded(): AppModel? = instance
 
         fun get(context: Context): AppModel = instance ?: synchronized(this) {
+            // 直接连接的设置加密存在不进备份的目录里；提示词在 JS 沙箱里组装
+            val directAccess = DirectAccess(KeystoreDirectStore(context.noBackupFilesDir), SandboxPrompts(context.applicationContext))
             instance ?: AppModel(
                 context.filesDir,
-                // 直接连接的设置加密存在不进备份的目录里；提示词在 JS 沙箱里组装
-                direct = DirectAccess(KeystoreDirectStore(context.noBackupFilesDir), SandboxPrompts(context.applicationContext)),
+                direct = directAccess,
                 speech = { scope, l -> androidSpeech(context.applicationContext, scope, l) },
                 roomDialer = OkHttpRoomDialer(),
+                lan = AndroidLan(context.applicationContext, directAccess),
             ).also { instance = it }
         }
     }

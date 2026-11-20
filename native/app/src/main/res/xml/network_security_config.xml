@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 局域网房间（#148）走同一个 Wi-Fi 里的 http（房主手机或电脑的私有地址）。网络安全配置没法按 IP 段放行，
+     只能在系统层面允许明文；App 自己把关：后端地址、直接连接的接口地址都要求 https（本机地址除外），
+     邀请链接只接受私有 IPv4 上的 http（room/Room.kt 的 parseInvite），所以明文只会用在局域网房间上。
+     这是有意的取舍，所以只在这一处忽略 InsecureBaseConfiguration -->
+<network-security-config xmlns:tools="http://schemas.android.com/tools">
+    <base-config cleartextTrafficPermitted="true" tools:ignore="InsecureBaseConfiguration" />
+</network-security-config>

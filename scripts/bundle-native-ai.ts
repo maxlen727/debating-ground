@@ -8,12 +8,14 @@ import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const BUNDLE = join(root, 'native', 'app', 'src', 'main', 'assets', 'sibian-ai.js');
+// 安卓手机当局域网房主时跑的房间规则（#148）
+export const ROOM_BUNDLE = join(root, 'native', 'app', 'src', 'main', 'assets', 'sibian-room.js');
 const HEADER =
   '// 自动生成，请勿修改。源文件是 server/ai.ts 和 shared/，修改后运行 npm run bundle:native。\n';
 
-export async function bundle(): Promise<string> {
+export async function bundle(entry = 'native-ai-entry.ts', header = HEADER): Promise<string> {
   const out = await build({
-    entryPoints: [join(root, 'scripts', 'native-ai-entry.ts')],
+    entryPoints: [join(root, 'scripts', entry)],
     bundle: true,
     write: false,
     format: 'iife',
@@ -23,11 +25,15 @@ export async function bundle(): Promise<string> {
     charset: 'utf8',
     legalComments: 'none',
   });
-  return HEADER + out.outputFiles[0].text;
+  return header + out.outputFiles[0].text;
 }
+const ROOM_HEADER =
+  '// 自动生成，请勿修改。源文件是 scripts/native-room-entry.ts 和 worker/src/room.ts，修改后运行 npm run bundle:native。\n';
+export const bundleRoom = () => bundle('native-room-entry.ts', ROOM_HEADER);
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   mkdirSync(dirname(BUNDLE), { recursive: true });
   writeFileSync(BUNDLE, await bundle());
-  console.log(`已打包到 ${BUNDLE}`);
+  writeFileSync(ROOM_BUNDLE, await bundleRoom());
+  console.log(`已打包到 ${BUNDLE} 和 ${ROOM_BUNDLE}`);
 }
