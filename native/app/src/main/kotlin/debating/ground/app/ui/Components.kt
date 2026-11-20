@@ -359,7 +359,17 @@ fun Segmented(options: List<Pair<String, String>>, selected: String, label: Stri
     val motion = LocalMotion.current
     val index = options.indexOfFirst { it.first == selected }
     BoxWithConstraints(
-        Modifier.fillMaxWidth().background(t.bg.color(), RoundedCornerShape(12.dp)).border(1.dp, t.line.color(), RoundedCornerShape(12.dp)).padding(3.dp)
+        Modifier.fillMaxWidth()
+            // 放在悬浮的底部操作里时和别的悬浮控件一样用磨砂底加投影，浮在页面上；
+            // 平铺的实色轨道会像一块挡板，把淡出中的内容硬生生截断（#170）
+            .then(
+                if (LocalFloating.current) {
+                    Modifier.glass(RoundedCornerShape(12.dp), 4.dp)
+                } else {
+                    Modifier.background(t.bg.color(), RoundedCornerShape(12.dp)).border(1.dp, t.line.color(), RoundedCornerShape(12.dp))
+                },
+            )
+            .padding(3.dp)
             .semantics { contentDescription = label },
     ) {
         val gap = 3.dp
