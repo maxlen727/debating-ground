@@ -1,5 +1,7 @@
 package debating.ground.app
 
+import debating.ground.app.ai.SAMPLE_MATERIAL_TEXT
+import debating.ground.app.ai.SAMPLE_MATERIAL_TITLE
 import debating.ground.app.ai.demoRun
 import debating.ground.app.data.FileMaterials
 import debating.ground.app.data.MapPoint
@@ -63,6 +65,13 @@ class ReaderTest {
                 assertEquals(name, want, runTool(sections, readActionOf(t.getValue("a"))!!))
             }
         }
+    }
+
+    @Test
+    fun sampleMaterialMatchesTheWebApp() {
+        val sample = fixture.getValue("sample").jsonObject
+        assertEquals(sample.s("title"), SAMPLE_MATERIAL_TITLE)
+        assertEquals(sample.s("text"), SAMPLE_MATERIAL_TEXT)
     }
 
     @Test

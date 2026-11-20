@@ -344,6 +344,49 @@ class ScreenshotTest {
         save("phone-teach-back")
     }
 
+    // 读材料（#154）：学习页的入口、贴材料的页面
+    @Test
+    fun materialPaste() {
+        compose.setContent { Frame(dark = false, width = 390, height = 844) }
+        compose.onNodeWithText("从一篇论文或文章开始").performClick()
+        awaitState { it.ui.screen == "material" }
+        compose.onNodeWithText("用示例文章试试").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("开始研读").assertIsDisplayed()
+        save("phone-material-paste")
+    }
+
+    // 研读完：技术点地图和底部的“从某个点开始讨论”；深色
+    @Test
+    fun materialMapDark() {
+        compose.setContent { Frame(dark = true, width = 390, height = 844) }
+        model.run {
+            openMaterials()
+            addMaterial(debating.ground.app.ai.SAMPLE_MATERIAL_TITLE, debating.ground.app.ai.SAMPLE_MATERIAL_TEXT)
+        }
+        awaitState { it.ui.busy == null && it.ui.material?.map != null }
+        compose.onNodeWithText("技术点地图 · 挑一个开始").assertExists()
+        compose.onNodeWithText("从「稀缺性」开始讨论").assertExists()
+        save("phone-material-map-dark")
+    }
+
+    // 从技术点开始的讨论：工具栏里的“原文”，打开是这个点的原文节选
+    @Test
+    fun materialExcerptInSession() {
+        compose.setContent { Frame(dark = false, width = 390, height = 844) }
+        model.run {
+            openMaterials()
+            addMaterial(debating.ground.app.ai.SAMPLE_MATERIAL_TITLE, debating.ground.app.ai.SAMPLE_MATERIAL_TEXT)
+        }
+        awaitState { it.ui.busy == null && it.ui.material?.map != null }
+        model.run { startFromPoint(model.state.value.ui.material!!.map!!.points[1], "socratic") }
+        awaitState { it.ui.busy == null && it.ui.screen == "session" && it.session?.material != null }
+        compose.onNodeWithText("原文").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("关于「机会成本」的原文节选，讨论时 AI 也看着这几段。").assertExists()
+        save("phone-material-excerpt")
+    }
+
     // 辩论：台面、赛程条和下一位的空讲台
     @Test
     fun debateBoardDark() {
