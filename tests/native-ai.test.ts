@@ -58,3 +58,47 @@ test('the bundle reports failures with the backend wording instead of throwing',
   // 没有 URL、fetch 这些接口也能运行
   assert.equal(run('buildRequest', 'test').error, undefined);
 });
+
+// 读材料的链接（#157）：沙箱里没有 URL，靠 scripts/native-url.ts 补的最小实现。地址检查的结论必须和后端一样
+test('the bundle plans links and checks addresses the same way as the backend, without a real URL', async () => {
+  const run = load();
+  const pages = await import('../shared/pages.ts');
+  for (const link of [
+    'https://arxiv.org/abs/2401.01234v2',
+    'arXiv:2401.01234',
+    'example.com/post/1',
+    'https://example.com/a?b=1#c',
+    'http://8.8.8.8/',
+    'http://localhost/a',
+    'http://127.1/',
+    'http://2130706433/',
+    'http://0x7f000001/',
+    'http://10.0.0.5/',
+    'http://169.254.169.254/latest',
+    'http://[::1]/',
+    'http://[fd00::1]/',
+    'http://[::ffff:127.0.0.1]/',
+    'http://printer.local/',
+    'http://intranet/',
+    'http://example.com:8080/',
+    'https://user:pw@example.com/',
+    'ftp://example.com/x',
+    'javascript:alert(1)',
+    '不是链接',
+  ]) {
+    const node = pages.candidatesFor(link);
+    const js = run('linkPlan', link).ok;
+    assert.equal(typeof js, typeof node, link);
+    if (typeof node !== 'string') assert.deepEqual(js, node, link);
+    assert.equal(run('checkTarget', link).ok === null, pages.checkTarget(link) === null, link);
+  }
+  const f = {
+    status: 200,
+    url: 'https://example.com/a',
+    contentType: 'text/html',
+    body: `<article><h2>1 递减</h2><p>${'第一块蛋糕最香。'.repeat(200)}</p></article>`,
+  };
+  const c = { url: f.url, kind: 'page' };
+  assert.deepEqual(run('readFetched', c, f).ok, pages.readFetched(c as never, f));
+  assert.equal(run('readFetched', { ...c, kind: 'arxiv-html' }, { ...f, status: 404 }).ok, null);
+});

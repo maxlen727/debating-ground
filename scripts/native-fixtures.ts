@@ -352,6 +352,8 @@ export async function generate(): Promise<Record<string, string>> {
       demo: await demoReadCases(),
       sample: (await import('../src/lib/demo.ts')).SAMPLE_MATERIAL,
     }) + '\n';
+  // 读链接（#157）：哪些 IPv4 地址不能连，原生版在 DNS 这一步用同样的规则
+  out['link-cases.json'] = JSON.stringify(await linkCases()) + '\n';
   // 邀请二维码（#151）：同样的链接，原生版挑的版本、掩码和每一格都要一样
   out['qr-cases.json'] = JSON.stringify(qrCases()) + '\n';
   out['meta.json'] = JSON.stringify({ now: NOW, timeZone: TIME_ZONE }, null, 2) + '\n';
@@ -1301,6 +1303,52 @@ async function demoReadCases() {
     out.push({ payload: second, out: await demoRun('read', second, 0) });
   }
   return out;
+}
+
+async function linkCases() {
+  const { isBlockedIPv4 } = await import('../shared/pages.ts');
+  const ips = [
+    '0.0.0.0',
+    '0.1.2.3',
+    '1.1.1.1',
+    '8.8.8.8',
+    '9.255.255.255',
+    '10.0.0.1',
+    '10.255.255.255',
+    '11.0.0.1',
+    '100.63.255.255',
+    '100.64.0.1',
+    '100.127.255.255',
+    '100.128.0.1',
+    '126.255.255.255',
+    '127.0.0.1',
+    '127.255.255.254',
+    '128.0.0.1',
+    '169.253.1.1',
+    '169.254.169.254',
+    '169.255.0.1',
+    '172.15.255.255',
+    '172.16.0.1',
+    '172.31.255.255',
+    '172.32.0.1',
+    '192.0.0.1',
+    '192.0.1.1',
+    '192.0.2.1',
+    '192.167.1.1',
+    '192.168.0.1',
+    '192.168.255.255',
+    '192.169.0.1',
+    '198.17.0.1',
+    '198.18.0.1',
+    '198.19.255.255',
+    '198.20.0.1',
+    '223.255.255.255',
+    '224.0.0.1',
+    '239.255.255.250',
+    '240.0.0.1',
+    '255.255.255.255',
+  ];
+  return { ipv4: ips.map(ip => ({ ip, blocked: isBlockedIPv4(ip) })) };
 }
 
 function qrCases() {
