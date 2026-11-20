@@ -807,9 +807,10 @@ select:focus {
   font-size: 14px;
   color: var(--muted);
 }
+/* 选中的那项用品牌色填满：浅色是深绿块配浅字，深色是浅绿块配深字，一眼就看得出选了哪个（#168） */
 .segmented button.on {
-  background: var(--raised);
-  color: var(--ink);
+  background: var(--brand);
+  color: var(--brand-ink);
   font-weight: 650;
   box-shadow: var(--shadow);
 }
