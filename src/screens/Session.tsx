@@ -19,6 +19,7 @@ import {
   skipSeat,
   suggestPoint,
   voiceAvailable,
+  openMaterialSheet,
 } from '../actions.ts';
 import { Empty, ErrorBanner, Icon, Sheet } from '../components/ui.tsx';
 import { Reveal } from '../components/Reveal.tsx';
@@ -369,18 +370,28 @@ export function Session() {
           }
         >
           <p className="fineprint">
-            关于「{s.material.point}」的原文节选，讨论时 AI 也看着这几段。
+            讨论时 AI 看着这篇材料的目录，每轮翻到和你们正在聊的最相关的几节。
           </p>
           <div className="material-sections">
-            {s.material.excerpt.split(/\n\n(?=§\d)/).map((b, i) => {
-              const [head, ...rest] = b.split('\n');
-              return (
-                <article key={i}>
-                  <h4>{head}</h4>
-                  <p>{rest.join('\n')}</p>
-                </article>
-              );
-            })}
+            {ui.material?.id === s.material.id
+              ? ui.material.sections.map(x => (
+                  <article key={x.n}>
+                    <h4>
+                      §{x.n} {x.heading}
+                    </h4>
+                    <p>{x.text}</p>
+                  </article>
+                ))
+              : // 材料已经从这台设备上删掉了：只有讨论开始时存下的目录和开头
+                s.material.excerpt.split(/\n\n(?=§\d)/).map((b, i) => {
+                  const [head, ...rest] = b.split('\n');
+                  return (
+                    <article key={i}>
+                      <h4>{head}</h4>
+                      <p>{rest.join('\n')}</p>
+                    </article>
+                  );
+                })}
           </div>
         </Sheet>
       )}
@@ -558,14 +569,7 @@ function Composer({ s }: { s: S }) {
         </button>
         {/* 从材料开始的讨论：随时翻看这个点的原文（#144） */}
         {s.material && (
-          <button
-            className="tool"
-            onClick={() =>
-              update(st => {
-                st.ui.sheet = 'material';
-              })
-            }
-          >
+          <button className="tool" onClick={() => void openMaterialSheet()}>
             <Icon name="library" size={16} />
             原文
           </button>

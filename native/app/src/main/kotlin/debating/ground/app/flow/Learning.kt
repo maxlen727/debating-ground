@@ -17,7 +17,6 @@ import debating.ground.app.data.ChatMessage
 import debating.ground.app.data.Config
 import debating.ground.app.data.Entry
 import debating.ground.app.data.MODE_ORDER
-import debating.ground.app.data.MapPoint
 import debating.ground.app.data.Material
 import debating.ground.app.data.MaterialMeta
 import debating.ground.app.data.MaterialStore
@@ -30,7 +29,6 @@ import debating.ground.app.data.Plan
 import debating.ground.app.data.Point
 import debating.ground.app.data.PointProposal
 import debating.ground.app.data.Previous
-import debating.ground.app.data.ReadStep
 import debating.ground.app.data.ReaderLimits
 import debating.ground.app.data.Reflection
 import debating.ground.app.data.Remote
@@ -47,14 +45,16 @@ import debating.ground.app.data.TermCard
 import debating.ground.app.data.branchById
 import debating.ground.app.data.canBranch
 import debating.ground.app.data.checkPoint
+import debating.ground.app.data.contextQuery
 import debating.ground.app.data.emptyNote
-import debating.ground.app.data.excerptFor
+import debating.ground.app.data.isMaterialNote
+import debating.ground.app.data.isNoteFor
 import debating.ground.app.data.jsTrimmed
+import debating.ground.app.data.materialContext
+import debating.ground.app.data.mergeIntoMaterial
 import debating.ground.app.data.mergeReview
-import debating.ground.app.data.readActionOf
-import debating.ground.app.data.runReader
-import debating.ground.app.data.sameConcept
 import debating.ground.app.data.splitMaterial
+import debating.ground.app.data.startContext
 import debating.ground.app.data.weak
 import debating.ground.app.lan.LAN_PORT
 import debating.ground.app.lan.LanRooms
@@ -108,9 +108,8 @@ data class Ui(
     // 多人讨论：正要加入的房间（打开邀请链接后，写名字之前）、邀请面板开着没有。不存档
     val join: JoinTarget? = null,
     val invite: Boolean = false,
-    // 读材料（#144、#154）：正在看的材料、研读助手走过的步子（正在读时逐步变长）、材料列表。不存档（材料本身在 MaterialStore 里）
+    // 读材料（#144、#154、#166）：正在看的材料、材料列表。不存档（材料本身在 MaterialStore 里）
     val material: Material? = null,
-    val reading: List<ReadStep>? = null,
     val materials: List<MaterialMeta> = emptyList(),
 )
 
@@ -224,6 +223,8 @@ class Learning(
         if (state.ui.busy != null || ai.busy) return null
         val sessionAtStart = session
         ui { it.copy(busy = label, error = "") }
+        // 只有围绕材料的讨论才要先读材料（#166）
+        val payload = if (sessionAtStart?.material != null) withMaterial(payload) else payload
         if (live != null) onLive(live)
         val out = try {
             ai.run(purpose, payload, state.config, sessionAtStart, if (live != null) { t -> onLive(live.copy(text = t)) } else null)
@@ -1012,12 +1013,13 @@ class Learning(
             val ss = st.session
             if (ss?.id != s.id) return@update st.copy(ui = ui2)
             val glossary = ss.glossary.orEmpty().filter { it.term != term } + card
-            // 已经复盘过的讨论，直接补进它所在的概念笔记
-            val saved = st.library.find { n -> n.sources.any { it.sessionId == ss.id } }
+            // 已经复盘过的讨论，直接补进它所在的笔记（概念笔记，和围绕材料讨论时的材料笔记）
             st.copy(
                 ui = ui2,
                 session = ss.copy(glossary = glossary),
-                library = st.library.map { if (it === saved) it.copy(terms = it.terms.filter { t -> t.term != term } + card) else it },
+                library = st.library.map { n ->
+                    if (n.sources.any { it.sessionId == ss.id }) n.copy(terms = n.terms.filter { t -> t.term != term } + card) else n
+                },
             )
         }
     }
@@ -1079,20 +1081,25 @@ class Learning(
         update { st ->
             val ss = st.session!!.copy(review = review)
             val at = now()
-            val i = st.library.indexOfFirst { sameConcept(it.concept, ss.concept) }
+            val from = MergeFrom(ss.id, at, ss.mode, ss.concept, ss.topic, res.source, review.model, ss.context, ss.glossary, ss.material?.title)
+            val i = st.library.indexOfFirst { it.isNoteFor(ss.concept) }
             val base = st.library.getOrNull(i) ?: emptyNote(uid(), ss.concept, at)
-            val note = mergeReview(
-                base,
-                review,
-                MergeFrom(ss.id, at, ss.mode, ss.concept, ss.topic, res.source, review.model, ss.context, ss.glossary, ss.material?.title),
-            )
+            val note = mergeReview(base, review, from)
             // 刚更新的笔记排到最前面
-            st.copy(session = ss, library = listOf(note) + st.library.filterIndexed { j, _ -> j != i })
+            var library = listOf(note) + st.library.filterIndexed { j, _ -> j != i }
+            // 围绕材料的讨论（#166）：也沉淀进这篇材料的笔记，排在概念笔记后面
+            ss.material?.let { mat ->
+                val k = library.indexOfFirst { it.isMaterialNote() && it.materialId == mat.id }
+                val old = library.getOrNull(k) ?: emptyNote(uid(), mat.title, at)
+                val merged = mergeIntoMaterial(old, review, from, mat.id)
+                library = library.filterIndexed { j, _ -> j != k }.toMutableList().apply { add(1, merged) }
+            }
+            st.copy(session = ss, library = library)
         }
     }
 
     /** 这次复盘沉淀进了哪篇笔记（复盘页上给个入口）。 */
-    fun settledInto(s: Session): Note? = state.library.find { n -> n.sources.any { it.sessionId == s.id } }
+    fun settledInto(s: Session): Note? = state.library.find { n -> !n.isMaterialNote() && n.sources.any { it.sessionId == s.id } }
 
     /** 自检：答出来了，它检验的要点算掌握；没答出，算模糊。 */
     fun selfCheck(noteId: String, index: Int, ok: Boolean) {
@@ -1247,7 +1254,7 @@ class Learning(
      * 讲给 AI 听：AI 扮演刚接触这个概念的学生，学习者来讲。要点清单就是这篇笔记的要点（没掌握的排前面），
      * 不用 AI 准备，演示模式也能用；讲完照常复盘，按要点名合并回这篇笔记，更新它们的状态（#142）。
      */
-    /* ---------- 读材料（#144、#154），和网页版 actions.ts 一致 ---------- */
+    /* ---------- 读材料（#144、#154、#166），和网页版 actions.ts 一致 ---------- */
 
     suspend fun loadMaterials() {
         val list = materialStore.list()
@@ -1255,13 +1262,16 @@ class Learning(
     }
 
     suspend fun openMaterials() {
-        ui { it.copy(material = null, reading = null) }
+        ui { it.copy(material = null) }
         go("material")
         loadMaterials()
     }
 
-    /** 粘贴进来的材料：切成节、存在这台设备上，然后让研读助手读。 */
-    suspend fun addMaterial(title: String, raw: String) {
+    /**
+     * 贴进来的材料（#166）：切成节、存在这台设备上，然后直接围绕它开始讨论。
+     * 讨论开始不了（比如 AI 出错）时材料已经存好，停在这篇材料上，可以再点“围绕这篇材料讨论”。
+     */
+    suspend fun addMaterial(title: String, raw: String, mode: String, source: String? = null) {
         val text = raw.jsTrimmed()
         if (state.ui.busy != null) return
         if (text.length < 200) return toast("材料太短了，至少贴两三段正文。")
@@ -1271,10 +1281,12 @@ class Learning(
             title = title.jsTrimmed().take(80).ifEmpty { text.split("\n")[0].jsTrimmed().take(40) },
             sections = splitMaterial(text),
             created = now(),
+            source = source?.take(300)?.takeIf { it.isNotEmpty() },
         )
         materialStore.save(m)
         ui { it.copy(material = m) }
-        readMaterial()
+        loadMaterials()
+        discussMaterial(mode)
     }
 
     /**
@@ -1354,30 +1366,9 @@ class Learning(
         }
     }
 
-    /** 让研读助手读当前的材料，整理出技术点地图。每一步在做什么都显示出来。 */
-    suspend fun readMaterial() {
-        val m = state.ui.material ?: return
-        if (state.ui.busy != null) return
-        ui { it.copy(reading = emptyList()) }
-        val res = runReader(
-            m.title,
-            m.sections,
-            ask = { payload, steps ->
-                val last = steps.lastOrNull()
-                val r = runAI("read", payload, if (last != null) "研读助手${last.action}了，在想下一步" else "研读助手正在看大纲")
-                r?.let { readActionOf(it.result["data"]) }
-            },
-            onStep = { steps -> ui { it.copy(reading = steps) } },
-        ) ?: return
-        val done = m.copy(map = res.first, steps = res.second)
-        materialStore.save(done)
-        ui { if (it.material?.id == m.id) it.copy(material = done) else it }
-        loadMaterials()
-    }
-
     suspend fun openMaterial(id: String) {
         val m = materialStore.get(id) ?: return toast("找不到这份材料，它可能已经被删除。")
-        ui { it.copy(material = m, reading = m.steps) }
+        ui { it.copy(material = m) }
         go("material")
     }
 
@@ -1387,13 +1378,39 @@ class Learning(
         loadMaterials()
     }
 
-    /** 从地图上的一个技术点开始讨论：带上它的原文节选去准备，准备好就开始。 */
-    suspend fun startFromPoint(point: MapPoint, mode: String) {
+    /**
+     * 围绕当前的材料开始讨论（#166）：带上目录和开头几节去准备，AI 从材料里定出讨论题、核心概念和要点，准备好就开始。
+     * 讨论里每次请求 AI 时，再按话题换成最相关的几节（withMaterial）。
+     */
+    suspend fun discussMaterial(mode: String) {
         val m = state.ui.material ?: return
         if (state.ui.busy != null) return
-        val material = excerptFor(m.id, m.map?.title?.ifEmpty { null } ?: m.title, m.sections, point)
-        update { it.copy(config = it.config.copy(concept = point.name, mode = mode), ui = it.ui.copy(context = null)) }
+        val material = SessionMaterial(m.id, m.title, startContext(m.sections))
+        // 学习者没写概念：先用材料标题占位，AI 准备时会定出这次讨论的核心概念
+        update { it.copy(config = it.config.copy(concept = m.title, mode = mode), ui = it.ui.copy(context = null)) }
         prepare(null, null, "start", material)
+    }
+
+    /** 讨论页的“原文”：把这场讨论的材料读进来，打开面板（材料删了就只显示讨论开始时存下的那份）。 */
+    suspend fun openMaterialSheet() {
+        val id = session?.material?.id ?: return
+        val m = state.ui.material?.takeIf { it.id == id } ?: materialStore.get(id)
+        ui { it.copy(material = m ?: it.material, sheet = "material") }
+    }
+
+    // 围绕材料的讨论（#166）：每次请求 AI 前，按讨论题和最近的发言换成材料里最相关的几节。
+    // 完整的材料在这台设备的文件里，读一次留在内存里；找不到（被删了）就用讨论开始时存下的那份
+    private var cachedMaterial: Material? = null
+
+    private suspend fun withMaterial(payload: JsonObject): JsonObject {
+        val snap = payload["session"] as? JsonObject ?: return payload
+        val shown = snap["material"] as? JsonObject ?: return payload
+        val id = session?.material?.id ?: return payload
+        val m = cachedMaterial?.takeIf { it.id == id } ?: materialStore.get(id) ?: return payload
+        cachedMaterial = m
+        val excerpt = materialContext(m.sections, contextQuery(snap))
+        val material = JsonObject(shown + ("excerpt" to kotlinx.serialization.json.JsonPrimitive(excerpt)))
+        return JsonObject(payload + ("session" to JsonObject(snap + ("material" to material))))
     }
 
     fun teachBack(note: Note) {

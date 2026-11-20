@@ -42,6 +42,9 @@ export interface Note {
   terms: TermCard[];
   sources: NoteSource[];
   context?: string; // 讨论时交代的背景，再讨论一次时沿用
+  // 材料笔记（#166）：一篇材料一篇，以材料标题命名，汇集围绕它的每次讨论；没有 kind 的是概念笔记
+  kind?: 'material';
+  materialId?: string;
   created: number;
   updated: number;
 }
@@ -86,6 +89,32 @@ export interface MergeFrom {
   context?: string;
   terms?: TermCard[];
   material?: string;
+}
+
+/** 这篇是不是材料笔记（#166）。 */
+export const isMaterialNote = (n: Note) => n.kind === 'material';
+
+/** 这篇概念笔记是不是讲 concept 的（材料笔记不算）。 */
+export const isNoteFor = (n: Note, concept: string) =>
+  !isMaterialNote(n) && sameConcept(n.concept, concept);
+
+/**
+ * 把一次讨论的复盘合并进材料笔记（#166）：和概念笔记同样的规则，但“一句话”和“什么时候想到它”不用这次的
+ * （那是讲核心概念的，不是讲材料的），这次讨论的核心概念记进“相关概念”。
+ */
+export function mergeIntoMaterial(
+  note: Note,
+  r: Review,
+  from: MergeFrom,
+  materialId: string,
+): Note {
+  const merged = mergeReview(note, { ...r, summary: '', useWhen: '' }, from);
+  return {
+    ...merged,
+    kind: 'material',
+    materialId,
+    related: mergeList(merged.related, [from.concept], x => x, NOTE_LIMITS.related),
+  };
 }
 
 /** 一篇空笔记。 */
@@ -266,7 +295,10 @@ export function noteMarkdown(n: Note, frontmatter = true): string {
     if (n.useWhen) out.push(`description: ${yaml(n.useWhen)}`);
     out.push('---', '');
   }
-  out.push(`# ${n.concept}`, '');
+  // 材料笔记（#166）：标题加书名号，写明是材料笔记
+  if (isMaterialNote(n))
+    out.push(`# 《${n.concept}》`, '', '材料笔记：围绕这篇材料的讨论都沉淀在这里。', '');
+  else out.push(`# ${n.concept}`, '');
   if (n.summary) out.push(n.summary, '');
   if (n.useWhen) out.push(`**什么时候想到它**：${n.useWhen}`, '');
   const section = (title: string, lines: string[]) => {

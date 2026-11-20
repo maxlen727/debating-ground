@@ -1,12 +1,8 @@
 package debating.ground.app.ai
 
 import debating.ground.app.data.ChatMessage
-import debating.ground.app.data.MapPoint
-import debating.ground.app.data.MaterialMap
 import debating.ground.app.data.Reflection
-import debating.ground.app.data.SPACE_CLASS
 import debating.ground.app.data.Session
-import debating.ground.app.data.SibianJson
 import debating.ground.app.data.Turn
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -283,42 +279,15 @@ private fun branchReply(s: Session, opening: Boolean): JsonObject {
 
 private fun JsonObject.str(key: String) = (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
 
-// 读材料（#144、#154）：第一步读开头几节，第二步按小节标题整理成地图（和网页版 demoRead 一样）
-private val READ_SKIP = Regex("^(开头|摘要|引言|前言|结论|总结|参考文献|abstract|introduction|conclusions?|references)", RegexOption.IGNORE_CASE)
-private val SECTION_NUMBER = Regex("^\\d+(\\.\\d+)*$SPACE_CLASS*")
-
-private fun demoRead(p: JsonObject): JsonObject {
-    val title = p.str("title").orEmpty()
-    val outline = (p["outline"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
-    val steps = (p["steps"] as? JsonArray).orEmpty()
-    fun n(o: JsonObject) = (o["n"] as? JsonPrimitive)?.content?.toIntOrNull() ?: 0
-    fun heading(o: JsonObject) = o.str("heading").orEmpty()
-    if (steps.isEmpty()) {
-        return buildJsonObject {
-            put("thought", "先看看开头几节，弄清楚这份材料在讲什么。")
-            put("action", "read")
-            put("sections", JsonArray(outline.take(3).map { JsonPrimitive(n(it)) }))
-        }
-    }
-    val why = "演示模式按小节标题整理；连接 API 后，研读助手会读原文，写出它在材料里起什么作用。"
-    val points = outline.filter { !READ_SKIP.containsMatchIn(heading(it).replace(SECTION_NUMBER, "")) }.take(5).map {
-        MapPoint(heading(it).replace(SECTION_NUMBER, "").replace(Regex("（\\d+）$"), "").take(16), why, listOf(n(it)), emptyList())
-    }.ifEmpty { listOf(MapPoint(title.take(16), "演示模式按标题整理。", listOf(1), emptyList())) }
-    return buildJsonObject {
-        put("thought", "大致读完了，按材料的结构整理成技术点。")
-        put("action", "finish")
-        put("map", SibianJson.encodeToJsonElement(MaterialMap.serializer(), MaterialMap(title, "演示模式：按小节整理的地图。连接 API 后，研读助手会读原文，概括材料在讲什么。", points)))
-    }
-}
-
 /**
  * 跑一次演示。[purpose] 是用途（prepare、discuss、debate……），[payload] 只用到其中几个字段，
  * [session] 是当前的讨论（准备时为 null 也可以）。
  */
 fun demoRun(purpose: String, payload: JsonObject, session: Session?): DemoOutcome {
-    if (purpose == "read") return DemoOutcome(JsonObject(mapOf("data" to demoRead(payload))), session?.demoStep)
     if (purpose == "prepare") {
-        val concept = payload.str("concept").orEmpty()
+        // 围绕材料讨论（#166）：演示模式不会真的读材料，示例文章讲的是机会成本，就按机会成本来
+        val material = payload["material"] as? JsonObject
+        val concept = if (material != null && material.str("excerpt").orEmpty().contains("机会成本")) "机会成本" else payload.str("concept").orEmpty()
         val mode = payload.str("mode") ?: "socratic"
         val prep = if (concept == "机会成本") costPrep(mode) else genericPrep(concept, mode)
         if (mode == "debate") {

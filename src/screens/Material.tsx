@@ -1,17 +1,16 @@
-// 读材料（#144）：贴一篇论文或文章，研读助手读完整理出技术点地图，挑一个点开始讨论。
+// 读材料（#144、#166）：贴一篇论文或文章（或者链接、PDF），选追问或圆桌，直接围绕它讨论。
 // 只负责展示，操作都在 actions 里。完整的材料只存在这台设备上。
 import { useEffect, useRef, useState } from 'react';
-import type { MapPoint, ModeId } from '../../shared/types.ts';
+import type { ModeId } from '../../shared/types.ts';
 import {
   addMaterial,
+  discussMaterial,
   fetchLink,
   importPdf,
   loadMaterials,
   openMaterial,
   openMaterials,
-  readMaterial,
   removeMaterial,
-  startFromPoint,
 } from '../actions.ts';
 import { CaretField } from '../components/SmoothCaret.tsx';
 import { BusyStrip, ErrorBanner, Icon, TopBar } from '../components/ui.tsx';
@@ -20,6 +19,34 @@ import type { Material } from '../lib/materials.ts';
 import { useApp } from '../store.ts';
 
 const date = (t: number) => new Date(t).toLocaleDateString('zh-CN');
+
+// 围绕材料怎么讨论：追问（一位 AI 一路追问）或圆桌（几位 AI 各有角度）
+function ModePick({
+  mode,
+  onChange,
+  busy,
+}: {
+  mode: ModeId;
+  onChange: (m: ModeId) => void;
+  busy: boolean;
+}) {
+  return (
+    <div className="segmented" role="radiogroup" aria-label="怎么讨论">
+      {(['socratic', 'roundtable'] as const).map(id => (
+        <button
+          key={id}
+          role="radio"
+          aria-checked={mode === id}
+          className={mode === id ? 'on' : ''}
+          disabled={busy}
+          onClick={() => onChange(id)}
+        >
+          {id === 'socratic' ? '追问' : '圆桌'}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export function MaterialScreen() {
   const { ui } = useApp();
@@ -35,6 +62,9 @@ function Paste() {
   const [title, setTitle] = useState('');
   const [text, setText] = useState('');
   const [link, setLink] = useState('');
+  const [mode, setMode] = useState<ModeId>('socratic');
+  // 材料从哪来：读到的链接，或者 PDF 的文件名（存进材料，以后知道它出自哪里）
+  const [source, setSource] = useState('');
   // 读链接的结果说明：拿到了什么、是不是全文
   const [note, setNote] = useState<{ text: string; warn: boolean } | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -45,8 +75,9 @@ function Paste() {
     if (!r) return;
     setTitle(r.title);
     setText(r.text);
+    setSource(file.name);
     setNote({
-      text: `从 ${r.pages} 页 PDF 里读到了 ${r.text.replace(/\s+/g, '').length} 字。${r.note}核对一下，没问题就开始研读。`,
+      text: `从 ${r.pages} 页 PDF 里读到了 ${r.text.replace(/\s+/g, '').length} 字。${r.note}核对一下，没问题就开始讨论。`,
       warn: false,
     });
   };
@@ -55,9 +86,10 @@ function Paste() {
     if (!r) return;
     setTitle(r.title.slice(0, 80));
     setText(r.text);
+    setSource(r.url);
     const chars = r.text.replace(/\s+/g, '').length;
     setNote({
-      text: `读到了 ${chars} 字。${r.note || '核对一下，没问题就开始研读。'}`,
+      text: `读到了 ${chars} 字。${r.note || '核对一下，没问题就开始讨论。'}`,
       warn: !r.complete,
     });
   };
@@ -124,7 +156,7 @@ function Paste() {
               rows={10}
               value={text}
               aria-label="材料正文"
-              placeholder="把论文或文章的正文贴在这里。带着小节标题更好，研读助手会按节来读。"
+              placeholder="把论文或文章的正文贴在这里。带着小节标题更好，讨论时 AI 会按节找到相关的原文。"
               disabled={busy}
               onChange={e => setText(e.target.value)}
             />
@@ -143,8 +175,8 @@ function Paste() {
             </button>
           </div>
           <p className="fineprint">
-            材料只保存在这台设备上。研读时，只把研读助手要读的几节发给
-            AI；讨论时，只带这个点的原文节选。读链接时，由本机服务或你的后端去取这个网页，只读不改。PDF
+            材料只保存在这台设备上。讨论时只把目录和与眼下话题最相关的几节发给
+            AI，不会每次都发整篇。读链接时，由本机服务或你的后端去取这个网页，只读不改。PDF
             只在这台设备上解析，不上传。
           </p>
         </section>
@@ -158,7 +190,7 @@ function Paste() {
                     <b>{m.title}</b>
                     <small className="muted">
                       {date(m.created)}
-                      {m.points ? ` · ${m.points} 个技术点` : ' · 还没读完'}
+                      {` · ${m.sections} 节`}
                     </small>
                   </button>
                   <button
@@ -178,83 +210,37 @@ function Paste() {
       <div className="dock">
         <ErrorBanner />
         <BusyStrip />
+        <ModePick mode={mode} onChange={setMode} busy={busy} />
         <button
           className="primary block"
           disabled={busy || !text.trim()}
-          onClick={() => void addMaterial(title, text)}
+          onClick={() => void addMaterial(title, text, mode, source || undefined)}
         >
-          开始研读
+          围绕这篇材料开始讨论
         </button>
       </div>
     </div>
   );
 }
 
-// 读一份材料：研读助手每一步在做什么、整理出的技术点地图、原文
+// 读过的一份材料：从哪来、原文，继续围绕它讨论
 function Reading({ m }: { m: Material }) {
   const { ui } = useApp();
   const busy = !!ui.busy;
-  const steps = ui.reading ?? m.steps ?? [];
-  const map = m.map;
-  const [picked, setPicked] = useState<MapPoint | null>(null);
   const [mode, setMode] = useState<ModeId>('socratic');
-  const point = picked ?? map?.points[0] ?? null;
   return (
     <div className="screen material">
       <TopBar
-        title={map?.title || m.title}
-        sub={`${m.sections.length} 节${map ? ` · ${map.points.length} 个技术点` : ''}`}
+        title={m.title}
+        sub={`${m.sections.length} 节 · ${date(m.created)}`}
         back={openMaterials}
       />
       <div className="stack pad">
-        {map?.summary && <p className="knowledge material-summary">{map.summary}</p>}
-        {steps.length > 0 && (
-          <details className="panel trace" open={!map}>
-            <summary className="section-label">研读过程 · {steps.length} 步</summary>
-            <ol>
-              {steps.map((st, i) => (
-                <li key={i}>
-                  <b>{st.action}</b>
-                  {st.thought && <span className="muted">{st.thought}</span>}
-                </li>
-              ))}
-            </ol>
-          </details>
-        )}
-        {!map && !busy && (
-          <section className="panel center stack-sm">
-            <p>研读助手还没整理出技术点。</p>
-            <button className="primary" onClick={() => void readMaterial()}>
-              让研读助手读一遍
-            </button>
-          </section>
-        )}
-        {map && (
-          <section>
-            <h3 className="section-label">技术点地图 · 挑一个开始</h3>
-            <ul className="map-points">
-              {map.points.map(p => (
-                <li key={p.name}>
-                  <button
-                    className={'map-point' + (point?.name === p.name ? ' on' : '')}
-                    aria-pressed={point?.name === p.name}
-                    disabled={busy}
-                    onClick={() => setPicked(p)}
-                  >
-                    <b className="knowledge">{p.name}</b>
-                    {p.why && <span>{p.why}</span>}
-                    <small className="muted">
-                      {p.sections.length ? p.sections.map(n => `§${n}`).join(' ') : ''}
-                      {p.needs.length
-                        ? `${p.sections.length ? ' · ' : ''}要先懂：${p.needs.join('、')}`
-                        : ''}
-                    </small>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
+        {m.source && <p className="fineprint material-source">出自：{m.source}</p>}
+        <p className="muted">
+          AI
+          会看着这篇材料的目录，每轮翻到和你们正在聊的最相关的几节。讨论完的复盘会沉淀进核心概念的笔记，也会沉淀进这篇材料的笔记。
+        </p>
         <details className="panel">
           <summary className="section-label">原文 · {m.sections.length} 节</summary>
           <div className="material-sections">
@@ -269,39 +255,18 @@ function Reading({ m }: { m: Material }) {
           </div>
         </details>
       </div>
-      {map && point && (
-        <div className="dock">
-          <ErrorBanner />
-          <BusyStrip />
-          <div className="segmented" role="radiogroup" aria-label="怎么讨论">
-            {(['socratic', 'roundtable'] as const).map(id => (
-              <button
-                key={id}
-                role="radio"
-                aria-checked={mode === id}
-                className={mode === id ? 'on' : ''}
-                disabled={busy}
-                onClick={() => setMode(id)}
-              >
-                {id === 'socratic' ? '追问' : '圆桌'}
-              </button>
-            ))}
-          </div>
-          <button
-            className="primary block"
-            disabled={busy}
-            onClick={() => void startFromPoint(point, mode)}
-          >
-            从「{point.name}」开始讨论
-          </button>
-        </div>
-      )}
-      {!map && (
-        <div className="dock">
-          <ErrorBanner />
-          <BusyStrip />
-        </div>
-      )}
+      <div className="dock">
+        <ErrorBanner />
+        <BusyStrip />
+        <ModePick mode={mode} onChange={setMode} busy={busy} />
+        <button
+          className="primary block"
+          disabled={busy}
+          onClick={() => void discussMaterial(mode)}
+        >
+          围绕这篇材料讨论
+        </button>
+      </div>
     </div>
   );
 }

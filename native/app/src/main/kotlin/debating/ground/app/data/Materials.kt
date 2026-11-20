@@ -7,22 +7,22 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 // 读材料（#144、#154）：完整的材料只存在这台设备上（App 的私有文件，一份一个文件），
-// 不进存档、导出和讨论记录；讨论里只带一个技术点的原文节选。和网页版 src/lib/materials.ts（IndexedDB）对应。
+// 不进存档、导出和讨论记录；讨论里只带目录和与眼下话题相关的几节。和网页版 src/lib/materials.ts（IndexedDB）对应。
 
 @Serializable
 data class Material(
     val id: String,
     val title: String,
     val sections: List<MaterialSection>,
-    val map: MaterialMap? = null,
-    val steps: List<ReadStep>? = null,
     val created: Long = 0,
+    /** 从哪里来：链接地址，或者 PDF 的文件名（#166）。 */
+    val source: String? = null,
 )
 
 /** 材料列表里的一行：不带原文。 */
-data class MaterialMeta(val id: String, val title: String, val created: Long, val points: Int)
+data class MaterialMeta(val id: String, val title: String, val created: Long, val sections: Int)
 
-fun Material.meta() = MaterialMeta(id, title, created, map?.points?.size ?: 0)
+fun Material.meta() = MaterialMeta(id, title, created, sections.size)
 
 interface MaterialStore {
     suspend fun save(m: Material)

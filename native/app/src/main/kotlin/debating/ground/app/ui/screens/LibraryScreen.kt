@@ -53,6 +53,8 @@ import debating.ground.app.AppModel
 import debating.ground.app.data.MODES
 import debating.ground.app.data.Note
 import debating.ground.app.data.SEARCH_MIN_CARDS
+import debating.ground.app.data.isMaterialNote
+import debating.ground.app.data.isNoteFor
 import debating.ground.app.data.libraryMarkdown
 import debating.ground.app.data.noteMarkdown
 import debating.ground.app.data.sameConcept
@@ -98,7 +100,9 @@ fun LibraryScreen(st: AppState, model: AppModel) {
     val searching = query.isNotBlank()
     val list = if (searching) searchCards(library, query) else library
     Column(Modifier.fillMaxSize()) {
-        TopBar("知识库", "${library.size} 个概念 · 只保存在这台设备") {
+        // 有几篇概念笔记、几篇材料笔记（#166）
+        val materials = library.count { it.isMaterialNote() }
+        TopBar("知识库", "${library.size - materials} 个概念" + (if (materials > 0) " · $materials 篇材料" else "") + " · 只保存在这台设备") {
             if (library.isNotEmpty()) ExportButton("导出知识库") { shareMarkdown(context, "思辨场知识库", libraryMarkdown(library)) }
         }
         Column(
@@ -197,6 +201,7 @@ private fun date(t: Long) = dateFormat.format(Date(t))
 private fun NoteItem(n: Note, onOpen: () -> Unit) {
     val t = LocalTokens.current
     val c = n.tally()
+    val material = n.isMaterialNote()
     val weak = c.partial + c.missing
     Column(
         Modifier.fillMaxWidth()
@@ -208,12 +213,19 @@ private fun NoteItem(n: Note, onOpen: () -> Unit) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                n.concept,
+                if (material) "《${n.concept}》" else n.concept,
                 style = TextStyles.body.copy(fontFamily = Serif, fontWeight = FontWeight.Bold, fontSize = 17.sp),
                 color = t.ink.color(),
                 modifier = Modifier.weight(1f),
             )
-            if (weak > 0) {
+            if (material) {
+                Text(
+                    "材料",
+                    style = TextStyles.small.copy(fontSize = 12.sp, fontWeight = FontWeight.SemiBold),
+                    color = t.cFg.color(),
+                    modifier = Modifier.background(t.cBg.color(), RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 2.dp),
+                )
+            } else if (weak > 0) {
                 Text(
                     "$weak 处还模糊",
                     style = TextStyles.small.copy(fontSize = 12.sp, fontWeight = FontWeight.SemiBold),
@@ -222,10 +234,16 @@ private fun NoteItem(n: Note, onOpen: () -> Unit) {
                 )
             }
         }
+        // 材料笔记的一句话：讨论过它里面的哪些概念（#166）
+        val gist = if (material) {
+            if (n.related.isNotEmpty()) "讨论过：" + n.related.joinToString("、") else "围绕这篇材料的讨论都会沉淀在这里。"
+        } else {
+            n.summary
+        }
         Text(
-            n.summary.ifEmpty { "还没有用自己的话说清它，再讨论一次就能补上。" },
+            gist.ifEmpty { "还没有用自己的话说清它，再讨论一次就能补上。" },
             style = TextStyles.small.copy(fontFamily = if (n.summary.isNotEmpty()) Serif else null, lineHeight = 1.6.em),
-            color = if (n.summary.isNotEmpty()) t.ink.color() else t.muted.color(),
+            color = if (gist.isNotEmpty()) t.ink.color() else t.muted.color(),
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
@@ -324,11 +342,12 @@ fun CardScreen(st: AppState, model: AppModel) {
         return
     }
     val c = n.tally()
+    val material = n.isMaterialNote()
     val busy = st.ui.busy != null
 
     // 相关概念：知识库里有就打开那篇，还没有就去学习页讨论它
     fun openRelated(concept: String) {
-        val other = st.library.find { sameConcept(it.concept, concept) }
+        val other = st.library.find { it.isNoteFor(concept) }
         if (other != null) {
             l.openCard(other.id)
         } else {
@@ -339,19 +358,34 @@ fun CardScreen(st: AppState, model: AppModel) {
     WithFloatingDock(dock = {
         ErrorBanner(st.ui.error) { l.clearError() }
         BusyStrip(st.ui.busy) { l.cancelAI() }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            // 讲给 AI 听：最能检验是不是真懂；讲完的复盘合并回这篇笔记（#142）
-            if (n.points.size >= 2) SecondaryButton("讲给 AI 听", { l.teachBack(n) }, enabled = !busy)
+        if (material) {
+            // 材料笔记：回到这篇材料，接着围绕它讨论（材料只在这台设备上，删了就打不开）
             PrimaryButton(
-                if (c.partial + c.missing > 0) "从模糊处再讨论" else "再讨论一次",
-                { model.run { discussAgain(n) } },
-                Modifier.weight(1f),
-                enabled = !busy,
+                "回到这篇材料接着讨论",
+                { n.materialId?.let { id -> model.run { openMaterial(id) } } },
+                Modifier.fillMaxWidth(),
+                enabled =
+                !busy && n.materialId != null,
             )
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // 讲给 AI 听：最能检验是不是真懂；讲完的复盘合并回这篇笔记（#142）
+                if (n.points.size >= 2) SecondaryButton("讲给 AI 听", { l.teachBack(n) }, enabled = !busy)
+                PrimaryButton(
+                    if (c.partial + c.missing > 0) "从模糊处再讨论" else "再讨论一次",
+                    { model.run { discussAgain(n) } },
+                    Modifier.weight(1f),
+                    enabled = !busy,
+                )
+            }
         }
     }) { bottom ->
         Column(Modifier.fillMaxSize()) {
-            TopBar(n.concept, "${n.sources.size} 次讨论 · 掌握 ${c.mastered}/${n.points.size}", onBack = { l.go("library") }) {
+            TopBar(
+                if (material) "《${n.concept}》" else n.concept,
+                (if (material) "材料笔记 · " else "") + "${n.sources.size} 次讨论 · 掌握 ${c.mastered}/${n.points.size}",
+                onBack = { l.go("library") },
+            ) {
                 ExportButton("导出这篇笔记") { shareMarkdown(context, n.concept, noteMarkdown(n)) }
             }
             Column(
@@ -359,7 +393,13 @@ fun CardScreen(st: AppState, model: AppModel) {
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Column(Modifier.padding(horizontal = 2.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (n.summary.isNotEmpty()) {
+                    if (material) {
+                        Text(
+                            "围绕这篇材料的每次讨论都沉淀在这里：从它里面弄懂的要点、例子和容易错的地方。讨论过的核心概念各有一篇自己的笔记，在下面的“相关概念”里。",
+                            style = TextStyles.body,
+                            color = t.muted.color(),
+                        )
+                    } else if (n.summary.isNotEmpty()) {
                         Text(n.summary, style = DisplaySm, color = t.ink.color())
                     } else {
                         Text("还没有用自己的话说清它。再讨论一次，复盘会补上。", style = TextStyles.body, color = t.muted.color())
@@ -381,7 +421,7 @@ fun CardScreen(st: AppState, model: AppModel) {
                         SectionLabel("相关概念")
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             for (r in n.related) {
-                                val has = st.library.any { sameConcept(it.concept, r) }
+                                val has = st.library.any { it.isNoteFor(r) }
                                 Chip(if (has) r else "$r · 去讨论", has, { openRelated(r) })
                             }
                         }

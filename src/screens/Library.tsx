@@ -1,10 +1,10 @@
 import type { CSSProperties } from 'react';
 import { useState } from 'react';
 import { MODES } from '../../shared/modes.ts';
-import { discussAgain, openCard, selfCheck, teachBack } from '../actions.ts';
+import { discussAgain, openCard, openMaterial, selfCheck, teachBack } from '../actions.ts';
 import { BusyStrip, Empty, ErrorBanner, Icon, TopBar } from '../components/ui.tsx';
 import { exportLibrary, exportNote } from '../lib/exporter.ts';
-import { sameConcept, tally, type Note } from '../lib/notes.ts';
+import { isMaterialNote, isNoteFor, sameConcept, tally, type Note } from '../lib/notes.ts';
 import { SEARCH_MIN_CARDS, searchCards } from '../lib/search.ts';
 import { go, update, useApp } from '../store.ts';
 import { Bullets, PointList } from './Review.tsx';
@@ -12,6 +12,16 @@ import { Bullets, PointList } from './Review.tsx';
 // 知识库：一个概念一篇笔记，每次讨论完把理解沉淀进去（#140）。只保存在这台设备上。
 
 const date = (t: number) => new Date(t).toLocaleDateString('zh-CN');
+
+// 知识库里有几篇概念笔记、几篇材料笔记（#166）
+const countLine = (library: Note[]) => {
+  const m = library.filter(isMaterialNote).length;
+  return `${library.length - m} 个概念` + (m ? ` · ${m} 篇材料` : '');
+};
+
+// 材料笔记的一句话：讨论过它里面的哪些概念（#166）
+const materialGist = (n: Note) =>
+  n.related.length ? `讨论过：${n.related.join('、')}` : '围绕这篇材料的讨论都会沉淀在这里。';
 
 // 每个要点一格：掌握是绿的，模糊是黄的，没讲到是灰的
 function Meter({ n }: { n: Note }) {
@@ -38,7 +48,7 @@ export function Library() {
     <div className="screen library">
       <TopBar
         title="知识库"
-        sub={`${library.length} 个概念 · 只保存在这台设备`}
+        sub={`${countLine(library)} · 只保存在这台设备`}
         right={
           library.length > 0 && (
             <button
@@ -114,11 +124,19 @@ export function Library() {
                         onClick={() => openCard(n.id)}
                       >
                         <span className="row between">
-                          <b>{n.concept}</b>
-                          {weak > 0 && <small className="weak-tag">{weak} 处还模糊</small>}
+                          <b>{isMaterialNote(n) ? `《${n.concept}》` : n.concept}</b>
+                          {isMaterialNote(n) ? (
+                            <small className="kind-tag">材料</small>
+                          ) : (
+                            weak > 0 && <small className="weak-tag">{weak} 处还模糊</small>
+                          )}
                         </span>
-                        <span className={'kline' + (n.summary ? '' : ' muted')}>
-                          {n.summary || '还没有用自己的话说清它，再讨论一次就能补上。'}
+                        <span
+                          className={'kline' + (n.summary || isMaterialNote(n) ? '' : ' muted')}
+                        >
+                          {isMaterialNote(n)
+                            ? materialGist(n)
+                            : n.summary || '还没有用自己的话说清它，再讨论一次就能补上。'}
                         </span>
                         <Meter n={n} />
                         <small className="muted">
@@ -201,8 +219,9 @@ export function CardView() {
       </div>
     );
   const c = tally(n);
+  const material = isMaterialNote(n);
   const open = (concept: string) => {
-    const other = library.find(x => sameConcept(x.concept, concept));
+    const other = library.find(x => isNoteFor(x, concept));
     if (other) return openCard(other.id);
     // 知识库里还没有：去学习页讨论它
     update(st => {
@@ -214,8 +233,8 @@ export function CardView() {
   return (
     <div className="screen card-view" style={{ '--vtn': 'card-' + n.id } as CSSProperties}>
       <TopBar
-        title={n.concept}
-        sub={`${n.sources.length} 次讨论 · 掌握 ${c.mastered}/${n.points.length}`}
+        title={material ? `《${n.concept}》` : n.concept}
+        sub={`${material ? '材料笔记 · ' : ''}${n.sources.length} 次讨论 · 掌握 ${c.mastered}/${n.points.length}`}
         back="library"
         right={
           <button className="icon-btn" aria-label="导出这篇笔记" onClick={() => exportNote(n)}>
@@ -225,11 +244,17 @@ export function CardView() {
       />
       <div className="stack pad">
         <section className="note-gist">
-          <p className="display-sm">
-            {n.summary || (
-              <span className="muted">还没有用自己的话说清它。再讨论一次，复盘会补上。</span>
-            )}
-          </p>
+          {material ? (
+            <p className="muted">
+              围绕这篇材料的每次讨论都沉淀在这里：从它里面弄懂的要点、例子和容易错的地方。讨论过的核心概念各有一篇自己的笔记，在下面的“相关概念”里。
+            </p>
+          ) : (
+            <p className="display-sm">
+              {n.summary || (
+                <span className="muted">还没有用自己的话说清它。再讨论一次，复盘会补上。</span>
+              )}
+            </p>
+          )}
           {n.useWhen && (
             <p className="use-when">
               <b>什么时候想到它</b>
@@ -275,7 +300,7 @@ export function CardView() {
             <h3 className="section-label">相关概念</h3>
             <div className="related">
               {n.related.map(r => {
-                const has = library.some(x => sameConcept(x.concept, r));
+                const has = library.some(x => isNoteFor(x, r));
                 return (
                   <button key={r} className={'chip' + (has ? ' on' : '')} onClick={() => open(r)}>
                     {r}
@@ -326,18 +351,29 @@ export function CardView() {
       <div className="dock">
         <ErrorBanner />
         <BusyStrip />
-        <div className="row">
-          {/* 讲给 AI 听：最能检验是不是真懂；讲完的复盘合并回这篇笔记（#142） */}
-          {n.points.length >= 2 && (
-            <button className="secondary" disabled={!!ui.busy} onClick={() => teachBack(n)}>
-              <Icon name="swap" size={16} />
-              讲给 AI 听
-            </button>
-          )}
-          <button className="primary grow" disabled={!!ui.busy} onClick={() => discussAgain(n)}>
-            {c.partial + c.missing > 0 ? '从模糊处再讨论' : '再讨论一次'}
+        {material ? (
+          // 材料笔记：回到这篇材料，接着围绕它讨论（材料只在这台设备上，删了就打不开）
+          <button
+            className="primary block"
+            disabled={!!ui.busy || !n.materialId}
+            onClick={() => n.materialId && void openMaterial(n.materialId)}
+          >
+            回到这篇材料接着讨论
           </button>
-        </div>
+        ) : (
+          <div className="row">
+            {/* 讲给 AI 听：最能检验是不是真懂；讲完的复盘合并回这篇笔记（#142） */}
+            {n.points.length >= 2 && (
+              <button className="secondary" disabled={!!ui.busy} onClick={() => teachBack(n)}>
+                <Icon name="swap" size={16} />
+                讲给 AI 听
+              </button>
+            )}
+            <button className="primary grow" disabled={!!ui.busy} onClick={() => discussAgain(n)}>
+              {c.partial + c.missing > 0 ? '从模糊处再讨论' : '再讨论一次'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

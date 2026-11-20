@@ -373,7 +373,7 @@ class ScreenshotTest {
         awaitState { it.ui.screen == "material" }
         compose.onNodeWithText("用示例文章试试").performClick()
         compose.waitForIdle()
-        compose.onNodeWithText("开始研读").assertIsDisplayed()
+        compose.onNodeWithText("围绕这篇材料开始讨论").assertIsDisplayed()
         save("phone-material-paste")
     }
 
@@ -389,34 +389,39 @@ class ScreenshotTest {
         save("phone-material-link")
     }
 
-    // 研读完：技术点地图和底部的“从某个点开始讨论”；深色
+    // 读过的一份材料：出处、原文，底部选追问或圆桌接着讨论（#166）；深色
     @Test
-    fun materialMapDark() {
+    fun materialReadingDark() {
         compose.setContent { Frame(dark = true, width = 390, height = 844) }
         model.run {
             openMaterials()
-            addMaterial(debating.ground.app.ai.SAMPLE_MATERIAL_TITLE, debating.ground.app.ai.SAMPLE_MATERIAL_TEXT)
+            addMaterial(
+                debating.ground.app.ai.SAMPLE_MATERIAL_TITLE,
+                debating.ground.app.ai.SAMPLE_MATERIAL_TEXT,
+                "socratic",
+                "https://example.com/opportunity-cost",
+            )
         }
-        awaitState { it.ui.busy == null && it.ui.material?.map != null }
-        compose.onNodeWithText("技术点地图 · 挑一个开始").assertExists()
-        compose.onNodeWithText("从「稀缺性」开始讨论").assertExists()
-        save("phone-material-map-dark")
+        awaitState { it.ui.busy == null && it.ui.screen == "session" }
+        val id = model.state.value.ui.material!!.id
+        model.run { openMaterial(id) }
+        awaitState { it.ui.screen == "material" }
+        compose.onNodeWithText("围绕这篇材料讨论").assertExists()
+        save("phone-material-reading-dark")
     }
 
-    // 从技术点开始的讨论：工具栏里的“原文”，打开是这个点的原文节选
+    // 围绕材料的讨论：贴好材料直接开始，工具栏里的“原文”打开整篇材料
     @Test
-    fun materialExcerptInSession() {
+    fun materialDiscussion() {
         compose.setContent { Frame(dark = false, width = 390, height = 844) }
         model.run {
             openMaterials()
-            addMaterial(debating.ground.app.ai.SAMPLE_MATERIAL_TITLE, debating.ground.app.ai.SAMPLE_MATERIAL_TEXT)
+            addMaterial(debating.ground.app.ai.SAMPLE_MATERIAL_TITLE, debating.ground.app.ai.SAMPLE_MATERIAL_TEXT, "socratic")
         }
-        awaitState { it.ui.busy == null && it.ui.material?.map != null }
-        model.run { startFromPoint(model.state.value.ui.material!!.map!!.points[1], "socratic") }
         awaitState { it.ui.busy == null && it.ui.screen == "session" && it.session?.material != null }
         compose.onNodeWithText("原文").performClick()
-        compose.waitForIdle()
-        compose.onNodeWithText("关于「机会成本」的原文节选，讨论时 AI 也看着这几段。").assertExists()
+        awaitState { it.ui.sheet == "material" }
+        compose.onNodeWithText("讨论时 AI 看着这篇材料的目录，每轮翻到和你们正在聊的最相关的几节。").assertExists()
         save("phone-material-excerpt")
     }
 

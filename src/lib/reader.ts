@@ -1,24 +1,15 @@
-// 读材料（#144）：把材料切成节、研读助手的工具（读某几节、搜一个词）和它的循环。
-// 循环学 mini-swe-agent：每一步模型只给一个动作，这里执行后把结果接回去，直到它给出“技术点地图”或者到步数上限。
-// 循环在前端跑：材料只存在学习者的设备上；后端每一步只做一次模型调用（用途 read），API Key 照旧只在后端。
-// 工具都是只读的，原文当资料不当指令（提示词里写明了）。原生版 data/Reader.kt 是同一套规则。
-import type {
-  MapPoint,
-  MaterialExcerpt,
-  MaterialMap,
-  MaterialSection,
-  ReadAction,
-  ReadStep,
-} from '../../shared/types.ts';
+// 读材料（#144、#166）：把材料切成节，讨论时按话题挑出最相关的几节交给 AI。
+// 学习者贴一篇材料就直接围绕它讨论：短材料整篇给 AI；长材料每轮给目录，加上和眼下话题最相关的几节（按词的重合度挑，
+// 固定规则，不额外调用模型），总长有上限。原生版 data/Reader.kt 是同一套规则，用这里生成的标准答案比对。
+import type { MaterialSection } from '../../shared/types.ts';
 import { normalizeForSearch } from './search.ts';
 
 export const READER_LIMITS = {
   text: 300_000, // 整篇材料最多多少字
   sections: 80, // 最多切成几节
   section: 3000, // 一节太长就按段落再切
-  observation: 12_000, // 一步最多读回多少字
-  excerpt: 8000, // 讨论时带上的节选
-  steps: 8, // 研读助手最多走几步
+  excerpt: 10_000, // 每次带给 AI 的材料（目录加原文）最多多少字
+  outline: 2000, // 目录最多多少字
 } as const;
 
 /* ---------- 切节 ---------- */
@@ -102,9 +93,6 @@ export function splitMaterial(raw: string): MaterialSection[] {
   return out.slice(0, READER_LIMITS.sections).map((s, i) => ({ n: i + 1, ...s }));
 }
 
-export const outlineOf = (sections: MaterialSection[]) =>
-  sections.map(s => ({ n: s.n, heading: s.heading, chars: s.text.length }));
-
 /* ---------- 工具（只读） ---------- */
 
 const block = (s: MaterialSection) => `§${s.n} ${s.heading}\n${s.text}`;
@@ -113,7 +101,7 @@ const block = (s: MaterialSection) => `§${s.n} ${s.heading}\n${s.text}`;
 export function readSections(
   sections: MaterialSection[],
   ns: number[],
-  max: number = READER_LIMITS.observation,
+  max: number = READER_LIMITS.excerpt,
 ) {
   const picked = ns
     .map(n => sections.find(s => s.n === n))
@@ -128,95 +116,93 @@ export function readSections(
     .join('\n\n');
 }
 
-/** 在原文里搜一个词：最多 5 处，每处前后各带一些文字，标出在第几节。 */
-export function searchMaterial(sections: MaterialSection[], query: string) {
-  const q = normalizeForSearch(query);
-  if (!q) return '没有要搜的词。';
-  const hits: string[] = [];
+/* ---------- 讨论时带给 AI 的材料 ---------- */
+
+/** 目录：每节的编号和标题。 */
+export function outlineText(sections: MaterialSection[]): string {
+  let out = '目录：';
   for (const s of sections) {
-    const t = normalizeForSearch(s.text);
-    let from = 0;
-    while (hits.length < 5) {
-      const i = t.indexOf(q, from);
-      if (i < 0) break;
-      hits.push(`§${s.n} ${s.heading}：…${t.slice(Math.max(0, i - 80), i + q.length + 80)}…`);
-      from = i + q.length;
+    const line = `\n§${s.n} ${s.heading}`;
+    if (out.length + line.length > READER_LIMITS.outline) {
+      out += '\n……';
+      break;
     }
-    if (hits.length >= 5) break;
+    out += line;
   }
-  return hits.length ? hits.join('\n') : `原文里没有找到「${query}」。`;
+  return out;
 }
 
-/** 执行一个动作，得到这一步的记录（给人看的动作描述 + 给模型看的原文）。 */
-export function runTool(sections: MaterialSection[], a: ReadAction): ReadStep {
-  if (a.action === 'read')
-    return {
-      thought: a.thought,
-      action: `读第 ${a.sections.join('、')} 节`,
-      observation: readSections(sections, a.sections),
-    };
-  if (a.action === 'search')
-    return {
-      thought: a.thought,
-      action: `搜「${a.query}」`,
-      observation: searchMaterial(sections, a.query),
-    };
-  return { thought: a.thought, action: '整理成地图', observation: '' };
+// 拿来比较的词：中文按相邻两个字，英文和数字按整个词（三个字母以上）
+function terms(text: string): Set<string> {
+  const t = normalizeForSearch(text);
+  const out = new Set<string>();
+  for (const w of t.match(/[a-z0-9]{3,}/g) ?? []) out.add(w);
+  const han = t.replace(/[^\u3400-\u9fff]+/g, ' ');
+  for (const run of han.split(' '))
+    for (let i = 0; i + 1 < run.length; i++) out.add(run.slice(i, i + 2));
+  return out;
 }
 
-/* ---------- 讨论时带上的节选 ---------- */
-
-/** 一个技术点在材料里的原文节选：它所在的几节；没写在哪几节就搜它的名字。 */
-export function excerptFor(
-  title: string,
-  sections: MaterialSection[],
-  point: MapPoint,
-): MaterialExcerpt {
-  let ns = point.sections.filter(n => sections.some(s => s.n === n));
-  if (!ns.length) {
-    const q = normalizeForSearch(point.name);
-    ns = sections
-      .filter(s => normalizeForSearch(s.text).includes(q))
-      .slice(0, 2)
-      .map(s => s.n);
+/** 和 query 的相关程度：query 里的词在这一节里出现了几个（标题里出现算两个）。 */
+export function relevance(s: MaterialSection, query: Set<string>): number {
+  const body = normalizeForSearch(s.text);
+  const head = normalizeForSearch(s.heading);
+  let n = 0;
+  for (const w of query) {
+    if (head.includes(w)) n += 2;
+    else if (body.includes(w)) n += 1;
   }
-  if (!ns.length) ns = [sections[0]?.n ?? 1];
-  return {
-    title,
-    point: point.name,
-    excerpt: readSections(sections, ns.slice(0, 4), READER_LIMITS.excerpt),
-  };
+  return n;
 }
 
-/* ---------- 研读助手的循环 ---------- */
-
-export type Step = (payload: {
-  title: string;
-  outline: ReturnType<typeof outlineOf>;
-  steps: ReadStep[];
-  last?: boolean;
-}) => Promise<ReadAction | null>;
+// 整篇的长度（拼成“§节号 标题 + 正文”以后）
+const totalLength = (sections: MaterialSection[]) =>
+  sections.reduce((n, s) => n + s.heading.length + s.text.length + 8, 0);
 
 /**
- * 跑一遍研读助手：每一步问模型要一个动作，执行后记下来，直到它给出地图。
- * onStep 每走一步就通知一次（界面上显示它在做什么）。模型出错或被取消时返回 null。
+ * 讨论时带给 AI 的材料：放得下就整篇；放不下就是目录，加上和 query（讨论题、刚说的话）最相关的几节，
+ * 按原文顺序排。一节也不相关时给开头几节。
  */
-export async function runReader(
-  title: string,
-  sections: MaterialSection[],
-  ask: Step,
-  onStep: (steps: ReadStep[]) => void = () => {},
-): Promise<{ map: MaterialMap; steps: ReadStep[] } | null> {
-  const outline = outlineOf(sections);
-  const steps: ReadStep[] = [];
-  for (let i = 0; i < READER_LIMITS.steps; i++) {
-    const last = i === READER_LIMITS.steps - 1;
-    const a = await ask({ title, outline, steps, last: last || undefined });
-    if (!a) return null;
-    const step = runTool(sections, a);
-    steps.push(step);
-    onStep([...steps]);
-    if (a.action === 'finish') return { map: { ...a.map, title: a.map.title || title }, steps };
+export function materialContext(sections: MaterialSection[], query: string): string {
+  if (!sections.length) return '';
+  const all = sections.map(s => s.n);
+  if (totalLength(sections) <= READER_LIMITS.excerpt - 40)
+    return readSections(sections, all, READER_LIMITS.excerpt);
+  const outline = outlineText(sections);
+  const budget = READER_LIMITS.excerpt - outline.length - 2;
+  const q = terms(query);
+  const ranked = sections
+    .map(s => ({ s, score: relevance(s, q) }))
+    .filter(x => x.score > 0)
+    .sort((a, b) => b.score - a.score || a.s.n - b.s.n);
+  const picked: number[] = [];
+  let used = 0;
+  for (const { s } of ranked.length ? ranked : sections.map(s => ({ s }))) {
+    const size = s.heading.length + s.text.length + 8;
+    if (picked.length && used + size > budget) continue;
+    picked.push(s.n);
+    used += size;
+    if (used >= budget || picked.length >= 6) break;
   }
-  return null;
+  return (
+    outline +
+    '\n\n' +
+    readSections(
+      sections,
+      picked.sort((a, b) => a - b),
+      budget,
+    )
+  );
+}
+
+/** 开始讨论时（准备讨论题、要点）带给 AI 的材料：目录和开头几节。 */
+export const startContext = (sections: MaterialSection[]) => materialContext(sections, '');
+
+/** 讨论里该按什么找相关的几节：讨论题、正在聊的分支、最近两条发言。 */
+export function contextQuery(s: {
+  topic: string;
+  messages: { text: string }[];
+  branch?: { topic: string };
+}): string {
+  return [s.topic, s.branch?.topic ?? '', ...s.messages.slice(-2).map(m => m.text)].join('\n');
 }

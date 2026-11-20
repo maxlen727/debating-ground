@@ -1,6 +1,5 @@
 // 演示模式：没有连接 API 时，用本地模板走完整个流程
 import type {
-  ReadAction,
   ModeId,
   PayloadMap,
   PrepareResult,
@@ -278,7 +277,7 @@ function branchReply(s: Session, opening: boolean) {
   };
 }
 
-/* ---------- 读材料（#144）：示例文章和规则式的研读助手 ---------- */
+/* ---------- 读材料（#144、#166）：示例文章 ---------- */
 export const SAMPLE_MATERIAL = {
   title: '选择的代价：机会成本入门',
   text: `摘要
@@ -300,41 +299,6 @@ export const SAMPLE_MATERIAL = {
 理解机会成本，就是在每个选择面前多问一句：为了它，我放弃了什么最好的东西？`,
 };
 
-// 演示的研读助手：第一步读前三节，第二步按标题整理地图（真实模型会自己决定读哪里）
-function demoRead(p: PayloadMap['read']): ReadAction {
-  if (!p.steps.length)
-    return {
-      thought: '先看看开头几节，弄清楚这份材料在讲什么。',
-      action: 'read',
-      sections: p.outline.slice(0, 3).map(o => o.n),
-    };
-  const skip =
-    /^(开头|摘要|引言|前言|结论|总结|参考文献|abstract|introduction|conclusions?|references)/i;
-  const points = p.outline
-    .filter(o => !skip.test(o.heading.replace(/^\d+(\.\d+)*\s*/, '')))
-    .slice(0, 5)
-    .map(o => ({
-      name: o.heading
-        .replace(/^\d+(\.\d+)*\s*/, '')
-        .replace(/（\d+）$/, '')
-        .slice(0, 16),
-      why: '演示模式按小节标题整理；连接 API 后，研读助手会读原文，写出它在材料里起什么作用。',
-      sections: [o.n],
-      needs: [],
-    }));
-  return {
-    thought: '大致读完了，按材料的结构整理成技术点。',
-    action: 'finish',
-    map: {
-      title: p.title,
-      summary: '演示模式：按小节整理的地图。连接 API 后，研读助手会读原文，概括材料在讲什么。',
-      points: points.length
-        ? points
-        : [{ name: p.title.slice(0, 16), why: '演示模式按标题整理。', sections: [1], needs: [] }],
-    },
-  };
-}
-
 export async function demoRun<P extends Purpose>(
   purpose: P,
   payload: PayloadMap[P],
@@ -342,12 +306,13 @@ export async function demoRun<P extends Purpose>(
 ): Promise<unknown> {
   await wait(delay);
   const s = getState().session;
-  if (purpose === 'read') return { data: demoRead(payload as PayloadMap['read']) };
   if (purpose === 'prepare') {
     const p = payload as PayloadMap['prepare'];
-    const prep = p.concept === '机会成本' ? costPrep(p.mode) : genericPrep(p.concept, p.mode);
+    // 围绕材料讨论（#166）：演示模式不会真的读材料，示例文章讲的是机会成本，就按机会成本来
+    const concept = p.material && /机会成本/.test(p.material.excerpt) ? '机会成本' : p.concept;
+    const prep = concept === '机会成本' ? costPrep(p.mode) : genericPrep(concept, p.mode);
     if (p.mode === 'debate')
-      prep.debaters = p.concept === '机会成本' ? COST_DEBATERS : genericDebaters(p.concept);
+      prep.debaters = concept === '机会成本' ? COST_DEBATERS : genericDebaters(concept);
     if (p.topic) prep.topic = p.topic; // 学习者改过的题目照用
     return { data: prep };
   }
@@ -357,7 +322,6 @@ export async function demoRun<P extends Purpose>(
   switch (purpose) {
     // 准备在上面单独处理（不需要讨论上下文）
     case 'prepare':
-    case 'read':
       return null;
     case 'discuss': {
       const p = payload as PayloadMap['discuss'];

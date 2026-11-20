@@ -1,25 +1,20 @@
 package debating.ground.app.data
 
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.put
 
-// 读材料（#144、#154）：把材料切成节、研读助手的工具（读某几节、搜一个词）和它的循环。
+// 读材料（#144、#154、#166）：把材料切成节，讨论时按话题挑出最相关的几节交给 AI。
 // 和网页版 src/lib/reader.ts 同一套规则，ReaderTest 拿网页版生成的标准答案（reader-cases.json）逐字比对。
-// 循环在 App 里跑：材料只在这台设备上，每一步只做一次模型调用（用途 read）。工具都是只读的，原文当资料不当指令（提示词里写明了）。
+// 学习者贴一篇材料就直接围绕它讨论：短材料整篇给 AI；长材料每轮给目录，加上和眼下话题最相关的几节（按词的重合度挑，
+// 固定规则，不额外调用模型），总长有上限。
 
 object ReaderLimits {
     const val TEXT = 300_000 // 整篇材料最多多少字
     const val SECTIONS = 80 // 最多切成几节
     const val SECTION = 3000 // 一节太长就按段落再切
-    const val OBSERVATION = 12_000 // 一步最多读回多少字
-    const val EXCERPT = 8000 // 讨论时带上的节选
-    const val STEPS = 8 // 研读助手最多走几步
+    const val EXCERPT = 10_000 // 每次带给 AI 的材料（目录加原文）最多多少字
+    const val OUTLINE = 2000 // 目录最多多少字
 }
 
 // JavaScript 正则的 \s、\S、.（不认换行）
@@ -112,25 +107,12 @@ fun splitMaterial(raw: String): List<MaterialSection> {
     return out.take(ReaderLimits.SECTIONS).mapIndexed { i, (h, t) -> MaterialSection(i + 1, h, t) }
 }
 
-/** 大纲：每节的编号、标题和字数（研读助手先看这个）。 */
-fun outlineOf(sections: List<MaterialSection>): JsonArray = buildJsonArray {
-    for (s in sections) {
-        add(
-            buildJsonObject {
-                put("n", s.n)
-                put("heading", s.heading)
-                put("chars", s.text.length)
-            },
-        )
-    }
-}
-
-/* ---------- 工具（只读） ---------- */
+/* ---------- 原文 ---------- */
 
 private fun block(s: MaterialSection) = "§${s.n} ${s.heading}\n${s.text}"
 
 /** 读某几节：原文拼在一起，总长有上限。 */
-fun readSections(sections: List<MaterialSection>, ns: List<Int>, max: Int = ReaderLimits.OBSERVATION): String {
+fun readSections(sections: List<MaterialSection>, ns: List<Int>, max: Int = ReaderLimits.EXCERPT): String {
     val picked = ns.mapNotNull { n -> sections.find { it.n == n } }
     val more = "…（这一节后面省略）"
     val share = (max - 2 * (picked.size - 1)) / maxOf(1, picked.size)
@@ -140,103 +122,83 @@ fun readSections(sections: List<MaterialSection>, ns: List<Int>, max: Int = Read
     }
 }
 
-/** 在原文里搜一个词：最多 5 处，每处前后各带一些文字，标出在第几节。 */
-fun searchMaterial(sections: List<MaterialSection>, query: String): String {
-    val q = normalizeForSearch(query)
-    if (q.isEmpty()) return "没有要搜的词。"
-    val hits = mutableListOf<String>()
+/* ---------- 讨论时带给 AI 的材料 ---------- */
+
+/** 目录：每节的编号和标题。 */
+fun outlineText(sections: List<MaterialSection>): String {
+    val out = StringBuilder("目录：")
     for (s in sections) {
-        val t = normalizeForSearch(s.text)
-        var from = 0
-        while (hits.size < 5) {
-            val i = t.indexOf(q, from)
-            if (i < 0) break
-            hits += "§${s.n} ${s.heading}：…${t.substring(maxOf(0, i - 80), minOf(t.length, i + q.length + 80))}…"
-            from = i + q.length
+        val line = "\n§${s.n} ${s.heading}"
+        if (out.length + line.length > ReaderLimits.OUTLINE) {
+            out.append("\n……")
+            break
         }
-        if (hits.size >= 5) break
+        out.append(line)
     }
-    return if (hits.isNotEmpty()) hits.joinToString("\n") else "原文里没有找到「$query」。"
+    return out.toString()
 }
 
-/** 研读助手的一个动作：读几节、搜一个词，或者整理成地图结束。 */
-sealed interface ReadAction {
-    val thought: String
+private val WORDS = Regex("[a-z0-9]{3,}")
+private val NOT_HAN = Regex("[^\u3400-\u9fff]+")
 
-    data class Read(override val thought: String, val sections: List<Int>) : ReadAction
-
-    data class Search(override val thought: String, val query: String) : ReadAction
-
-    data class Finish(override val thought: String, val map: MaterialMap) : ReadAction
+// 拿来比较的词：中文按相邻两个字，英文和数字按整个词（三个字母以上）
+private fun terms(text: String): Set<String> {
+    val t = normalizeForSearch(text)
+    val out = LinkedHashSet<String>()
+    WORDS.findAll(t).forEach { out += it.value }
+    for (run in t.replace(NOT_HAN, " ").split(" ")) {
+        for (i in 0 until run.length - 1) out += run.substring(i, i + 2)
+    }
+    return out
 }
 
-/** 模型给的动作（已经过 finalize 校验）；认不出就是 null。 */
-fun readActionOf(v: JsonElement?): ReadAction? {
-    val o = v as? JsonObject ?: return null
-    fun str(k: String) = (o[k] as? JsonPrimitive)?.takeIf { it.isString }?.content
-    val thought = str("thought").orEmpty()
-    return when (str("action")) {
-        "read" -> ReadAction.Read(thought, (o["sections"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.intOrNull }.orEmpty())
-
-        "search" -> ReadAction.Search(thought, str("query") ?: return null)
-
-        "finish" -> ReadAction.Finish(
-            thought,
-            runCatching { SibianJson.decodeFromJsonElement(MaterialMap.serializer(), o.getValue("map")) }.getOrNull() ?: return null,
-        )
-
-        else -> null
+/** 和 query 的相关程度：query 里的词在这一节里出现了几个（标题里出现算两个）。 */
+fun relevance(s: MaterialSection, query: Set<String>): Int {
+    val body = normalizeForSearch(s.text)
+    val head = normalizeForSearch(s.heading)
+    return query.sumOf { w ->
+        when {
+            head.contains(w) -> 2
+            body.contains(w) -> 1
+            else -> 0
+        }.toInt()
     }
 }
 
-/** 执行一个动作，得到这一步的记录（给人看的动作描述 + 给模型看的原文）。 */
-fun runTool(sections: List<MaterialSection>, a: ReadAction): ReadStep = when (a) {
-    is ReadAction.Read -> ReadStep(a.thought, "读第 ${a.sections.joinToString("、")} 节", readSections(sections, a.sections))
-    is ReadAction.Search -> ReadStep(a.thought, "搜「${a.query}」", searchMaterial(sections, a.query))
-    is ReadAction.Finish -> ReadStep(a.thought, "整理成地图", "")
-}
-
-/* ---------- 讨论时带上的节选 ---------- */
-
-/** 一个技术点在材料里的原文节选：它所在的几节；没写在哪几节就搜它的名字。 */
-fun excerptFor(id: String, title: String, sections: List<MaterialSection>, point: MapPoint): SessionMaterial {
-    var ns = point.sections.filter { n -> sections.any { it.n == n } }
-    if (ns.isEmpty()) {
-        val q = normalizeForSearch(point.name)
-        ns = sections.filter { normalizeForSearch(it.text).contains(q) }.take(2).map { it.n }
-    }
-    if (ns.isEmpty()) ns = listOf(sections.firstOrNull()?.n ?: 1)
-    return SessionMaterial(id, title, point.name, readSections(sections, ns.take(4), ReaderLimits.EXCERPT))
-}
-
-/* ---------- 研读助手的循环 ---------- */
-
-/** 发给模型的一步：标题、大纲、之前每一步的记录；最后一步必须结束。 */
-fun readPayload(title: String, outline: JsonArray, steps: List<ReadStep>, last: Boolean): JsonObject = buildJsonObject {
-    put("title", title)
-    put("outline", outline)
-    put("steps", SibianJson.encodeToJsonElement(kotlinx.serialization.builtins.ListSerializer(ReadStep.serializer()), steps))
-    if (last) put("last", true)
-}
+private fun size(s: MaterialSection) = s.heading.length + s.text.length + 8
 
 /**
- * 跑一遍研读助手：每一步问模型要一个动作，执行后记下来，直到它给出地图。
- * [onStep] 每走一步就通知一次（界面上显示它在做什么）。模型出错或被取消时返回 null。
+ * 讨论时带给 AI 的材料：放得下就整篇；放不下就是目录，加上和 query（讨论题、刚说的话）最相关的几节，
+ * 按原文顺序排。一节也不相关时给开头几节。
  */
-suspend fun runReader(
-    title: String,
-    sections: List<MaterialSection>,
-    ask: suspend (JsonObject, List<ReadStep>) -> ReadAction?,
-    onStep: (List<ReadStep>) -> Unit = {},
-): Pair<MaterialMap, List<ReadStep>>? {
-    val outline = outlineOf(sections)
-    val steps = mutableListOf<ReadStep>()
-    for (i in 0 until ReaderLimits.STEPS) {
-        val last = i == ReaderLimits.STEPS - 1
-        val a = ask(readPayload(title, outline, steps, last), steps.toList()) ?: return null
-        steps += runTool(sections, a)
-        onStep(steps.toList())
-        if (a is ReadAction.Finish) return a.map.copy(title = a.map.title.ifEmpty { title }) to steps.toList()
+fun materialContext(sections: List<MaterialSection>, query: String): String {
+    if (sections.isEmpty()) return ""
+    if (sections.sumOf { size(it) } <= ReaderLimits.EXCERPT - 40) return readSections(sections, sections.map { it.n }, ReaderLimits.EXCERPT)
+    val outline = outlineText(sections)
+    val budget = ReaderLimits.EXCERPT - outline.length - 2
+    val q = terms(query)
+    val ranked = sections.map {
+        it to relevance(it, q)
+    }.filter { it.second > 0 }.sortedWith(compareByDescending<Pair<MaterialSection, Int>> { it.second }.thenBy { it.first.n })
+    val order = if (ranked.isNotEmpty()) ranked.map { it.first } else sections
+    val picked = mutableListOf<Int>()
+    var used = 0
+    for (s in order) {
+        val n = size(s)
+        if (picked.isNotEmpty() && used + n > budget) continue
+        picked += s.n
+        used += n
+        if (used >= budget || picked.size >= 6) break
     }
-    return null
+    return outline + "\n\n" + readSections(sections, picked.sorted(), budget)
+}
+
+/** 开始讨论时（准备讨论题、要点）带给 AI 的材料：目录和开头几节。 */
+fun startContext(sections: List<MaterialSection>) = materialContext(sections, "")
+
+/** 讨论里该按什么找相关的几节：讨论题、正在聊的分支、最近两条发言（[snapshot] 是发给 AI 的讨论快照）。 */
+fun contextQuery(snapshot: JsonObject): String {
+    fun str(o: JsonObject?, k: String) = (o?.get(k) as? JsonPrimitive)?.takeIf { it.isString }?.content.orEmpty()
+    val messages = (snapshot["messages"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+    return (listOf(str(snapshot, "topic"), str(snapshot["branch"] as? JsonObject, "topic")) + messages.takeLast(2).map { str(it, "text") }).joinToString("\n")
 }
