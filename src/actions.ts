@@ -2,6 +2,8 @@
 import type {
   ChatMessage,
   ExplainKind,
+  MapPoint,
+  ModeId,
   PointSuggestion,
   Previous,
   Review,
@@ -12,7 +14,15 @@ import type {
 import { getState, go, toast, typing, uid, update } from './store.ts';
 import { forceNav } from './lib/motion.ts';
 import { MODE_ORDER } from '../shared/modes.ts';
-import type { Config, Screen, Session } from './store.ts';
+import { excerptFor, READER_LIMITS, runReader, splitMaterial } from './lib/reader.ts';
+import {
+  deleteMaterial,
+  getMaterial,
+  listMaterials,
+  saveMaterial,
+  type Material,
+} from './lib/materials.ts';
+import type { Config, Screen, Session, SessionMaterial } from './store.ts';
 import { runAI } from './lib/ai.ts';
 import { clearLive } from './lib/stream.ts';
 import { playingId, speakText, startVoice, stopVoice } from './lib/voice.ts';
@@ -63,6 +73,11 @@ export function snapshot(s: Session, whole = false): SessionSnapshot {
     stages: s.mode === 'debate' ? s.stages : undefined,
     finished: s.finished,
     context: s.context || undefined,
+    material: s.material && {
+      title: s.material.title,
+      point: s.material.point,
+      excerpt: s.material.excerpt,
+    },
     branch: here
       ? {
           topic: here.topic,
@@ -85,6 +100,7 @@ export async function prepare(
   previous: Previous | null = null,
   knownContext?: string,
   then: 'review' | 'start' = 'review',
+  material?: SessionMaterial,
 ) {
   const { config, ui, plan } = getState();
   const concept = config.concept.trim();
@@ -100,7 +116,17 @@ export async function prepare(
   if (ui.context && !context) return toast('写一两句经过，AI 才知道你们在讨论什么。');
   const res = await runAI(
     'prepare',
-    { concept, mode: config.mode, previous, context },
+    {
+      concept,
+      mode: config.mode,
+      previous,
+      context,
+      material: material && {
+        title: material.title,
+        point: material.point,
+        excerpt: material.excerpt,
+      },
+    },
     context ? '正在按你说的经过准备讨论' : '正在拆解要点、准备讨论',
   );
   if (!res) return;
@@ -126,6 +152,7 @@ export async function prepare(
       context,
       debaters: d.debaters,
       rolesFor: d.topic,
+      material,
     };
     applyDebaters(s.config, d.debaters);
     s.ui.context = null;
@@ -252,6 +279,7 @@ export function startSession() {
       cursor: 0,
       review: null,
       context: plan.context,
+      material: plan.material,
     };
     if (plan.mode === 'debate') {
       base.seats = slots(config).map(r => ({ ...r, name: seatName(r) }));
@@ -847,6 +875,7 @@ const PARENT: Partial<Record<Screen, Screen>> = {
   session: 'learn',
   review: 'session',
   card: 'library',
+  material: 'learn',
   join: 'learn',
   library: 'learn',
   settings: 'learn',
@@ -1051,6 +1080,7 @@ export async function generateReview() {
       model: res.model,
       context: ss.context,
       terms: ss.glossary,
+      material: ss.material?.title,
     });
     // 刚更新的笔记排到最前面
     st.library = [note, ...st.library.filter((_, j) => j !== i)];
@@ -1142,4 +1172,100 @@ export function openCard(id: string) {
     st.ui.openCard = id;
   });
   go('card');
+}
+
+/* ---------- 读材料（#144） ---------- */
+export async function loadMaterials() {
+  const list = await listMaterials();
+  update(st => {
+    st.ui.materials = list;
+  });
+}
+export function openMaterials() {
+  update(st => {
+    st.ui.material = null;
+    st.ui.reading = null;
+  });
+  go('material');
+  void loadMaterials();
+}
+/** 粘贴进来的材料：切成节、存在这台设备上，然后让研读助手读。 */
+export async function addMaterial(title: string, text: string) {
+  text = text.trim();
+  if (getState().ui.busy) return;
+  if (text.length < 200) return toast('材料太短了，至少贴两三段正文。');
+  if (text.length > READER_LIMITS.text)
+    return toast(`材料太长了，先贴最想弄懂的部分（${READER_LIMITS.text / 10000} 万字以内）。`);
+  const sections = splitMaterial(text);
+  const m: Material = {
+    id: uid(),
+    title: title.trim().slice(0, 80) || text.split('\n')[0].trim().slice(0, 40),
+    sections,
+    created: Date.now(),
+  };
+  await saveMaterial(m);
+  update(st => {
+    st.ui.material = m;
+  });
+  await readMaterial();
+}
+/** 让研读助手读当前的材料，整理出技术点地图。每一步在做什么都显示出来。 */
+export async function readMaterial() {
+  const m = getState().ui.material;
+  if (!m || getState().ui.busy) return;
+  update(st => {
+    st.ui.reading = [];
+  });
+  const res = await runReader(
+    m.title,
+    m.sections,
+    async payload => {
+      const last = payload.steps.at(-1);
+      const r = await runAI(
+        'read',
+        payload,
+        last ? `研读助手${last.action}了，在想下一步` : '研读助手正在看大纲',
+      );
+      return r?.data ?? null;
+    },
+    steps =>
+      update(st => {
+        st.ui.reading = steps;
+      }),
+  );
+  if (!res) return;
+  const done: Material = { ...m, map: res.map, steps: res.steps };
+  await saveMaterial(done);
+  update(st => {
+    if (st.ui.material?.id === m.id) st.ui.material = done;
+  });
+  void loadMaterials();
+}
+export async function openMaterial(id: string) {
+  const m = await getMaterial(id);
+  if (!m) return toast('找不到这份材料，它可能已经被删除。');
+  update(st => {
+    st.ui.material = m;
+    st.ui.reading = m.steps ?? null;
+  });
+  go('material');
+}
+export async function removeMaterial(id: string) {
+  await deleteMaterial(id);
+  update(st => {
+    if (st.ui.material?.id === id) st.ui.material = null;
+  });
+  await loadMaterials();
+}
+/** 从地图上的一个技术点开始讨论：带上它的原文节选去准备，准备好就开始。 */
+export async function startFromPoint(point: MapPoint, mode: ModeId) {
+  const m = getState().ui.material;
+  if (!m || getState().ui.busy) return;
+  const material = { id: m.id, ...excerptFor(m.map?.title || m.title, m.sections, point) };
+  update(st => {
+    st.config.concept = point.name;
+    st.config.mode = mode;
+    st.ui.context = null;
+  });
+  await prepare(null, undefined, 'start', material);
 }

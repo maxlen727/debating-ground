@@ -2146,6 +2146,144 @@ select:focus {
   font-size: 12px;
   opacity: 0.8;
 }
+/* 读材料（#144）：学习页入口、贴材料、研读过程、技术点地图、原文 */
+.material-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  text-align: left;
+}
+.material-entry .grow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.material-entry small {
+  color: var(--muted);
+  font-size: 13px;
+}
+.material-text {
+  min-height: 220px;
+  font-size: 16px;
+  line-height: var(--lh-serif);
+}
+.material-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.material-list li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.material-item {
+  flex: 1;
+  min-width: 0;
+  min-height: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 14px;
+  text-align: left;
+  color: var(--ink);
+}
+.material-item b {
+  font-family: var(--f-display);
+  overflow-wrap: anywhere;
+}
+.material-summary {
+  margin: 0;
+}
+.trace summary,
+.material .panel > summary {
+  cursor: pointer;
+  min-height: 32px;
+}
+.trace ol {
+  margin: 8px 0 0;
+  padding-left: 1.4em;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: var(--t-sm);
+}
+.trace li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.map-points {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.map-point {
+  width: 100%;
+  min-height: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  text-align: left;
+  transition:
+    border-color 0.2s,
+    background-color 0.2s;
+}
+.map-point.on {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 8%, var(--raised));
+}
+.map-point b {
+  font-size: var(--t-md);
+}
+.map-point span {
+  font-size: var(--t-sm);
+  line-height: 1.6;
+}
+.map-point small {
+  font-size: 12.5px;
+}
+.material-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 8px;
+}
+.material-sections h4 {
+  margin: 0 0 4px;
+  font-size: var(--t-sm);
+  color: var(--muted);
+}
+.material-sections p {
+  margin: 0;
+  white-space: pre-wrap;
+  font: var(--t-sm) / var(--lh-serif) var(--f-display);
+  overflow-wrap: anywhere;
+}
+
 /* 复盘页底部：这次的理解整理进了哪篇笔记 */
 .settled {
   display: flex;

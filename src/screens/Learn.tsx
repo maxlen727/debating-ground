@@ -1,6 +1,6 @@
 import { MODES, MODE_ORDER } from '../../shared/modes.ts';
 import type { ModeId } from '../../shared/types.ts';
-import { prepare, setContextDraft } from '../actions.ts';
+import { openMaterials, prepare, setContextDraft } from '../actions.ts';
 import { useRef } from 'react';
 import { BusyStrip, ErrorBanner, Icon } from '../components/ui.tsx';
 import { CaretField } from '../components/SmoothCaret.tsx';
@@ -122,6 +122,15 @@ export function Learn() {
               <small className="muted">AI 只按你写的经过来讨论，不会自己编细节。</small>
             </div>
           )}
+          {/* 读材料（#144）：从一篇论文或文章开始，研读助手先拆出技术点 */}
+          <button className="material-entry" disabled={busy} onClick={openMaterials}>
+            <Icon name="note" size={18} />
+            <span className="grow">
+              <b>从一篇论文或文章开始</b>
+              <small>贴上正文，研读助手拆出技术点，一个一个讨论</small>
+            </span>
+            <Icon name="chevron" size={18} />
+          </button>
         </section>
 
         <section>

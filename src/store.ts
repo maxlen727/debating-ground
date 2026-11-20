@@ -16,6 +16,8 @@ import type {
   TermCard,
   Turn,
   ExplainKind,
+  MaterialExcerpt,
+  ReadStep,
 } from '../shared/types.ts';
 import type { PointProposal, RoomMember, RoomStatus, Speaker } from '../shared/room.ts';
 import { DEFAULT_VOICE } from '../shared/speech.ts';
@@ -28,9 +30,18 @@ import {
   restoreSession,
 } from './lib/restore.ts';
 import { notesFromCards, type Note } from './lib/notes.ts';
+import type { Material, MaterialMeta } from './lib/materials.ts';
 
 export type Screen =
-  'learn' | 'prepare' | 'session' | 'review' | 'library' | 'card' | 'settings' | 'join';
+  | 'learn'
+  | 'prepare'
+  | 'session'
+  | 'review'
+  | 'library'
+  | 'card'
+  | 'settings'
+  | 'join'
+  | 'material';
 
 export interface Config {
   concept: string;
@@ -59,7 +70,10 @@ export interface Plan {
   context?: string; // 学习者交代的背景（具体事件类的话题）
   debaters?: Record<Team, string[]>; // 辩论：按论题生成的辩手背景，增加席位时从这里取
   rolesFor?: string; // 角色是按哪道题设定的；学习者改了题目后用来提示“角色还是旧的”
+  material?: SessionMaterial; // 从材料里的一个技术点开始（#144）
 }
+// 讨论带着的原文节选，加上材料的 id（完整材料在 lib/materials.ts，只存在这台设备上）
+export type SessionMaterial = MaterialExcerpt & { id: string };
 export interface DebateSeat extends Seat {
   name: string;
 }
@@ -115,6 +129,7 @@ export interface Session {
   glossary?: TermCard[]; // 这次讨论里点开看过的术语
   branches?: Branch[]; // 知识画布：从某句发言展开的分支
   at?: string; // 知识画布：正在看的分支（没有就是主干）
+  material?: SessionMaterial; // 从材料开始的讨论：这个技术点的原文节选（#144）
 }
 // 知识画布的一个分支：从 from 这条发言展开（它在 parent 那一层），gist 是学习者带回上一层的一句话
 export interface Branch {
@@ -151,6 +166,10 @@ export interface Ui {
   invite: boolean; // 显示邀请链接面板
   term: (TermCard & { messageId: string }) | null; // 打开的术语卡片；definition 为空表示正在查
   context: { ask: string; text: string } | null; // 准备时 AI 请学习者交代背景
+  // 读材料（#144）：正在看的材料（完整内容在 IndexedDB，这里是读进内存的一份）、研读助手每一步在做什么、最近的材料。不存档
+  material: Material | null;
+  reading: ReadStep[] | null;
+  materials: MaterialMeta[];
 }
 export interface AppState {
   config: Config;
@@ -203,6 +222,9 @@ const defaultUi = (): Ui => ({
   invite: false,
   term: null,
   context: null,
+  material: null,
+  reading: null,
+  materials: [],
 });
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
