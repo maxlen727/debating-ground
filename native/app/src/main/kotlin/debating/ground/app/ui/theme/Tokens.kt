@@ -33,6 +33,9 @@ data class Tokens(
     val warnSoft: Long,
     val bad: Long,
     val badSoft: Long,
+    // 二维码：深浅两种模式都是浅底深格，扫码软件才认得（#151）
+    val qrInk: Long,
+    val qrPaper: Long,
 ) {
     // CSS 变量名 → 颜色，供测试比对，也方便按名字查
     fun byCssName(): Map<String, Long> = mapOf(
@@ -43,6 +46,7 @@ data class Tokens(
         "a-bg" to aBg, "a-fg" to aFg, "b-bg" to bBg, "b-fg" to bFg,
         "c-bg" to cBg, "c-fg" to cFg, "p-bg" to pBg, "p-fg" to pFg,
         "good" to good, "good-soft" to goodSoft, "warn" to warn, "warn-soft" to warnSoft, "bad" to bad, "bad-soft" to badSoft,
+        "qr-ink" to qrInk, "qr-paper" to qrPaper,
     )
 }
 
@@ -54,6 +58,7 @@ val LightTokens = Tokens(
     aBg = 0xFFDDE7D8, aFg = 0xFF3D5E45, bBg = 0xFFF1E0D2, bFg = 0xFF96583A,
     cBg = 0xFFDCE3EE, cFg = 0xFF455D7D, pBg = 0xFFE8E2EE, pFg = 0xFF5B4876,
     good = 0xFF2D6E45, goodSoft = 0xFFE0EEDF, warn = 0xFF8A5F12, warnSoft = 0xFFF6EBD3, bad = 0xFFA2432D, badSoft = 0xFFF7E0D8,
+    qrInk = 0xFF18241F, qrPaper = 0xFFFFFFFF,
 )
 
 val DarkTokens = Tokens(
@@ -64,6 +69,7 @@ val DarkTokens = Tokens(
     aBg = 0xFF233328, aFg = 0xFFA7CDB0, bBg = 0xFF3A2A21, bFg = 0xFFE7B293,
     cBg = 0xFF232D3B, cFg = 0xFFA9BEDB, pBg = 0xFF2C2636, pFg = 0xFFC9B8E2,
     good = 0xFF8AD2A3, goodSoft = 0xFF1C3326, warn = 0xFFE3BE6E, warnSoft = 0xFF382E18, bad = 0xFFEE9A86, badSoft = 0xFF3D231C,
+    qrInk = 0xFF0D1714, qrPaper = 0xFFE4EBE7,
 )
 
 fun Long.color() = Color(this)

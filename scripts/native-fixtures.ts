@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { graphOf } from '../src/lib/canvas.ts';
 import { splitForSpeech } from '../shared/speech.ts';
+import { encodeQr, type QrCode } from '../src/lib/qr.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const FIXTURE_DIR = join(root, 'native', 'app', 'src', 'test', 'resources', 'fixtures');
@@ -334,6 +335,8 @@ export async function generate(): Promise<Record<string, string>> {
   out['search-cases.json'] = JSON.stringify(await searchCases()) + '\n';
   // 概念笔记的合并规则（#140）：同样的复盘按同样的顺序合并，原生版每一步的笔记、导出和统计都要一样
   out['notes-cases.json'] = JSON.stringify(await notesCases()) + '\n';
+  // 邀请二维码（#151）：同样的链接，原生版挑的版本、掩码和每一格都要一样
+  out['qr-cases.json'] = JSON.stringify(qrCases()) + '\n';
   out['meta.json'] = JSON.stringify({ now: NOW, timeZone: TIME_ZONE }, null, 2) + '\n';
   return out;
 }
@@ -1171,6 +1174,22 @@ async function recordFlows(
     scripts.push({ name: script.name, ops: script.ops, steps });
   }
   return scripts;
+}
+
+function qrCases() {
+  const texts = [
+    'A',
+    'http://192.168.1.23:4174/#join=eyJiIjoiaHR0cDovLzE5Mi4xNjguMS4yMzo0MTc0IiwiciI6IkFiQ2RFZkdoSWpLbE1uT3BRclN0VXYiLCJjIjoieHl6In0',
+    '中文邀请链接 http://10.0.0.2:4174/',
+    'https://sibian.example.workers.dev/#join=' + 'abcDEF_-'.repeat(40),
+    'x'.repeat(1200),
+  ];
+  const rows = (q: QrCode) => q.modules.map(r => r.map(c => (c ? '1' : '0')).join(''));
+  return texts.map(text => {
+    const q = encodeQr(text)!;
+    const fixed = encodeQr(text, 6)!;
+    return { text, version: q.version, mask: q.mask, rows: rows(q), mask6: rows(fixed) };
+  });
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
