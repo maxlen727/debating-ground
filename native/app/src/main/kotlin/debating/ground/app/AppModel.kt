@@ -6,6 +6,9 @@ import debating.ground.app.ai.DirectAccess
 import debating.ground.app.ai.KeystoreDirectStore
 import debating.ground.app.ai.SandboxPrompts
 import debating.ground.app.data.CARDS_STORE_KEY
+import debating.ground.app.data.FileMaterials
+import debating.ground.app.data.MaterialStore
+import debating.ground.app.data.MemoryMaterials
 import debating.ground.app.data.SavedState
 import debating.ground.app.data.SibianJson
 import debating.ground.app.data.Storage
@@ -45,6 +48,8 @@ class AppModel(
     speech: ((CoroutineScope, Learning) -> Speech)? = null,
     roomDialer: RoomDialer? = null,
     lan: LanRooms? = null,
+    /** 读材料：完整的材料存在哪里（测试里在内存）。 */
+    materials: MaterialStore = MemoryMaterials(),
 ) {
     private val storage = Storage(dir)
 
@@ -79,6 +84,7 @@ class AppModel(
             roomDialer = roomDialer,
             launch = { block -> scope.launch { block() } },
             lan = lan,
+            materialStore = materials,
         )
         this.speech = speech?.invoke(scope, learning)
         wireRoomSpeech()
@@ -151,6 +157,8 @@ class AppModel(
                 speech = { scope, l -> androidSpeech(context.applicationContext, scope, l) },
                 roomDialer = OkHttpRoomDialer(),
                 lan = AndroidLan(context.applicationContext, directAccess),
+                // 材料可能很长，也可能是不该外传的内容：放在不进系统备份的目录（#154）
+                materials = FileMaterials(File(context.noBackupFilesDir, "materials")),
             ).also { instance = it }
         }
     }

@@ -155,6 +155,8 @@ data class Session(
     val glossary: List<TermCard>? = null,
     val branches: List<Branch>? = null,
     val at: String? = null,
+    // 从材料里的一个技术点开始的讨论：带着它的原文节选（#144、#154）
+    val material: SessionMaterial? = null,
 )
 
 /** 笔记是从哪次讨论长出来的（像版本记录）。 */
@@ -167,6 +169,8 @@ data class NoteSource(
     val oneLine: String = "",
     val source: String = "demo",
     val model: String? = null,
+    /** 从哪篇材料开始的讨论（材料标题，#144）。 */
+    val material: String? = null,
 )
 
 /** 概念笔记：一个概念一篇，每次讨论完把复盘合并进来（#140，网页版 src/lib/notes.ts 的 Note）。 */
@@ -204,7 +208,28 @@ data class Plan(
     val context: String? = null,
     val debaters: Map<String, List<String>>? = null,
     val rolesFor: String? = null,
+    val material: SessionMaterial? = null,
 )
+
+/* ---------- 读材料（#144、#154），和网页版 shared/types.ts 一致 ---------- */
+
+/** 讨论带着的原文节选，加上材料的 id（完整的材料只在这台设备的文件里，见 data/Materials.kt）。 */
+@Serializable
+data class SessionMaterial(val id: String, val title: String, val point: String, val excerpt: String)
+
+@Serializable
+data class MaterialSection(val n: Int, val heading: String, val text: String)
+
+/** 研读助手整理出的一个技术点：它在材料里起什么作用、在哪几节、要先懂什么。 */
+@Serializable
+data class MapPoint(val name: String, val why: String = "", val sections: List<Int> = emptyList(), val needs: List<String> = emptyList())
+
+@Serializable
+data class MaterialMap(val title: String = "", val summary: String = "", val points: List<MapPoint> = emptyList())
+
+/** 研读助手的一步：想法、做了什么（人话）、读回来的原文。 */
+@Serializable
+data class ReadStep(val thought: String, val action: String, val observation: String)
 
 @Serializable
 data class Remote(val url: String = "", val password: String = "")

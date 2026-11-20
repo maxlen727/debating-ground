@@ -219,6 +219,16 @@ export async function generate(): Promise<Record<string, string>> {
   );
   // 演示模式的标准答案：在几种典型的讨论状态下，每种用途各调用一次网页版的 demoRun，
   // 记下调用前的讨论、payload、结果和调用后的 demoStep。原生版 DemoTest 用同样的输入，四样都要一致。
+  // 从材料里的一个技术点开始讨论（#144）：讨论、计划带着原文节选，笔记的来源记下材料标题
+  await scenario('from-material', async () => {
+    const { SAMPLE_MATERIAL } = await import('../src/lib/demo.ts');
+    await A.addMaterial(SAMPLE_MATERIAL.title, SAMPLE_MATERIAL.text);
+    const point = S.getState().ui.material!.map!.points[1];
+    await A.startFromPoint(point, 'socratic');
+    await A.send('已经花掉的钱拿不回来，所以不该影响接下来的决定。');
+    await A.finish();
+  });
+
   const { demoRun } = await import('../src/lib/demo.ts');
   const cases: unknown[] = [];
   async function record(purpose: string, payload: Record<string, unknown>) {
@@ -335,6 +345,9 @@ export async function generate(): Promise<Record<string, string>> {
   out['search-cases.json'] = JSON.stringify(await searchCases()) + '\n';
   // 概念笔记的合并规则（#140）：同样的复盘按同样的顺序合并，原生版每一步的笔记、导出和统计都要一样
   out['notes-cases.json'] = JSON.stringify(await notesCases()) + '\n';
+  // 读材料（#144、#154）：切节、工具、节选和演示模式的研读，原生版 ReaderTest 逐字比对
+  out['reader-cases.json'] =
+    JSON.stringify({ cases: await readerCases(), demo: await demoReadCases() }) + '\n';
   // 邀请二维码（#151）：同样的链接，原生版挑的版本、掩码和每一格都要一样
   out['qr-cases.json'] = JSON.stringify(qrCases()) + '\n';
   out['meta.json'] = JSON.stringify({ now: NOW, timeZone: TIME_ZONE }, null, 2) + '\n';
@@ -681,6 +694,20 @@ function speechCases() {
 
 // ---------- 学习流程的剧本 ----------
 type Op = Record<string, unknown> & { op: string };
+
+// 剧本里贴的材料：有节名，演示模式的研读会按节整理出技术点
+const MATERIAL_TEXT = [
+  '摘要',
+  '这篇短文讲稀缺性和取舍：资源有限，选了一样就要放下另一样，放下的里面最好的那个就是代价。',
+  '1 稀缺性',
+  '时间、钱和注意力都是有限的。想要的东西总比能拥有的多，所以每个人都要做选择，每个选择都意味着放弃。',
+  '2 取舍',
+  '取舍就是在几个选项之间权衡：多上一节课，就少睡一会儿；多买一件衣服，就少存一点钱。',
+  '3 沉没成本',
+  '已经花掉、拿不回来的钱和时间，不应该影响接下来的决定。只比较从现在开始的得失。',
+  '结论',
+  '做决定时，看清放弃了什么，比看清得到了什么更难，也更重要。',
+].join('\n');
 export const FLOW_SCRIPTS: { name: string; ops: Op[] }[] = [
   {
     name: 'socratic-full',
@@ -801,6 +828,17 @@ export const FLOW_SCRIPTS: { name: string; ops: Op[] }[] = [
       { op: 'send', text: '就是想法和做法不一致的时候会难受。' },
       { op: 'config', concept: '认知失调', mode: 'socratic' },
       { op: 'prepare', then: 'start' },
+      { op: 'finish' },
+    ],
+  },
+  // 读材料（#144、#154）：太短的材料不收；贴一篇演示材料，研读助手整理出地图，从一个技术点开始讨论
+  {
+    name: 'from-material',
+    ops: [
+      { op: 'addMaterial', title: '', text: '太短了' },
+      { op: 'addMaterial', title: '', text: MATERIAL_TEXT },
+      { op: 'startFromPoint', index: 0, mode: 'roundtable' },
+      { op: 'send', text: '稀缺就是想要的比能有的多，所以选了一样就得放下另一样。' },
       { op: 'finish' },
     ],
   },
@@ -1134,6 +1172,15 @@ async function recordFlows(
         case 'check':
           A.selfCheck(S.getState().library[0].id, o.index as number, o.ok as boolean);
           break;
+        case 'addMaterial':
+          await A.addMaterial(o.title as string, o.text as string);
+          break;
+        case 'startFromPoint':
+          await A.startFromPoint(
+            S.getState().ui.material!.map!.points[o.index as number],
+            o.mode as never,
+          );
+          break;
         case 'discussAgain':
           await A.discussAgain(S.getState().library[0]);
           break;
@@ -1174,6 +1221,82 @@ async function recordFlows(
     scripts.push({ name: script.name, ops: script.ops, steps });
   }
   return scripts;
+}
+
+async function readerCases() {
+  const R = await import('../src/lib/reader.ts');
+  const { SAMPLE_MATERIAL } = await import('../src/lib/demo.ts');
+  const para = (n: number, len: number) =>
+    Array.from({ length: n }, (_, i) => `第${i + 1}段：` + '边际成本随产量变化。'.repeat(len)).join(
+      '\n\n',
+    );
+  const texts: Record<string, string> = {
+    sample: SAMPLE_MATERIAL.text,
+    markdown: `# 注意力机制\n\n导语一句。\n\n## 1 背景\n\n序列模型很难记住远处的词。\n\n## 2 方法\n\nQuery、Key、Value 三个矩阵。\n\n### 2.1 缩放\n\n除以根号 d。\n\n## 参考文献\n\n[1] Vaswani 2017.`,
+    // 全角空格、CRLF、带编号的节名，像句子的行不算标题
+    numbered: `Abstract\r\nWe study scarcity.\r\n\r\n1\u3000Introduction\r\nPeople choose.\r\n2.1 这一行很像句子，\r\n不是标题。\r\n3. Results\r\nIt works.\r\nCONCLUSION\r\nDone.`,
+    unstructured: para(12, 40),
+    longSection: '方法\n' + para(3, 160) + '\n\n结论\n很短的结论。',
+    many: Array.from(
+      { length: 95 },
+      (_, i) => `## 小节${i + 1}\n内容${i + 1}：` + '稀缺'.repeat(30),
+    ).join('\n\n'),
+    onlyIntro: '开头的一段话，没有任何标题。\n\n第二段也没有。',
+  };
+  return Object.entries(texts).map(([name, text]) => {
+    const sections = R.splitMaterial(text);
+    const n = sections.length;
+    return {
+      name,
+      text,
+      sections,
+      outline: R.outlineOf(sections),
+      reads: [
+        { ns: [1], max: 12000 },
+        { ns: [1, 2, 99], max: 12000 },
+        { ns: sections.map(x => x.n), max: 600 },
+        { ns: [n, 1], max: 80 },
+      ].map(r => ({ ...r, out: R.readSections(sections, r.ns, r.max) })),
+      searches: ['机会成本', 'ＣＯＮＣＬＵＳＩＯＮ', '稀缺', '不存在的词', '  ', 'd'].map(q => ({
+        q,
+        out: R.searchMaterial(sections, q),
+      })),
+      excerpts: [
+        { name: '缩放', why: '', sections: [4, 5], needs: [] },
+        { name: '机会成本', why: '', sections: [], needs: [] },
+        { name: '找不到的点', why: '', sections: [999], needs: [] },
+      ].map(point => ({ point, out: R.excerptFor(name, sections, point) })),
+      tools: [
+        { thought: '先读', action: 'read' as const, sections: [1, 2] },
+        { thought: '搜一下', action: 'search' as const, query: '成本' },
+      ].map(a => ({ a, out: R.runTool(sections, a) })),
+    };
+  });
+}
+
+async function demoReadCases() {
+  const R = await import('../src/lib/reader.ts');
+  const { demoRun, SAMPLE_MATERIAL } = await import('../src/lib/demo.ts');
+  const out = [];
+  for (const [title, text] of [
+    [SAMPLE_MATERIAL.title, SAMPLE_MATERIAL.text],
+    ['只有开头', '开头的一段话，没有任何标题。\n\n第二段也没有。'],
+    [
+      '注意力',
+      '# 注意力机制\n\n## 1 背景\n\n序列模型。\n\n## 2.1 方法（续）\n\n矩阵。\n\n## Conclusions\n\n完。',
+    ],
+  ]) {
+    const outline = R.outlineOf(R.splitMaterial(text));
+    const first = { title, outline, steps: [] };
+    const second = {
+      title,
+      outline,
+      steps: [{ thought: 't', action: 'a', observation: 'o' }],
+    };
+    out.push({ payload: first, out: await demoRun('read', first, 0) });
+    out.push({ payload: second, out: await demoRun('read', second, 0) });
+  }
+  return out;
 }
 
 function qrCases() {

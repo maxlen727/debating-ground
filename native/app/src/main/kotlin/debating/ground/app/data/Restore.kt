@@ -149,6 +149,7 @@ fun restoreNotes(v: JsonElement?, now: Long): JsonArray = JsonArray(
                             put("oneLine", str(x["oneLine"]))
                             put("source", sourceOf(x["source"]))
                             if (x["model"].isStr()) put("model", x.getValue("model"))
+                            if (x["material"].isStr() && !x["material"].text().isNullOrEmpty()) put("material", x.getValue("material"))
                         }
                     },
                 ),
@@ -173,16 +174,21 @@ fun restorePlan(v: JsonElement?): JsonElement {
     val personas = personasOf(p["personas"])
     // 讨论类模式至少要有一个角色，否则开始讨论时没有人开场
     if (p["mode"].text() != "debate" && personas.isEmpty()) return JsonNull
-    return JsonObject(
+    val out = (
         p + mapOf(
             "keyPoints" to strings(p["keyPoints"]),
             "personas" to JsonArray(personas),
             "opening" to str(p["opening"]),
             "source" to sourceOf(p["source"]),
             "previous" to (p["previous"].obj() ?: JsonNull),
-        ),
-    )
+        )
+        ).toMutableMap()
+    if (!materialOk(out["material"])) out.remove("material")
+    return JsonObject(out)
 }
+
+// 讨论带着的材料节选（#144）：字段不全就不要了，讨论照常
+private fun materialOk(m: JsonElement?) = m.obj()?.let { o -> listOf("id", "title", "point", "excerpt").all { o[it].isStr() } } == true
 
 fun restoreSession(v: JsonElement?, now: Long): JsonElement {
     val s = v.obj() ?: return JsonNull
@@ -222,6 +228,7 @@ fun restoreSession(v: JsonElement?, now: Long): JsonElement {
     if (out["branches"] !is JsonArray) out.remove("branches")
     // 以前苏格拉底追问里“换我来讲”的开关（#142 去掉了），留着没用
     out.remove("teaching")
+    if (!materialOk(out["material"])) out.remove("material")
     return JsonObject(out)
 }
 
