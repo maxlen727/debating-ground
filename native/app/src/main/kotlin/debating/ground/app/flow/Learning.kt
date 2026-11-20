@@ -36,6 +36,9 @@ import debating.ground.app.data.emptyNote
 import debating.ground.app.data.mergeReview
 import debating.ground.app.data.sameConcept
 import debating.ground.app.data.weak
+import debating.ground.app.lan.LAN_PORT
+import debating.ground.app.lan.LanRooms
+import debating.ground.app.lan.randomRoomId
 import debating.ground.app.room.JoinTarget
 import debating.ground.app.room.RoomDialer
 import debating.ground.app.room.RoomLink
@@ -158,6 +161,8 @@ class Learning(
     roomDialer: RoomDialer? = null,
     /** 在后台跑一件要等的事（房间结束后生成复盘、重连的延时）。 */
     launch: (suspend () -> Unit) -> Unit = {},
+    /** 手机当局域网房主（#148；测试里没有，或者换成假的）。 */
+    private val lan: LanRooms? = null,
 ) {
     var state: AppState = initial
         private set
@@ -376,7 +381,10 @@ class Learning(
         if (state.ui.busy != null) return
         if (plan.mode != "roundtable" && plan.mode != "debate") return toast("多人讨论支持圆桌讨论和正反辩论。")
         val c = state.config
-        if (c.aiMode != "remote" || c.remote.url.isEmpty()) return toast("多人讨论需要先在“设置”里连接你的后端。")
+        // 用“直接连接”时，房间开在这台手机上（局域网房间，#148）；用自己部署的后端时开在后端上
+        val lanAddress = if (c.aiMode == "api") lan?.address() else null
+        if (c.aiMode == "api" && lan != null && lanAddress == null) return toast("连上 Wi-Fi 才能在这台手机上开局域网房间。同学要和你连同一个 Wi-Fi。")
+        if (lanAddress == null && (c.aiMode != "remote" || c.remote.url.isEmpty())) return toast("多人讨论需要先在“设置”里连接你的后端，或者用直接连接、在同一个 Wi-Fi 里开局域网房间。")
         if (!rooms.available) return toast("这个版本不能开多人讨论。")
         val problem = planProblem(true)
         if (problem.isNotEmpty()) return toast(problem)
@@ -387,8 +395,9 @@ class Learning(
         val setup = setupFrom(plan, state.config)
         ui { it.copy(busy = "正在创建房间", error = "") }
         connecting = currentCoroutineContext()[Job]
+        val backend = if (lanAddress != null) "http://$lanAddress:$LAN_PORT" else state.config.remote.url
         val created = try {
-            ai.remote(state.config).createRoom(setup, name)
+            if (lanAddress != null) lan!!.create(randomRoomId(), setup, name) else ai.remote(state.config).createRoom(setup, name)
         } catch (e: CancellationException) {
             ui { it.copy(busy = null) }
             throw e
@@ -403,7 +412,7 @@ class Learning(
         rooms.leave()
         // 先放一个占位的讨论，连上房间后用后端的状态替换
         val view = RoomView(id = created.roomId, setup = setup, expiresAt = created.expiresAt)
-        val base = RoomLink(backend = state.config.remote.url, roomId = created.roomId, token = created.hostToken, invite = created.invite, host = true)
+        val base = RoomLink(backend = backend, roomId = created.roomId, token = created.hostToken, invite = created.invite, host = true)
         update { st ->
             st.copy(
                 session = toSession(view, null, base, now()),

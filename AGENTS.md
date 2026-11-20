@@ -29,7 +29,7 @@
 | `src/styles.css` | 全部样式与设计令牌 | 颜色只用令牌，见“界面规范” |
 | `tests/` | `node:test` 测试 | |
 | `docs/` | 产品文档站（VitePress），截图在 `docs/public/screenshots/` | 用户可见的行为变了，同一个 PR 里更新对应文档页 |
-| `native/` | 安卓 App（Kotlin + Compose，路线图见 #70），替换了原来的网页套壳版（#104）；发版在 `.github/workflows/android.yml`，签名密钥只在 CI Secrets 里，永远不进仓库（见 `docs/dev/android.md`） | 颜色令牌、图标、导航规则和网页版一致，由 `TokensTest` 等测试把关，改网页版的 `styles.css` 或图标时也要跑原生版测试；存档检查和导出用网页版生成的标准答案逐字比对（`npm run fixtures:native`、`FixturesTest`）；新增依赖写进 `gradle/libs.versions.toml` 并在 PR 里说明；`app/src/main/assets/sibian-ai.js` 是 `npm run bundle:native` 生成的，不要手改；见 `docs/dev/native.md` |
+| `native/` | 安卓 App（Kotlin + Compose，路线图见 #70），替换了原来的网页套壳版（#104）；发版在 `.github/workflows/android.yml`，签名密钥只在 CI Secrets 里，永远不进仓库（见 `docs/dev/android.md`） | 颜色令牌、图标、导航规则和网页版一致，由 `TokensTest` 等测试把关，改网页版的 `styles.css` 或图标时也要跑原生版测试；存档检查和导出用网页版生成的标准答案逐字比对（`npm run fixtures:native`、`FixturesTest`）；新增依赖写进 `gradle/libs.versions.toml` 并在 PR 里说明；`app/src/main/assets/sibian-ai.js` 和 `sibian-room.js`（手机当局域网房主时跑的房间规则，#148）是 `npm run bundle:native` 生成的，不要手改；见 `docs/dev/native.md` |
 
 ## 命令
 
@@ -46,7 +46,7 @@ npm run dev          # 界面热更新 127.0.0.1:5173（需同时运行 server�
 npm run docs:dev     # 文档站热更新
 npm run sync:worker  # 改了 server/ai.ts 或 shared/ 后，同步到 worker/src/vendor/
 npm run fixtures:native # 改了存档结构、src/lib/restore.ts 或导出后，重新生成原生版的标准答案
-npm run bundle:native   # 改了 server/ai.ts 或 shared/ 后，重新打包原生版“直接连接”用的提示词（native/app/src/main/assets/sibian-ai.js）
+npm run bundle:native   # 改了 server/ai.ts、shared/ 或 worker/src/room.ts 后，重新打包原生版“直接连接”用的提示词（assets/sibian-ai.js）和手机当局域网房主的房间规则（assets/sibian-room.js）
 python3 scripts/atmosphere.py    # 改了背景氛围的参数（src/assets/atmosphere/atmosphere.json）或颜色令牌后，重新渲染背景图（网页版和原生版共用，需要 numpy 和 Pillow）
 npm run eval:prompts # 提示词回归评测：用真实模型和模拟学习者聊几场（见脚本开头的说明）
 cd native && ./gradlew ktlintCheck lintDebug assembleDebug testDebugUnitTest   # 原生安卓版：代码检查、构建、单元测试和截图测试（截图在 app/build/screenshots/）；./gradlew ktlintFormat 自动整理写法
