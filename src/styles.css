@@ -29,6 +29,9 @@
   --warn-soft: #f6ebd3;
   --bad: #a2432d;
   --bad-soft: #f7e0d8;
+  /* 二维码：深浅两种模式都是浅底深格，扫码软件才认得（#151） */
+  --qr-ink: #18241f;
+  --qr-paper: #ffffff;
   --shadow: 0 1px 2px rgb(24 36 31 / 6%), 0 8px 24px rgb(24 36 31 / 6%);
   /* 字体分工：衬线（宋体）写“知识本身”——概念、讨论题、要点、自己的小结、复盘结论、术语、检验题；
      无衬线（黑体）写对话和界面。只用系统字体：App 要离线可用。Noto * CJK SC 是安卓上的名字。 */
@@ -89,6 +92,8 @@
     --warn-soft: #382e18;
     --bad: #ee9a86;
     --bad-soft: #3d231c;
+    --qr-ink: #0d1714;
+    --qr-paper: #e4ebe7;
     --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 8px 24px rgb(0 0 0 / 30%);
     --float-shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 10px 30px rgb(0 0 0 / 40%);
     color-scheme: dark;
@@ -2594,6 +2599,18 @@ select:focus {
   padding: 5px 8px;
   color: var(--bad);
   font-weight: 600;
+}
+.invite-qr {
+  display: block;
+  width: min(240px, 70vw);
+  aspect-ratio: 1;
+  margin: 4px auto;
+  border-radius: 14px;
+  /* 四周留出静区（标准要求至少 4 格），也当作卡片的边 */
+  background: var(--qr-paper);
+}
+.invite-qr path {
+  fill: var(--qr-ink);
 }
 .invite-link {
   display: block;

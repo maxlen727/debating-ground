@@ -1,5 +1,5 @@
 // 多人讨论的界面：房间状态栏、邀请、选席位、点名和发言区
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { QUICK_MESSAGES } from '../../shared/room.ts';
 import {
   addReflection,
@@ -15,6 +15,7 @@ import {
 } from '../actions.ts';
 import { Icon, Sheet } from './ui.tsx';
 import { seatName } from '../lib/debate.ts';
+import { encodeQr, qrPath } from '../lib/qr.ts';
 import { inviteLink, mySeat, mySpeakingTurn, seatOwner, speakerLabel } from '../lib/room.ts';
 import { toast, update, useApp, type Session as S } from '../store.ts';
 import { HintCard, DraftInput } from './DraftInput.tsx';
@@ -72,6 +73,24 @@ export function RoomBar({ s }: { s: S }) {
   );
 }
 
+// 邀请链接的二维码：同学用手机相机扫一下，浏览器打开就能加入（#151）
+function InviteQr({ url }: { url: string }) {
+  const q = useMemo(() => encodeQr(url), [url]);
+  if (!q) return null;
+  const n = q.size + 8;
+  return (
+    <svg
+      className="invite-qr"
+      viewBox={`0 0 ${n} ${n}`}
+      shapeRendering="crispEdges"
+      role="img"
+      aria-label="邀请链接的二维码"
+    >
+      <path d={qrPath(q)} />
+    </svg>
+  );
+}
+
 export function InviteSheet({ s }: { s: S }) {
   const room = s.room!;
   const url = room.invite ? inviteLink(room) : '';
@@ -99,7 +118,10 @@ export function InviteSheet({ s }: { s: S }) {
     <Sheet title="邀请同学" onClose={close}>
       {url ? (
         <>
-          <p className="sheet-text">把这个链接发给同学，打开后写个名字就能加入。</p>
+          <p className="sheet-text">
+            让同学用手机扫二维码，或者把链接发给同学，打开后写个名字就能加入。
+          </p>
+          <InviteQr url={url} />
           <code className="invite-link">{url}</code>
           <div className="row">
             <button className="primary grow" onClick={copy}>

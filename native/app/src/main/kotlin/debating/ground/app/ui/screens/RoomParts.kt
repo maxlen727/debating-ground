@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -33,6 +34,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -51,6 +54,7 @@ import debating.ground.app.flow.slots
 import debating.ground.app.room.INVITE_BASE
 import debating.ground.app.room.QUICK_MESSAGES
 import debating.ground.app.room.Speaker
+import debating.ground.app.room.encodeQr
 import debating.ground.app.room.inviteLink
 import debating.ground.app.room.isLanBackend
 import debating.ground.app.room.link
@@ -140,12 +144,44 @@ private fun copy(context: Context, text: String): Boolean = runCatching {
     context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("邀请链接", text))
 }.isSuccess
 
+// 邀请链接的二维码：同学用手机相机扫一下，浏览器打开就能加入（#151）。深浅模式都是浅底深格，四周留 4 格静区
+@Composable
+private fun InviteQr(url: String) {
+    val q = remember(url) { encodeQr(url) } ?: return
+    val t = LocalTokens.current
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Canvas(
+            Modifier
+                .size(240.dp)
+                .background(t.qrPaper.color(), RoundedCornerShape(14.dp))
+                .semantics { contentDescription = "邀请链接的二维码" },
+        ) {
+            val cell = size.width / (q.size + 8)
+            val ink = t.qrInk.color()
+            for (y in 0 until q.size) {
+                var x = 0
+                while (x < q.size) {
+                    if (!q.modules[y][x]) {
+                        x++
+                        continue
+                    }
+                    var w = 1
+                    while (x + w < q.size && q.modules[y][x + w]) w++
+                    // 稍微多画一点，避免相邻的格子之间露出发丝缝
+                    drawRect(ink, Offset((x + 4) * cell, (y + 4) * cell), Size(w * cell + 0.5f, cell + 0.5f))
+                    x += w
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun InviteSheet(s: Session, model: AppModel) {
     val room = s.link ?: return
     val context = LocalContext.current
     val l = model.learning
-    // 局域网房间的链接直接指向房主那台设备（手机上是一页说明，电脑上是网页版）
+    // 局域网房间的链接直接指向房主那台设备，同学的浏览器从那里打开网页版（#151）
     val url = if (room.invite.isNotEmpty()) {
         inviteLink(
             room.backend,
@@ -162,7 +198,8 @@ fun InviteSheet(s: Session, model: AppModel) {
             return@Sheet
         }
         val t = LocalTokens.current
-        Text("把这个链接发给同学，打开后写个名字就能加入。", style = TextStyles.small, color = t.ink.color())
+        Text("让同学用手机扫二维码，或者把链接发给同学，打开后写个名字就能加入。", style = TextStyles.small, color = t.ink.color())
+        InviteQr(url)
         Text(
             url,
             style = TextStyles.small.copy(fontSize = 12.sp),

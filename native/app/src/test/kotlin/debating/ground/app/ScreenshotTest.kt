@@ -21,6 +21,8 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.dp
+import debating.ground.app.room.link
+import debating.ground.app.room.withLink
 import debating.ground.app.ui.AppScaffold
 import debating.ground.app.ui.LocalMotion
 import debating.ground.app.ui.theme.SibianTheme
@@ -116,6 +118,22 @@ class ScreenshotTest {
         enterRoom(roomView("debate", "lobby", "u3", false), "u3")
         compose.onNodeWithText("等房主开始讨论……").assertExists()
         save("phone-room-lobby-dark")
+    }
+
+    // 邀请面板带二维码（#151）：深色模式下也是浅底深格
+    @Test
+    fun roomInviteQrDark() {
+        compose.setContent { Frame(dark = true, width = 390, height = 844) }
+        enterRoom(roomView("roundtable", "live", "host", true), "host")
+        // 加入的人没有邀请码；这里当作在这台手机上开的局域网房间
+        model.learning.update { st ->
+            val s = st.session!!
+            st.copy(session = s.withLink(s.link!!.copy(invite = "inv-code-1234567890", backend = "http://192.168.1.23:4174")))
+        }
+        model.learning.rooms.openInvite(true)
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("邀请链接的二维码").assertExists()
+        save("phone-room-invite-dark")
     }
 
     @Test
