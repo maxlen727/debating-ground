@@ -37,6 +37,15 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v6
+      # 手机当局域网房主时要给同学的浏览器提供网页版（#151）：先构建 dist/，Gradle 把它打包进 assets/web/
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install -g npm@11.21.1
+      - run: npm ci
+      - name: 构建网页版
+        run: npm run build
 
       - name: 版本号
         id: ver
@@ -98,6 +107,7 @@ jobs:
           src=$(ls native/app/build/outputs/apk/*/*.apk | head -1)
           out="sibian-${{ steps.ver.outputs.name }}.apk"
           cp "$src" "$out"
+          unzip -l "$out" | grep -q 'assets/web/index.html' || { echo "::error::安装包里没有网页版界面（assets/web/），手机当房主时同学的浏览器打不开"; exit 1; }
           echo "file=$out" >> "$GITHUB_OUTPUT"
           echo "sha256: $(sha256sum "$out" | cut -d' ' -f1)"
 

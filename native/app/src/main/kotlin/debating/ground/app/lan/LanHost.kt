@@ -23,7 +23,7 @@ import java.security.SecureRandom
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
-// 安卓手机当局域网房主（#148）：手机上开一个只认房间连接的 WebSocket 服务（WsServer），
+// 安卓手机当局域网房主（#148）：手机上开一个只给房间连接和网页版界面的服务（WsServer），
 // 房间规则在 JS 引擎里跑（RoomEngine），AI 用房主的“直接连接”（generate）。
 // 引擎每次返回要做的事，这里去做：发消息、断开连接、定闹钟、调 AI，AI 的结果再交回引擎。
 // 同学凭邀请码进房，拿不到 API Key：Key 只在“直接连接”的加密存储和请求头里，从不进引擎，也不发给任何连接。
@@ -41,6 +41,8 @@ class LanHost(
     /** 测试里绑回环地址、用随机端口。 */
     private val bind: InetAddress? = null,
     private val port: Int = LAN_PORT,
+    /** 网页版界面的文件（相对 dist/），给没装 App 的同学的浏览器（#151）。 */
+    private val files: (name: String) -> ByteArray? = { null },
 ) {
     private var server: WsServer? = null
     private val socks = ConcurrentHashMap<String, WsConn>()
@@ -76,7 +78,7 @@ class LanHost(
     /** 开一个房间（第一次开时启动服务）。返回邀请码和房主凭据，和 Worker 的 /api/rooms 一样。 */
     suspend fun create(roomId: String, setup: RoomSetup, hostName: String): CreatedRoom {
         if (server == null) {
-            val s = WsServer(::route)
+            val s = WsServer(::route, files)
             s.start(port, bind)
             server = s
         }

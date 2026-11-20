@@ -65,6 +65,17 @@ android {
     }
 }
 
+// 网页版界面打包进 assets/web/：手机当局域网房主时，没装 App 的同学用浏览器打开邀请链接就能加入（#151）。
+// 来源是仓库根目录 npm run build 生成的 dist/；没构建过就是空的，房主手机上打开首页会看到“用 App 加入”的说明页。
+// 发版工作流（android.yml）先构建网页版，再检查 APK 里确实带着 web/index.html
+val webAssets = layout.buildDirectory.dir("generated/webAssets").get().asFile
+val syncWeb = tasks.register<Sync>("syncWeb") {
+    from(rootProject.file("../dist"))
+    into(webAssets.resolve("web"))
+}
+android.sourceSets.getByName("main").assets.srcDir(webAssets)
+tasks.named("preBuild") { dependsOn(syncWeb) }
+
 // 单元测试要读网页版的样式和图标，确认原生版的令牌没有走样
 tasks.withType<Test>().configureEach {
     // 登记成输入：网页版的这两个文件改了，测试要重跑，不能当成“已是最新”跳过

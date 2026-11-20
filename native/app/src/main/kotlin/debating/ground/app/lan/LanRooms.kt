@@ -33,8 +33,11 @@ class AndroidLan(private val context: Context, private val direct: DirectAccess)
         LanHost(SandboxRoomEngine(context), generate = { purpose, payload ->
             val backend = direct.backend() ?: throw AiFailure("房主的直接连接没有设置好，请在“设置”里重新连接。")
             backend.generate(purpose, payload, null)
-        })
+        }, files = ::webFile)
     }
+
+    // 构建时把网页版的 dist/ 打包进 assets/web/（app/build.gradle.kts 的 syncWeb）
+    private fun webFile(name: String): ByteArray? = runCatching { context.assets.open("web/$name").use { it.readBytes() } }.getOrNull()
 
     override fun address(): String? = lanAddress()
 
