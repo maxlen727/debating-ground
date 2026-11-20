@@ -53,6 +53,7 @@ import debating.ground.app.ui.IconPaths
 import debating.ground.app.ui.Input
 import debating.ground.app.ui.Panel
 import debating.ground.app.ui.PrimaryButton
+import debating.ground.app.ui.QuietLink
 import debating.ground.app.ui.SecondaryButton
 import debating.ground.app.ui.SectionLabel
 import debating.ground.app.ui.Segmented
@@ -94,14 +95,37 @@ private fun Paste(st: AppState, model: AppModel) {
     var note by rememberSaveable { mutableStateOf("") }
     var warn by rememberSaveable { mutableStateOf(false) }
     val chars = text.trim().length
+    // 内置浏览器打开着的地址（#160）
+    var browsing by rememberSaveable { mutableStateOf<String?>(null) }
+    val fill = { r: debating.ground.app.ai.LinkPage ->
+        title = r.title.take(80)
+        text = r.text
+        note = "读到了 ${r.text.count { !it.isWhitespace() }} 字。" + r.note.ifEmpty { "核对一下，没问题就开始研读。" }
+        warn = !r.complete
+    }
+    browsing?.let { start ->
+        InAppBrowser(
+            start,
+            st.ui.busy,
+            st.ui.error,
+            onClearError = { l.clearError() },
+            onCancel = { l.cancelAI() },
+            onUse = { url, html ->
+                model.run {
+                    usePage(url, html)?.let {
+                        fill(it)
+                        link = url
+                        browsing = null
+                    }
+                }
+            },
+            onClose = { browsing = null },
+        )
+        return
+    }
     val read = {
         model.run {
-            fetchLink(link)?.let { r ->
-                title = r.title.take(80)
-                text = r.text
-                note = "读到了 ${r.text.count { !it.isWhitespace() }} 字。" + r.note.ifEmpty { "核对一下，没问题就开始研读。" }
-                warn = !r.complete
-            }
+            fetchLink(link)?.let(fill)
         }
     }
     WithFloatingDock(dock = {
@@ -129,6 +153,13 @@ private fun Paste(st: AppState, model: AppModel) {
                         keyboard = KeyboardOptions(keyboardType = KeyboardType.Uri),
                     )
                     SecondaryButton("读取", { read() }, enabled = !busy && link.isNotBlank())
+                }
+                // 读不到（反爬、要登录、正文要等网页加载）：在 App 里自己打开它
+                if (link.isNotBlank()) {
+                    QuietLink("读不到？在 App 里打开它，登录或验证后再读", {
+                        l.clearError()
+                        browsing = link.trim().let { if (it.contains("://")) it else "https://$it" }
+                    }, enabled = !busy)
                 }
                 if (note.isNotEmpty()) {
                     Text(

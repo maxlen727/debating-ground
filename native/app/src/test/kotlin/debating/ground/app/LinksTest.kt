@@ -13,6 +13,8 @@ import debating.ground.app.ai.linkClient
 import debating.ground.app.data.SibianJson
 import debating.ground.app.flow.AppState
 import debating.ground.app.flow.Learning
+import debating.ground.app.ui.screens.browsable
+import debating.ground.app.ui.screens.unwrapJsString
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -181,9 +183,35 @@ class LinksTest {
         assertEquals("好", decodeBody("好".toByteArray(), "text/html; charset=no-such-charset"))
     }
 
+    private fun fetcher(answer: () -> JsonObject) = object : LinkFetcher {
+        override suspend fun read(link: String) = answer()
+
+        override suspend fun fromPage(url: String, html: String) = answer()
+    }
+
+    // 内置浏览器（#160）：把浏览器里已经显示出来的页面交给同样的规则
+    @Test
+    fun aPageFromTheBuiltInBrowserGoesThroughTheSameRules() = runBlocking {
+        val js = FakeJs(JsonNull)
+        val r = LinkReader(js, linkClient(testDns)).fromPage("https://zhuanlan.zhihu.com/p/1", "<p>登录后看到的正文</p>")
+        assertEquals("<p>登录后看到的正文</p>", r.s("text"))
+        assertEquals("page", r.s("kind"))
+        assertEquals(listOf("readFetched"), js.calls)
+        assertTrue(hits.isEmpty())
+        val big = LinkReader(js, linkClient(testDns)).fromPage("https://x.test/", "x".repeat(3_000_001))
+        assertTrue(big.s("reason").contains("3 MB"))
+        val l = Learning(AppState(), Ai(demoTypingMs = 0), links = LinkReader(js, linkClient(testDns)))
+        assertEquals("<p>登录后看到的正文</p>", l.usePage("https://zhuanlan.zhihu.com/p/1", "<p>登录后看到的正文</p>")!!.text)
+        assertNull(l.state.ui.busy)
+        assertTrue(browsable("https://a.test/") && browsable("HTTP://a.test/"))
+        for (u in listOf("intent://x#Intent;end", "file:///sdcard/a", "javascript:alert(1)", "content://x")) assertFalse(u, browsable(u))
+        assertEquals("<html>\"引号\"</html>", unwrapJsString("\"<html>\\\"引号\\\"</html>\""))
+        assertEquals("", unwrapJsString("null"))
+    }
+
     @Test
     fun learningFillsThePageOrShowsTheReason() = runBlocking {
-        val ok = LinkFetcher {
+        val ok = fetcher {
             buildJsonObject {
                 put("ok", true)
                 put("title", "Attention")
@@ -197,12 +225,16 @@ class LinksTest {
         assertEquals("Attention", page.title)
         assertFalse(page.complete)
         assertNull(l.state.ui.busy)
-        val bad = Learning(AppState(), Ai(demoTypingMs = 0), links = {
-            buildJsonObject {
-                put("ok", false)
-                put("reason", "这个网站拦住了自动读取（HTTP 403）。")
-            }
-        })
+        val bad = Learning(
+            AppState(),
+            Ai(demoTypingMs = 0),
+            links = fetcher {
+                buildJsonObject {
+                    put("ok", false)
+                    put("reason", "这个网站拦住了自动读取（HTTP 403）。")
+                }
+            },
+        )
         assertNull(bad.fetchLink("https://zhuanlan.zhihu.com/p/1"))
         assertEquals("这个网站拦住了自动读取（HTTP 403）。", bad.state.ui.error)
         // 设备不支持 JS 沙箱：直说
