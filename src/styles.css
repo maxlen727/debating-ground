@@ -439,6 +439,7 @@ code {
   box-shadow: 0 8px 22px -8px color-mix(in srgb, var(--brand) 70%, transparent);
 }
 .dock .secondary,
+.dock .segmented,
 .dock .busy-strip,
 .composer .tool,
 .composer .turn-banner,

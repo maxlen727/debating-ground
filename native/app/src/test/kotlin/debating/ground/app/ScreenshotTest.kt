@@ -410,6 +410,23 @@ class ScreenshotTest {
         save("phone-material-reading-dark")
     }
 
+    // 读过的材料展开原文：原文滚到底部操作下面时淡出，悬浮的分段选择是磨砂底，不像挡板（#170）
+    @Test
+    fun materialReadingOriginal() {
+        compose.setContent { Frame(dark = false, width = 390, height = 844) }
+        model.run {
+            openMaterials()
+            addMaterial(debating.ground.app.ai.SAMPLE_MATERIAL_TITLE, debating.ground.app.ai.SAMPLE_MATERIAL_TEXT, "socratic")
+        }
+        awaitState { it.ui.busy == null && it.ui.screen == "session" }
+        val id = model.state.value.ui.material!!.id
+        model.run { openMaterial(id) }
+        awaitState { it.ui.screen == "material" }
+        compose.onNodeWithText("原文 · 6 节", substring = true).performClick()
+        compose.waitForIdle()
+        save("phone-material-reading-original")
+    }
+
     // 围绕材料的讨论：贴好材料直接开始，工具栏里的“原文”打开整篇材料
     @Test
     fun materialDiscussion() {

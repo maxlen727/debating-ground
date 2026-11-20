@@ -64,7 +64,8 @@ fun Modifier.glass(shape: Shape, elevation: Dp = 8.dp): Modifier {
 
 /**
  * 内容滚到悬浮控件附近时淡出（只改内容自己的透明度，不铺底色，背景氛围照样透出来）。
- * [height] 是底部悬浮控件占掉的高度：从它上方 48dp 开始变淡，到控件顶上就看不见了，文字不会和按钮叠在一起。
+ * [height] 是底部悬浮控件占掉的高度：从它上方 64dp 开始变淡，离控件还有几 dp 时就完全看不见了，
+ * 文字不会半透明地贴着按钮、再被按钮硬生生截断（#170）。
  */
 fun Modifier.fadeBottom(height: Dp): Modifier = if (height <= 0.dp) {
     this
@@ -78,8 +79,8 @@ fun Modifier.fadeBottom(height: Dp): Modifier = if (height <= 0.dp) {
                 Brush.verticalGradient(
                     0f to Color.Black,
                     1f to Color.Transparent,
-                    startY = size.height - h - 48.dp.toPx(),
-                    endY = size.height - h + 4.dp.toPx(),
+                    startY = size.height - h - 64.dp.toPx(),
+                    endY = size.height - h - 2.dp.toPx(),
                 ),
                 blendMode = BlendMode.DstIn,
             )
