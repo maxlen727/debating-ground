@@ -22,6 +22,11 @@ import debating.ground.app.ui.AppScaffold
 import debating.ground.app.ui.Atmosphere
 import debating.ground.app.ui.LocalMotion
 import debating.ground.app.ui.theme.SibianTheme
+import debating.ground.app.update.UpdatePrefs
+import debating.ground.app.update.Verdict
+import debating.ground.app.update.fetchLatest
+import debating.ground.app.update.installedVersion
+import debating.ground.app.update.verdictOf
 
 class MainActivity : ComponentActivity() {
     // 从分享打开时带来的意图，等存档读好再处理
@@ -61,6 +66,13 @@ class MainActivity : ComponentActivity() {
                         val m = AppModel.get(this@MainActivity)
                         if (result != null && result.cards > 0) m.learning.toast("已从旧版搬来知识库，整理成了 ${result.cards} 篇概念笔记。")
                         model = m
+                        // 打开了“启动时自动检查”：一天最多查一次，有新的正式版才提醒；查不到就算了，不打扰
+                        if (UpdatePrefs.due(this@MainActivity, System.currentTimeMillis())) {
+                            val latest = runCatching { fetchLatest() }.getOrNull()
+                            if (latest != null && verdictOf(installedVersion(this@MainActivity), latest) is Verdict.Newer) {
+                                m.learning.toast("新版本 ${latest.version} 已经发布，可以在“设置”里下载。")
+                            }
+                        }
                     }
                     // 从分享打开时要去的地方：读好存档以后再去
                     LaunchedEffect(model, pending) {

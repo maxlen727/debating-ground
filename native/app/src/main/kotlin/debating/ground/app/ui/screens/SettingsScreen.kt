@@ -85,6 +85,7 @@ fun SettingsScreen(st: AppState, model: AppModel) {
                 if (mode == "remote") RemotePanel(st, model)
                 if (mode == "remote" && st.config.remote.url.isNotEmpty()) VoicePanel(st, model)
                 if (mode == "api") DirectPanel(st, model)
+                UpdatePanel()
                 Panel {
                     SectionLabel("关于格式")
                     Text(
