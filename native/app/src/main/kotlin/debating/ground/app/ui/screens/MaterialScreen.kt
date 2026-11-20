@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,6 +33,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -51,6 +53,7 @@ import debating.ground.app.ui.IconPaths
 import debating.ground.app.ui.Input
 import debating.ground.app.ui.Panel
 import debating.ground.app.ui.PrimaryButton
+import debating.ground.app.ui.SecondaryButton
 import debating.ground.app.ui.SectionLabel
 import debating.ground.app.ui.Segmented
 import debating.ground.app.ui.TopBar
@@ -86,7 +89,21 @@ private fun Paste(st: AppState, model: AppModel) {
     val busy = st.ui.busy != null
     var title by rememberSaveable { mutableStateOf("") }
     var text by rememberSaveable { mutableStateOf("") }
+    var link by rememberSaveable { mutableStateOf("") }
+    // 读链接的结果说明：读到了多少字、是不是全文（warn 时用黄色）
+    var note by rememberSaveable { mutableStateOf("") }
+    var warn by rememberSaveable { mutableStateOf(false) }
     val chars = text.trim().length
+    val read = {
+        model.run {
+            fetchLink(link)?.let { r ->
+                title = r.title.take(80)
+                text = r.text
+                note = "读到了 ${r.text.count { !it.isWhitespace() }} 字。" + r.note.ifEmpty { "核对一下，没问题就开始研读。" }
+                warn = !r.complete
+            }
+        }
+    }
     WithFloatingDock(dock = {
         ErrorBanner(st.ui.error) { l.clearError() }
         BusyStrip(st.ui.busy) { l.cancelAI() }
@@ -98,6 +115,30 @@ private fun Paste(st: AppState, model: AppModel) {
                 Modifier.weight(1f).scrollWithEdge().padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                // 读链接（#157）：手机自己去取，取到的正文填进下面的框，核对后再开始研读
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Input(
+                        link,
+                        { link = it },
+                        "材料链接",
+                        Modifier.weight(1f),
+                        placeholder = "贴一个链接：arXiv 论文、网页文章",
+                        maxLength = 2000,
+                        enabled = !busy,
+                        onDone = { if (link.isNotBlank()) read() },
+                        keyboard = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    )
+                    SecondaryButton("读取", { read() }, enabled = !busy && link.isNotBlank())
+                }
+                if (note.isNotEmpty()) {
+                    Text(
+                        note,
+                        style = TextStyles.small.copy(lineHeight = 1.6.em),
+                        color = if (warn) t.warn.color() else t.litInk.color(),
+                        modifier = Modifier.fillMaxWidth().background(if (warn) t.warnSoft.color() else t.lit.color(), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                    )
+                }
                 Input(title, { title = it }, "材料标题", placeholder = "标题（可以不写）", maxLength = 80, enabled = !busy)
                 Input(
                     text,
@@ -129,7 +170,7 @@ private fun Paste(st: AppState, model: AppModel) {
                         text = SAMPLE_MATERIAL_TEXT
                     }, enabled = !busy, small = true)
                 }
-                FinePrint("材料只保存在这台设备上。研读时，只把研读助手要读的几节发给 AI；讨论时，只带这个点的原文节选。链接和 PDF 还在做，先把正文复制过来。")
+                FinePrint("材料只保存在这台设备上。研读时，只把研读助手要读的几节发给 AI；讨论时，只带这个点的原文节选。读链接时由这台手机直接去取那个网页，只读不改。PDF 还在做，先把正文复制过来。")
                 if (st.ui.materials.isNotEmpty()) {
                     Spacer(Modifier.height(6.dp))
                     SectionLabel("读过的材料")

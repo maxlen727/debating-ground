@@ -4,6 +4,8 @@ import android.content.Context
 import debating.ground.app.ai.Ai
 import debating.ground.app.ai.DirectAccess
 import debating.ground.app.ai.KeystoreDirectStore
+import debating.ground.app.ai.LinkFetcher
+import debating.ground.app.ai.LinkReader
 import debating.ground.app.ai.SandboxPrompts
 import debating.ground.app.data.CARDS_STORE_KEY
 import debating.ground.app.data.FileMaterials
@@ -50,6 +52,8 @@ class AppModel(
     lan: LanRooms? = null,
     /** 读材料：完整的材料存在哪里（测试里在内存）。 */
     materials: MaterialStore = MemoryMaterials(),
+    /** 读材料的链接（#157；测试里没有）。 */
+    links: LinkFetcher? = null,
 ) {
     private val storage = Storage(dir)
 
@@ -85,6 +89,7 @@ class AppModel(
             launch = { block -> scope.launch { block() } },
             lan = lan,
             materialStore = materials,
+            links = links,
         )
         this.speech = speech?.invoke(scope, learning)
         wireRoomSpeech()
@@ -150,7 +155,9 @@ class AppModel(
 
         fun get(context: Context): AppModel = instance ?: synchronized(this) {
             // 直接连接的设置加密存在不进备份的目录里；提示词在 JS 沙箱里组装
-            val directAccess = DirectAccess(KeystoreDirectStore(context.noBackupFilesDir), SandboxPrompts(context.applicationContext))
+            // 同一个 JS 沙箱：直接连接组装提示词，读链接时判断地址和提取正文（#157）
+            val prompts = SandboxPrompts(context.applicationContext)
+            val directAccess = DirectAccess(KeystoreDirectStore(context.noBackupFilesDir), prompts)
             instance ?: AppModel(
                 context.filesDir,
                 direct = directAccess,
@@ -159,6 +166,7 @@ class AppModel(
                 lan = AndroidLan(context.applicationContext, directAccess),
                 // 材料可能很长，也可能是不该外传的内容：放在不进系统备份的目录（#154）
                 materials = FileMaterials(File(context.noBackupFilesDir, "materials")),
+                links = LinkReader(prompts),
             ).also { instance = it }
         }
     }

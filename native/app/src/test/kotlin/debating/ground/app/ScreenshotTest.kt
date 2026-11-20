@@ -26,6 +26,7 @@ import debating.ground.app.room.withLink
 import debating.ground.app.ui.AppScaffold
 import debating.ground.app.ui.LocalMotion
 import debating.ground.app.ui.theme.SibianTheme
+import kotlinx.serialization.json.put
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -58,7 +59,21 @@ class ScreenshotTest {
                 debating.ground.app.speech.Voice(scope, { _, _ -> ByteArray(0) to "audio/mpeg" }, out) {},
                 debating.ground.app.speech.Listen(scope, { error("截图里不连") }, { error("截图里不录") }) { "" },
             )
-        }, roomDialer = fakeRoom)
+        }, roomDialer = fakeRoom, links = fakeLinks)
+    }
+
+    // 读链接（#157）：假的，像 arXiv 上没有网页版全文、只拿到摘要那样
+    private val fakeLinks = debating.ground.app.ai.LinkFetcher {
+        kotlinx.serialization.json.buildJsonObject {
+            put("ok", true)
+            put("title", "Attention Is All You Need")
+            put(
+                "text",
+                "作者：Ashish Vaswani、Noam Shazeer\n\n## 摘要\n\nThe dominant sequence transduction models are based on complex recurrent or convolutional neural networks.",
+            )
+            put("complete", false)
+            put("note", "这篇论文在 arXiv 上没有网页版全文，只拿到了标题和摘要。想读全文，打开 PDF 把正文复制过来贴上。")
+        }
     }
 
     // 多人房间：假的连接，测试里直接模拟后端发来的消息
@@ -354,6 +369,18 @@ class ScreenshotTest {
         compose.waitForIdle()
         compose.onNodeWithText("开始研读").assertIsDisplayed()
         save("phone-material-paste")
+    }
+
+    // 读链接（#157）：取到的内容填进框里，没拿到全文时黄色提示
+    @Test
+    fun materialLinkPartial() {
+        compose.setContent { Frame(dark = false, width = 390, height = 844) }
+        compose.onNodeWithText("从一篇论文或文章开始").performClick()
+        awaitState { it.ui.screen == "material" }
+        compose.onNodeWithContentDescription("材料链接").performTextInput("https://arxiv.org/pdf/1706.03762")
+        compose.onNodeWithText("读取").performClick()
+        compose.waitUntil(5000) { compose.onAllNodesWithText("只拿到了标题和摘要", substring = true).fetchSemanticsNodes().isNotEmpty() }
+        save("phone-material-link")
     }
 
     // 研读完：技术点地图和底部的“从某个点开始讨论”；深色

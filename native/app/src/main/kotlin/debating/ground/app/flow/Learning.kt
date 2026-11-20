@@ -4,7 +4,11 @@ import debating.ground.app.ai.Ai
 import debating.ground.app.ai.AiFailure
 import debating.ground.app.ai.AiOutcome
 import debating.ground.app.ai.DirectSettings
+import debating.ground.app.ai.LinkFetcher
+import debating.ground.app.ai.LinkPage
 import debating.ground.app.ai.checkRemoteUrl
+import debating.ground.app.ai.linkPageOf
+import debating.ground.app.ai.linkReasonOf
 import debating.ground.app.data.Branch
 import debating.ground.app.data.ChatMessage
 import debating.ground.app.data.Config
@@ -183,6 +187,8 @@ class Learning(
     private val lan: LanRooms? = null,
     /** 读材料：完整的材料存在哪里（App 里是私有文件，测试里在内存）。 */
     private val materialStore: MaterialStore = MemoryMaterials(),
+    /** 读材料的链接（#157）：手机自己取，规则用共用的 JS。测试里换成假的；没有时（设备不支持 JS 沙箱）读不了链接。 */
+    private val links: LinkFetcher? = null,
 ) {
     var state: AppState = initial
         private set
@@ -1264,6 +1270,35 @@ class Learning(
         materialStore.save(m)
         ui { it.copy(material = m) }
         readMaterial()
+    }
+
+    /**
+     * 读取一个链接的正文（#157）：取到了交给页面填进框里，学习者核对后再开始研读。取不到或不是全文，都说明原因。
+     * 和网页版 fetchLink 一样；区别是手机自己去取，不经过后端，演示模式也能用。
+     */
+    suspend fun fetchLink(link: String): LinkPage? {
+        if (state.ui.busy != null) return null
+        if (link.isBlank()) {
+            toast("先贴一个链接。")
+            return null
+        }
+        val reader = links ?: run {
+            ui { it.copy(error = "这台设备不支持读取链接（需要 Android 8 以上和较新的“Android System WebView”）。可以把正文复制过来贴上。") }
+            return null
+        }
+        ui { it.copy(busy = "正在读取链接", error = "") }
+        val r = try {
+            reader.read(link.trim())
+        } catch (e: AiFailure) {
+            ui { it.copy(error = e.message ?: "没能读取这个链接。") }
+            return null
+        } finally {
+            ui { it.copy(busy = null) }
+        }
+        return linkPageOf(r) ?: run {
+            ui { it.copy(error = linkReasonOf(r)) }
+            null
+        }
     }
 
     /** 让研读助手读当前的材料，整理出技术点地图。每一步在做什么都显示出来。 */

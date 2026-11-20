@@ -5,6 +5,50 @@
   var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
   var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
+  // scripts/native-url.ts
+  var MiniURL = class {
+    constructor(raw) {
+      __publicField(this, "protocol");
+      __publicField(this, "username");
+      __publicField(this, "password");
+      __publicField(this, "hostname");
+      __publicField(this, "port");
+      __publicField(this, "pathname");
+      __publicField(this, "search");
+      __publicField(this, "hash");
+      const m = String(raw).trim().match(/^([a-zA-Z][a-zA-Z0-9+.-]*):(\/\/([^/?#]*))?([^?#]*)(\?[^#]*)?(#.*)?$/);
+      if (!m) throw new TypeError("Invalid URL");
+      this.protocol = m[1].toLowerCase() + ":";
+      let auth = m[3] ?? "";
+      this.username = "";
+      this.password = "";
+      const at = auth.lastIndexOf("@");
+      if (at >= 0) {
+        const [u, p = ""] = auth.slice(0, at).split(":");
+        this.username = u;
+        this.password = p;
+        auth = auth.slice(at + 1);
+      }
+      const host = auth.match(/^(\[[^\]]*\]|[^:]*)(?::(\d*))?$/);
+      if (!host) throw new TypeError("Invalid URL");
+      this.hostname = host[1].toLowerCase();
+      const defaults = { "http:": "80", "https:": "443" };
+      this.port = host[2] && host[2] !== defaults[this.protocol] ? host[2] : "";
+      if (m[2] !== void 0 && !this.hostname && (this.protocol === "http:" || this.protocol === "https:"))
+        throw new TypeError("Invalid URL");
+      this.pathname = m[4] || (m[2] !== void 0 ? "/" : "");
+      this.search = m[5] && m[5] !== "?" ? m[5] : "";
+      this.hash = m[6] && m[6] !== "#" ? m[6] : "";
+    }
+    toString() {
+      const auth = this.username ? this.username + (this.password ? ":" + this.password : "") + "@" : "";
+      const host = this.hostname + (this.port ? ":" + this.port : "");
+      return `${this.protocol}//${auth}${host}${this.pathname}${this.search}${this.hash}`;
+    }
+  };
+  var g = globalThis;
+  if (typeof g.URL === "undefined") g.URL = MiniURL;
+
   // shared/modes.ts
   var BRANCH_MODES = ["socratic", "roundtable", "canvas"];
 
@@ -589,10 +633,423 @@
     return { data: review, model: result.model };
   }
 
+  // shared/pages.ts
+  var PAGE_LIMITS = {
+    bytes: 3e6,
+    // 页面最大多少字节
+    redirects: 4,
+    // 最多跳转几次
+    timeoutMs: 15e3,
+    text: 3e5,
+    // 和研读的材料上限一样
+    short: 1e3
+    // 正文少于这么多字，多半不是全文
+  };
+  function isBlockedIPv4(ip) {
+    const m = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (!m) return false;
+    const [a, b] = [Number(m[1]), Number(m[2])];
+    return a === 0 || a === 10 || a === 127 || a === 100 && b >= 64 && b <= 127 || // 运营商级 NAT
+    a === 169 && b === 254 || a === 172 && b >= 16 && b <= 31 || a === 192 && b === 168 || a === 192 && b === 0 && Number(m[3]) === 0 || a === 198 && (b === 18 || b === 19) || a >= 224;
+  }
+  function isBlockedIPv6(raw) {
+    const ip = raw.toLowerCase();
+    if (!ip.includes(":")) return false;
+    if (ip === "::" || ip === "::1") return true;
+    const v4 = ip.match(/(\d{1,3}(?:\.\d{1,3}){3})$/);
+    if (v4) return /^::(ffff:)?(\d|$)/.test(ip) ? isBlockedIPv4(v4[1]) : true;
+    const mapped = ip.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+    if (mapped) {
+      const hi = parseInt(mapped[1], 16), lo = parseInt(mapped[2], 16);
+      return isBlockedIPv4(`${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`);
+    }
+    const first = parseInt(ip.split(":")[0] || "0", 16);
+    return (first & 65024) === 64512 || // fc00::/7 唯一本地
+    (first & 65472) === 65152 || // fe80::/10 链路本地
+    (first & 65280) === 65280 || // 组播
+    first === 100 || // 64:ff9b::/96 这类转换地址
+    first === 0;
+  }
+  var isBlockedIP = (ip) => isBlockedIPv4(ip) || isBlockedIPv6(ip);
+  function checkTarget(raw) {
+    let u;
+    try {
+      u = new URL(raw);
+    } catch {
+      return "这不是一个有效的链接。";
+    }
+    if (u.protocol !== "http:" && u.protocol !== "https:")
+      return "只能读取 http 或 https 开头的链接。";
+    if (u.username || u.password) return "链接里不能带用户名和密码。";
+    if (u.port) return "只能读取用默认端口的网页链接。";
+    const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+    if (!host || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".lan") || host.endsWith(".home.arpa") || // 只写一段数字、十六进制这类地址，浏览器会当成 IP：一律不认
+    /^[0-9.]+$/.test(host) && !/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || /(^|\.)0x[0-9a-f]*(\.|$)/i.test(host) || isBlockedIP(host) || !host.includes("."))
+      return "不能读取本机或局域网里的地址。";
+    return null;
+  }
+  var ARXIV_ID = /(\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?\/\d{7})(v\d+)?/;
+  function arxivId(link) {
+    const t = link.trim();
+    const bare = t.match(new RegExp(`^(?:arxiv:)?${ARXIV_ID.source}$`, "i"));
+    if (bare) return bare[1] + (bare[2] ?? "");
+    let u;
+    try {
+      u = new URL(t);
+    } catch {
+      return null;
+    }
+    if (!/^(www\.|export\.)?arxiv\.org$/i.test(u.hostname)) return null;
+    const m = u.pathname.match(new RegExp(`^/(?:abs|pdf|html)/${ARXIV_ID.source}(?:\\.pdf)?/?$`));
+    return m ? m[1] + (m[2] ?? "") : null;
+  }
+  function candidatesFor(link) {
+    const id = arxivId(link);
+    if (id)
+      return [
+        { url: `https://arxiv.org/html/${id}`, kind: "arxiv-html" },
+        {
+          url: `https://export.arxiv.org/api/query?id_list=${encodeURIComponent(id.replace(/v\d+$/, ""))}`,
+          kind: "arxiv-abstract"
+        }
+      ];
+    let t = link.trim();
+    if (!/^[a-z]+:\/\//i.test(t) && /^[\w-]+(\.[\w-]+)+(\/|$)/.test(t)) t = "https://" + t;
+    const bad = checkTarget(t);
+    if (bad) return bad;
+    return [{ url: new URL(t).toString(), kind: "page" }];
+  }
+  var VOID = /* @__PURE__ */ new Set([
+    "area",
+    "base",
+    "br",
+    "col",
+    "embed",
+    "hr",
+    "img",
+    "input",
+    "link",
+    "meta",
+    "source",
+    "track",
+    "wbr"
+  ]);
+  var RAW = /* @__PURE__ */ new Set(["script", "style", "textarea", "title", "noscript", "template", "xmp"]);
+  var DROP = /* @__PURE__ */ new Set([
+    "nav",
+    "header",
+    "footer",
+    "aside",
+    "form",
+    "button",
+    "select",
+    "dialog",
+    "svg",
+    "canvas",
+    "iframe",
+    "object",
+    "video",
+    "audio",
+    "picture",
+    "img",
+    "script",
+    "style",
+    "noscript",
+    "template"
+  ]);
+  var NOISE = /(^|[\s_-])(nav|navbar|menu|footer|sidebar|comments?|share|social|related|recommend|advert|ads|cookie|subscribe|newsletter|banner|breadcrumbs?|toolbar|popup|modal|ltx_page_footer|ltx_bibliography|ltx_note|editsection|infobox|navbox|reflist|catlinks|toc|hatnote|noprint|sitesub|jump-link)($|[\s_-])/i;
+  var BLOCK = /* @__PURE__ */ new Set([
+    "p",
+    "div",
+    "section",
+    "article",
+    "main",
+    "ul",
+    "ol",
+    "li",
+    "table",
+    "tr",
+    "blockquote",
+    "pre",
+    "figure",
+    "figcaption",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "dl",
+    "dt",
+    "dd",
+    "hr",
+    "address",
+    "details",
+    "summary",
+    "caption"
+  ]);
+  var ENTITIES = {
+    amp: "&",
+    lt: "<",
+    gt: ">",
+    quot: '"',
+    apos: "'",
+    nbsp: " ",
+    ensp: " ",
+    emsp: " ",
+    thinsp: " ",
+    mdash: "—",
+    ndash: "–",
+    hellip: "…",
+    ldquo: "“",
+    rdquo: "”",
+    lsquo: "‘",
+    rsquo: "’",
+    middot: "·",
+    bull: "•",
+    copy: "©",
+    reg: "®",
+    trade: "™",
+    times: "×",
+    divide: "÷",
+    deg: "°",
+    plusmn: "±",
+    le: "≤",
+    ge: "≥",
+    ne: "≠",
+    minus: "−",
+    laquo: "«",
+    raquo: "»",
+    shy: "",
+    zwj: "",
+    zwnj: ""
+  };
+  function decodeEntities(s) {
+    return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+\d*);?/gi, (all, name) => {
+      if (name[0] === "#") {
+        const code = name[1] === "x" || name[1] === "X" ? parseInt(name.slice(2), 16) : parseInt(name.slice(1), 10);
+        return code > 0 && code <= 1114111 && !(code >= 55296 && code <= 57343) ? String.fromCodePoint(code) : "";
+      }
+      const v = ENTITIES[name.toLowerCase()];
+      return v ?? all;
+    });
+  }
+  function attrsOf(s) {
+    const out = {};
+    for (const m of s.matchAll(/([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g))
+      out[m[1].toLowerCase()] = decodeEntities(m[2] ?? m[3] ?? m[4] ?? "");
+    return out;
+  }
+  function parseHtml(html) {
+    const root = { tag: "#root", attrs: {}, children: [] };
+    const stack = [root];
+    const top = () => stack[stack.length - 1];
+    const close = (tag) => {
+      for (let i2 = stack.length - 1; i2 > 0; i2--)
+        if (stack[i2].tag === tag) {
+          stack.length = i2;
+          return;
+        }
+    };
+    const lower = html.toLowerCase();
+    let i = 0;
+    while (i < html.length) {
+      const lt = html.indexOf("<", i);
+      if (lt < 0) {
+        top().children.push(html.slice(i));
+        break;
+      }
+      if (lt > i) top().children.push(html.slice(i, lt));
+      if (html.startsWith("<!--", lt)) {
+        const end = html.indexOf("-->", lt + 4);
+        i = end < 0 ? html.length : end + 3;
+        continue;
+      }
+      if (html[lt + 1] === "!" || html[lt + 1] === "?") {
+        const end = html.indexOf(">", lt);
+        i = end < 0 ? html.length : end + 1;
+        continue;
+      }
+      const m = html.slice(lt, lt + 4096).match(/^<(\/?)([a-zA-Z][\w:-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>/);
+      if (!m) {
+        top().children.push("<");
+        i = lt + 1;
+        continue;
+      }
+      i = lt + m[0].length;
+      const tag = m[2].toLowerCase();
+      if (m[1]) {
+        close(tag);
+        continue;
+      }
+      if (BLOCK.has(tag) && top().tag === "p") stack.pop();
+      if (tag === "li") {
+        for (let k = stack.length - 1; k > 0; k--) {
+          if (stack[k].tag === "ul" || stack[k].tag === "ol") break;
+          if (stack[k].tag === "li") {
+            stack.length = k;
+            break;
+          }
+        }
+      }
+      const el = { tag, attrs: attrsOf(m[3]), children: [] };
+      top().children.push(el);
+      if (RAW.has(tag)) {
+        const end = lower.indexOf(`</${tag}`, i);
+        const body = html.slice(i, end < 0 ? html.length : end);
+        el.children.push(body);
+        i = end < 0 ? html.length : html.indexOf(">", end) + 1 || html.length;
+        continue;
+      }
+      if (!VOID.has(tag) && !m[3].trimEnd().endsWith("/")) stack.push(el);
+    }
+    return root;
+  }
+  var isEl = (n) => typeof n !== "string";
+  function find(el, pred, out = []) {
+    for (const c of el.children)
+      if (isEl(c)) {
+        if (pred(c)) out.push(c);
+        find(c, pred, out);
+      }
+    return out;
+  }
+  var dropped = (e) => DROP.has(e.tag) || e.attrs.hidden !== void 0 || e.attrs["aria-hidden"] === "true" || /display\s*:\s*none/i.test(e.attrs.style ?? "") || NOISE.test(e.attrs.class ?? "") || NOISE.test(e.attrs.id ?? "") || ["navigation", "banner", "contentinfo", "complementary", "search"].includes(e.attrs.role ?? "");
+  function render(el) {
+    const out = [];
+    const walk = (n, pre) => {
+      if (!isEl(n)) {
+        out.push(pre ? decodeEntities(n) : decodeEntities(n).replace(/\s+/g, " "));
+        return;
+      }
+      if (dropped(n) || RAW.has(n.tag)) return;
+      if (n.tag === "math") {
+        const alt = n.attrs.alttext;
+        if (alt) out.push(` ${alt} `);
+        else n.children.forEach((c) => walk(c, pre));
+        return;
+      }
+      if (n.tag === "br") return void out.push("\n");
+      const h = n.tag.match(/^h([1-6])$/);
+      if (h) {
+        const text2 = render({ ...n, tag: "span" }).replace(/\s+/g, " ").trim();
+        if (text2) out.push(`
+
+${"#".repeat(Math.min(4, Number(h[1])))} ${text2}
+
+`);
+        return;
+      }
+      const block = BLOCK.has(n.tag);
+      if (n.tag === "li") out.push("\n- ");
+      else if (n.tag === "tr") out.push("\n");
+      else if (block) out.push("\n\n");
+      for (const c of n.children) walk(c, pre || n.tag === "pre");
+      if (n.tag === "td" || n.tag === "th") out.push(" ");
+      if (block && n.tag !== "li") out.push("\n\n");
+    };
+    walk(el, false);
+    return out.join("").split("\n").map((l) => l.replace(/[ \t\u00a0]+/g, " ").trim()).join("\n").replace(/\n- \n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  }
+  var textLength = (el) => render(el).replace(/\s+/g, "").length;
+  function titleOf(doc) {
+    const meta = find(
+      doc,
+      (e) => e.tag === "meta" && /^(og:title|citation_title)$/i.test(e.attrs.property ?? e.attrs.name ?? "")
+    )[0];
+    const title = find(doc, (e) => e.tag === "title")[0];
+    const h1 = find(doc, (e) => e.tag === "h1")[0];
+    const raw = meta?.attrs.content || title && decodeEntities(title.children.filter((c) => typeof c === "string").join("")) || (h1 ? render(h1) : "");
+    return raw.replace(/\s+/g, " ").trim().slice(0, 120);
+  }
+  function extractHtml(html) {
+    const doc = parseHtml(html);
+    const body = find(doc, (e) => e.tag === "body")[0] ?? doc;
+    const all = textLength(body);
+    const regions = find(
+      body,
+      (e) => e.tag === "article" || e.tag === "main" || e.attrs.role === "main" || /(^|\s)ltx_document(\s|$)/.test(e.attrs.class ?? "")
+    ).filter((e) => !dropped(e)).map((e) => ({ e, n: textLength(e) })).sort((a, b) => b.n - a.n);
+    const best = regions[0] && regions[0].n >= Math.min(1e3, all * 0.3) ? regions[0].e : body;
+    return { title: titleOf(doc), text: render(best).slice(0, PAGE_LIMITS.text) };
+  }
+  function extractArxivAtom(xml) {
+    const entry = xml.match(/<entry>([\s\S]*?)<\/entry>/)?.[1];
+    if (!entry) return null;
+    const pick = (tag) => decodeEntities(entry.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`))?.[1] ?? "").replace(/\s+/g, " ").trim();
+    const title = pick("title");
+    const summary = pick("summary");
+    if (!title || !summary) return null;
+    const authors = [...entry.matchAll(/<name>([\s\S]*?)<\/name>/g)].map(
+      (m) => decodeEntities(m[1]).trim()
+    );
+    return {
+      title,
+      text: `${authors.length ? "作者：" + authors.slice(0, 8).join("、") + (authors.length > 8 ? " 等" : "") + "\n\n" : ""}## 摘要
+
+${summary}`
+    };
+  }
+  var PASTE = "可以在浏览器里打开它，把正文复制过来贴上。";
+  var BLOCKED = /(just a moment|cf-chl|cf_chl|challenge-platform|captcha|are you a robot|verify you are human|access denied|请完成安全验证|安全验证|人机验证|验证码|访问受限|请登录后|登录后查看|访问过于频繁)/i;
+  var PAYWALL = /(subscribe to (continue|read)|subscribers only|sign in to (continue|read)|purchase (this )?article|buy this article|paywall|订阅后|付费阅读|开通会员|购买后|登录后阅读)/i;
+  function readFetched(c, f) {
+    const type = f.contentType.toLowerCase();
+    if (c.kind === "arxiv-html" && f.status === 404) return null;
+    if ([401, 403, 429, 503].includes(f.status))
+      return {
+        ok: false,
+        reason: `这个网站拦住了自动读取（${f.status === 429 ? "请求太频繁" : `HTTP ${f.status}`}）。${PASTE}`
+      };
+    if (f.status === 404 || f.status === 410)
+      return { ok: false, reason: "这个链接打不开（页面不存在）。请检查链接是不是完整。" };
+    if (f.status >= 400)
+      return { ok: false, reason: `网站返回了错误（HTTP ${f.status}），没能读取。${PASTE}` };
+    if (type.includes("application/pdf") || f.body.startsWith("%PDF"))
+      return { ok: false, reason: `这是一个 PDF 文件。读取 PDF 还在做，${PASTE}` };
+    if (c.kind === "arxiv-abstract") {
+      const a = extractArxivAtom(f.body);
+      if (!a) return { ok: false, reason: "arXiv 上没有找到这篇论文，请检查论文号。" };
+      return {
+        ok: true,
+        ...a,
+        url: f.url,
+        kind: c.kind,
+        complete: false,
+        note: "这篇论文在 arXiv 上没有网页版全文，只拿到了标题和摘要。想读全文，打开 PDF 把正文复制过来贴上。"
+      };
+    }
+    if (!/(text\/html|application\/xhtml|text\/plain|application\/xml|text\/xml)/.test(type) && type)
+      return { ok: false, reason: `这个链接不是网页（${type.split(";")[0]}），没法读取。${PASTE}` };
+    const page = type.includes("text/plain") ? { title: "", text: f.body.slice(0, PAGE_LIMITS.text).trim() } : extractHtml(f.body);
+    const chars = page.text.replace(/\s+/g, "").length;
+    if (chars < 500 && (BLOCKED.test(page.title + "\n" + page.text) || /cf-chl|cf_chl|challenge-platform/.test(f.body.slice(0, 5e4))))
+      return { ok: false, reason: `这个网站要先通过人机验证，拦住了自动读取。${PASTE}` };
+    if (chars < 200)
+      return {
+        ok: false,
+        reason: `这个页面里几乎没有正文（可能要登录，或者正文是网页加载后才出现的）。${PASTE}`
+      };
+    const paywall = PAYWALL.test(page.text.slice(-3e3)) || PAYWALL.test(page.text.slice(0, 3e3));
+    const short2 = chars < PAGE_LIMITS.short;
+    return {
+      ok: true,
+      ...page,
+      url: f.url,
+      kind: c.kind,
+      complete: !paywall && !short2,
+      note: paywall ? "这个页面像是要订阅或登录才能看全文，拿到的可能只是开头。核对一下，缺的部分可以补贴进来。" : short2 ? "拿到的正文很短，可能不是全文。核对一下，缺的部分可以补贴进来。" : c.kind === "arxiv-html" ? "从 arXiv 拿到了网页版全文。" : ""
+    };
+  }
+
   // scripts/native-ai-entry.ts
   var FNS = {
     buildRequest: (purpose, payload) => buildRequest(purpose, payload),
-    finalize: (request, result) => finalize(request, result)
+    finalize: (request, result) => finalize(request, result),
+    // 读材料的链接（#157）：该取哪几个地址、每一跳能不能去、取到的内容能不能用。网络请求在 Kotlin 那边
+    linkPlan: (link) => candidatesFor(link),
+    checkTarget: (url) => checkTarget(url),
+    readFetched: (c, f) => readFetched(c, f)
   };
   function run(name, args) {
     try {
