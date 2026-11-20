@@ -434,6 +434,17 @@ class ScreenshotTest {
         save("phone-card-dark")
     }
 
+    // 设置里的版本与更新（只截图，不连网）
+    @Test
+    fun settingsUpdates() {
+        compose.setContent { Frame(dark = false, width = 390, height = 844) }
+        compose.onNodeWithText("设置").performClick()
+        compose.onNodeWithText("检查更新").performScrollTo()
+        compose.waitForIdle()
+        compose.onNodeWithText("启动时自动检查").assertExists()
+        save("phone-settings-updates")
+    }
+
     @Test
     fun settingsRemote() {
         compose.setContent { Frame(dark = false, width = 390, height = 844) }
