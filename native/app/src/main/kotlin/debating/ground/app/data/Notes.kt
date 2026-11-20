@@ -49,6 +49,7 @@ data class MergeFrom(
     val model: String? = null,
     val context: String? = null,
     val terms: List<TermCard>? = null,
+    val material: String? = null,
 )
 
 fun emptyNote(id: String, concept: String, at: Long) = Note(id = id, concept = concept, created = at, updated = at)
@@ -71,7 +72,19 @@ fun mergeReview(note: Note, r: SessionReview, from: MergeFrom): Note {
             points += Point(p.label, p.status, p.note, evidence)
         }
     }
-    val source = NoteSource(from.sessionId, from.at, from.mode, from.topic, r.oneLine, from.source, from.model?.takeIf { it.isNotEmpty() })
+    val source =
+        NoteSource(
+            from.sessionId,
+            from.at,
+            from.mode,
+            from.topic,
+            r.oneLine,
+            from.source,
+            from.model?.takeIf {
+                it.isNotEmpty()
+            },
+            from.material?.takeIf { it.isNotEmpty() },
+        )
     return note.copy(
         summary = r.summary.orKeep(note.summary),
         useWhen = r.useWhen.orKeep(note.useWhen),
@@ -184,6 +197,13 @@ fun noteMarkdown(n: Note, frontmatter: Boolean = true, zone: TimeZone = TimeZone
     section("相关概念", if (n.related.isNotEmpty()) listOf(n.related.joinToString("、")) else emptyList())
     section("术语", n.terms.map { "- **${it.term}**：${it.definition}${if (it.relation.isNotEmpty()) "（${it.relation}）" else ""}" })
     section("自检", n.checks.withIndex().flatMap { (i, c) -> listOf("${i + 1}. ${c.q}", "   - 参考：${c.answer}") })
-    section("来源", n.sources.map { s -> "- ${date(s.at, zone)} ${modeName(s.mode)}：${s.topic}${if (s.oneLine.isNotEmpty()) " —— ${s.oneLine}" else ""}" })
+    section(
+        "来源",
+        n.sources.map { s ->
+            "- ${date(s.at, zone)} ${modeName(s.mode)}：${s.topic}${s.material?.let {
+                "（读《$it》）"
+            }.orEmpty()}${if (s.oneLine.isNotEmpty()) " —— ${s.oneLine}" else ""}"
+        },
+    )
     return out.joinToString("\n").trimEnd() + "\n"
 }

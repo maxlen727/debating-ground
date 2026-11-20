@@ -143,6 +143,10 @@ class FlowTest {
 
             "discussAgain" -> flow.discussAgain(flow.state.library.first())
 
+            "addMaterial" -> flow.addMaterial(str("title"), str("text"))
+
+            "startFromPoint" -> flow.startFromPoint(flow.state.ui.material!!.map!!.points[o.getValue("index").jsonPrimitive.int], str("mode"))
+
             else -> error("未知操作 ${str("op")}")
         }
     }

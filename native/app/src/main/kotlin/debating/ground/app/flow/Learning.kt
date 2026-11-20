@@ -10,6 +10,11 @@ import debating.ground.app.data.ChatMessage
 import debating.ground.app.data.Config
 import debating.ground.app.data.Entry
 import debating.ground.app.data.MODE_ORDER
+import debating.ground.app.data.MapPoint
+import debating.ground.app.data.Material
+import debating.ground.app.data.MaterialMeta
+import debating.ground.app.data.MaterialStore
+import debating.ground.app.data.MemoryMaterials
 import debating.ground.app.data.MergeFrom
 import debating.ground.app.data.Misconception
 import debating.ground.app.data.Note
@@ -18,11 +23,14 @@ import debating.ground.app.data.Plan
 import debating.ground.app.data.Point
 import debating.ground.app.data.PointProposal
 import debating.ground.app.data.Previous
+import debating.ground.app.data.ReadStep
+import debating.ground.app.data.ReaderLimits
 import debating.ground.app.data.Reflection
 import debating.ground.app.data.Remote
 import debating.ground.app.data.SavedState
 import debating.ground.app.data.SeatConfig
 import debating.ground.app.data.Session
+import debating.ground.app.data.SessionMaterial
 import debating.ground.app.data.SessionReview
 import debating.ground.app.data.SibianJson
 import debating.ground.app.data.Stage
@@ -33,8 +41,13 @@ import debating.ground.app.data.branchById
 import debating.ground.app.data.canBranch
 import debating.ground.app.data.checkPoint
 import debating.ground.app.data.emptyNote
+import debating.ground.app.data.excerptFor
+import debating.ground.app.data.jsTrimmed
 import debating.ground.app.data.mergeReview
+import debating.ground.app.data.readActionOf
+import debating.ground.app.data.runReader
 import debating.ground.app.data.sameConcept
+import debating.ground.app.data.splitMaterial
 import debating.ground.app.data.weak
 import debating.ground.app.lan.LAN_PORT
 import debating.ground.app.lan.LanRooms
@@ -88,6 +101,10 @@ data class Ui(
     // 多人讨论：正要加入的房间（打开邀请链接后，写名字之前）、邀请面板开着没有。不存档
     val join: JoinTarget? = null,
     val invite: Boolean = false,
+    // 读材料（#144、#154）：正在看的材料、研读助手走过的步子（正在读时逐步变长）、材料列表。不存档（材料本身在 MaterialStore 里）
+    val material: Material? = null,
+    val reading: List<ReadStep>? = null,
+    val materials: List<MaterialMeta> = emptyList(),
 )
 
 /** 朗读能不能用：连着自己部署的后端，而且后端配好了讯飞（演示模式和直接连接都没有）。 */
@@ -137,6 +154,7 @@ private val PARENT = mapOf(
     "review" to "session",
     "card" to "library",
     "library" to "learn",
+    "material" to "learn",
     "settings" to "learn",
     "join" to "learn",
 )
@@ -163,6 +181,8 @@ class Learning(
     launch: (suspend () -> Unit) -> Unit = {},
     /** 手机当局域网房主（#148；测试里没有，或者换成假的）。 */
     private val lan: LanRooms? = null,
+    /** 读材料：完整的材料存在哪里（App 里是私有文件，测试里在内存）。 */
+    private val materialStore: MaterialStore = MemoryMaterials(),
 ) {
     var state: AppState = initial
         private set
@@ -250,7 +270,7 @@ class Learning(
     fun setContextDraft(text: String) = ui { u -> u.context?.let { u.copy(context = it.copy(text = text)) } ?: u }
 
     /** [then]："start" 是“一句话开始”，准备好直接进讨论；"review" 先停在准备页看看、改改题目和角色。 */
-    suspend fun prepare(previous: Previous? = null, knownContext: String? = null, then: String = "review") {
+    suspend fun prepare(previous: Previous? = null, knownContext: String? = null, then: String = "review", material: SessionMaterial? = null) {
         val (config, plan, _, _, ui) = state
         val concept = config.concept.trim()
         if (concept.isEmpty()) return toast("先写下你想弄懂的概念。")
@@ -263,6 +283,7 @@ class Learning(
             put("mode", config.mode)
             put("previous", previous?.let { SibianJson.encodeToJsonElement(Previous.serializer(), it) } ?: kotlinx.serialization.json.JsonNull)
             if (context != null) put("context", context)
+            if (material != null) put("material", material.forAi())
         }
         val res = runAI("prepare", payload, if (context != null) "正在按你说的经过准备讨论" else "正在拆解要点、准备讨论") ?: return
         val d = res.result.getValue("data") as JsonObject
@@ -290,6 +311,7 @@ class Learning(
                     context = context,
                     debaters = debaters,
                     rolesFor = topic,
+                    material = material,
                 ),
                 config = applyDebaters(st.config, debaters),
                 ui = st.ui.copy(context = null, screen = if (then == "review") "prepare" else st.ui.screen),
@@ -451,6 +473,7 @@ class Learning(
             keyPoints = keyPoints,
             previous = plan.previous,
             context = plan.context,
+            material = plan.material,
         )
         base = if (plan.mode == "debate") {
             base.copy(
@@ -1050,7 +1073,7 @@ class Learning(
             val note = mergeReview(
                 base,
                 review,
-                MergeFrom(ss.id, at, ss.mode, ss.concept, ss.topic, res.source, review.model, ss.context, ss.glossary),
+                MergeFrom(ss.id, at, ss.mode, ss.concept, ss.topic, res.source, review.model, ss.context, ss.glossary, ss.material?.title),
             )
             // 刚更新的笔记排到最前面
             st.copy(session = ss, library = listOf(note) + st.library.filterIndexed { j, _ -> j != i })
@@ -1213,6 +1236,78 @@ class Learning(
      * 讲给 AI 听：AI 扮演刚接触这个概念的学生，学习者来讲。要点清单就是这篇笔记的要点（没掌握的排前面），
      * 不用 AI 准备，演示模式也能用；讲完照常复盘，按要点名合并回这篇笔记，更新它们的状态（#142）。
      */
+    /* ---------- 读材料（#144、#154），和网页版 actions.ts 一致 ---------- */
+
+    suspend fun loadMaterials() {
+        val list = materialStore.list()
+        ui { it.copy(materials = list) }
+    }
+
+    suspend fun openMaterials() {
+        ui { it.copy(material = null, reading = null) }
+        go("material")
+        loadMaterials()
+    }
+
+    /** 粘贴进来的材料：切成节、存在这台设备上，然后让研读助手读。 */
+    suspend fun addMaterial(title: String, raw: String) {
+        val text = raw.jsTrimmed()
+        if (state.ui.busy != null) return
+        if (text.length < 200) return toast("材料太短了，至少贴两三段正文。")
+        if (text.length > ReaderLimits.TEXT) return toast("材料太长了，先贴最想弄懂的部分（${ReaderLimits.TEXT / 10000} 万字以内）。")
+        val m = Material(
+            id = uid(),
+            title = title.jsTrimmed().take(80).ifEmpty { text.split("\n")[0].jsTrimmed().take(40) },
+            sections = splitMaterial(text),
+            created = now(),
+        )
+        materialStore.save(m)
+        ui { it.copy(material = m) }
+        readMaterial()
+    }
+
+    /** 让研读助手读当前的材料，整理出技术点地图。每一步在做什么都显示出来。 */
+    suspend fun readMaterial() {
+        val m = state.ui.material ?: return
+        if (state.ui.busy != null) return
+        ui { it.copy(reading = emptyList()) }
+        val res = runReader(
+            m.title,
+            m.sections,
+            ask = { payload, steps ->
+                val last = steps.lastOrNull()
+                val r = runAI("read", payload, if (last != null) "研读助手${last.action}了，在想下一步" else "研读助手正在看大纲")
+                r?.let { readActionOf(it.result["data"]) }
+            },
+            onStep = { steps -> ui { it.copy(reading = steps) } },
+        ) ?: return
+        val done = m.copy(map = res.first, steps = res.second)
+        materialStore.save(done)
+        ui { if (it.material?.id == m.id) it.copy(material = done) else it }
+        loadMaterials()
+    }
+
+    suspend fun openMaterial(id: String) {
+        val m = materialStore.get(id) ?: return toast("找不到这份材料，它可能已经被删除。")
+        ui { it.copy(material = m, reading = m.steps) }
+        go("material")
+    }
+
+    suspend fun removeMaterial(id: String) {
+        materialStore.delete(id)
+        ui { if (it.material?.id == id) it.copy(material = null) else it }
+        loadMaterials()
+    }
+
+    /** 从地图上的一个技术点开始讨论：带上它的原文节选去准备，准备好就开始。 */
+    suspend fun startFromPoint(point: MapPoint, mode: String) {
+        val m = state.ui.material ?: return
+        if (state.ui.busy != null) return
+        val material = excerptFor(m.id, m.map?.title?.ifEmpty { null } ?: m.title, m.sections, point)
+        update { it.copy(config = it.config.copy(concept = point.name, mode = mode), ui = it.ui.copy(context = null)) }
+        prepare(null, null, "start", material)
+    }
+
     fun teachBack(note: Note) {
         if (state.ui.busy != null) return
         val rank = mapOf("missing" to 0, "partial" to 1, "mastered" to 2)

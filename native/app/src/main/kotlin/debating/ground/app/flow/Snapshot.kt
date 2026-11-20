@@ -5,6 +5,7 @@ import debating.ground.app.data.ChatMessage
 import debating.ground.app.data.Entry
 import debating.ground.app.data.Reflection
 import debating.ground.app.data.Session
+import debating.ground.app.data.SessionMaterial
 import debating.ground.app.data.SibianJson
 import debating.ground.app.data.Stage
 import debating.ground.app.data.SystemLine
@@ -44,6 +45,13 @@ fun Session.pathEntries(at: String? = this.at): List<Entry> {
         val k = own.indexOfFirst { it.id == fork }
         if (k >= 0) own.subList(0, k + 1) else own
     }
+}
+
+/** 发给 AI 的节选：不带材料的 id（id 只用来在这台设备上找回完整的材料）。 */
+fun SessionMaterial.forAi() = buildJsonObject {
+    put("title", title)
+    put("point", point)
+    put("excerpt", excerpt)
 }
 
 /** [whole]：复盘要看整场讨论；知识画布平时只给 AI 看当前分支的路径（主干到分叉点 + 这个分支）。 */
@@ -106,6 +114,7 @@ fun snapshot(s: Session, whole: Boolean = false): JsonObject {
         }
         put("finished", s.finished)
         if (!s.context.isNullOrEmpty()) put("context", s.context)
+        s.material?.let { put("material", it.forAi()) }
         if (here != null) {
             put(
                 "branch",
