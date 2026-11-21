@@ -272,9 +272,7 @@ export function GraphSheet({ s }: { s: Session }) {
           </ol>
         </div>
       )}
-      <p className="fineprint">
-        每个分支里，AI 只看得到主干到分叉点为止的内容和这个分支本身。点一行就跳过去。
-      </p>
+      <p className="fineprint">分支里 AI 只看得到主干到分叉点和这个分支。点一行跳过去。</p>
     </Sheet>
   );
 }

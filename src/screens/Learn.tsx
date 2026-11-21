@@ -18,7 +18,7 @@ const GLYPH: Record<ModeId, string> = {
 export function Learn() {
   const conceptRef = useRef<HTMLInputElement>(null);
   const contextRef = useRef<HTMLTextAreaElement>(null);
-  const { config, library, session, ui, ai } = useApp();
+  const { config, session, ui, ai } = useApp();
   const unfinished = session && !session.finished;
   const busy = !!ui.busy;
   const canStart = !busy && !!config.concept.trim() && (!ui.context || !!ui.context.text.trim());
@@ -153,21 +153,14 @@ export function Learn() {
                 </span>
                 <b>{MODES[m].name}</b>
                 <span>{MODES[m].desc}</span>
-                <small>适合：{MODES[m].when}</small>
               </button>
             ))}
           </div>
         </section>
 
-        {library.length === 0 && (
-          <p className="fineprint">
-            讨论结束后会生成理解复盘，整理进这个概念的笔记；以后再讨论它，新的理解会接着沉淀进去。
-          </p>
-        )}
         {config.aiMode === 'demo' && (
           <p className="fineprint">
-            当前是演示模式：“机会成本”有完整示例，其他概念用通用模板。要让 AI
-            真正参与讨论，在设置里连接你自己部署的后端，或者在电脑上运行思辨场。
+            演示模式只有“机会成本”是完整示例。在设置里连接 AI，就能讨论任何概念。
           </p>
         )}
       </div>

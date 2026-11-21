@@ -988,12 +988,6 @@ select:focus {
   color: var(--muted);
   line-height: 1.5;
 }
-.mode small {
-  font-size: 11.5px;
-  color: var(--muted);
-  opacity: 0.85;
-  line-height: 1.5;
-}
 .mode-glyph {
   display: grid;
   place-items: center;

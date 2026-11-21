@@ -77,8 +77,8 @@ fun SettingsScreen(st: AppState, model: AppModel) {
                     FinePrint(
                         when (mode) {
                             "demo" -> "演示模式用本地模板走完整个流程，不需要网络和密钥。"
-                            "remote" -> "连接你自己部署在 Cloudflare 上的思辨场后端。AI 服务商的密钥存在后端里，这台设备只需要后端地址和访问口令。"
-                            else -> "这台手机直接调用 AI 服务商的 Chat Completions 接口，不需要部署后端。API Key 加密保存在这台设备上。"
+                            "remote" -> "连接你部署在 Cloudflare 上的后端，密钥留在后端里。"
+                            else -> "这台手机直接调用 AI 服务商，不用部署后端。"
                         },
                     )
                 }
@@ -172,7 +172,7 @@ private fun RemotePanel(st: AppState, model: AppModel) {
         SectionLabel("访问口令")
         Input(password, { password = it }, "访问口令", placeholder = if (saved) "已保存，不改就留空" else "部署时设置的 ACCESS_PASSWORD", secret = true)
         Text(
-            "“连接并测试”会让后端调用一次模型，可能产生少量费用。后端地址和访问口令只保存在这台设备上，不会写进讨论记录、知识库或导出文件。",
+            "测试会调用一次模型，可能产生少量费用。地址和口令只存在这台设备上。",
             style = TextStyles.small,
             color = t.muted.color(),
         )
@@ -234,7 +234,7 @@ private fun DirectPanel(st: AppState, model: AppModel) {
         SectionLabel("API Key")
         Input(key, { key = it }, "API Key", placeholder = if (status.saved) "已保存，不改就留空" else "服务商控制台里的 API Key", secret = true)
         Text(
-            "“连接并测试”会把密钥发送到你填写的接口，发起一次少量计费的测试。密钥用系统密钥库加密，只保存在这台设备上，不进系统备份，也不写进讨论记录、知识库或导出文件。",
+            "测试会用这个密钥发起一次少量计费的调用。密钥加密保存在这台手机上，不进备份和导出。",
             style = TextStyles.small,
             color = t.muted.color(),
         )

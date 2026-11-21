@@ -39,9 +39,7 @@ export function Join() {
             <Icon name="people" size={26} />
           </span>
           <h2>同学邀请你一起讨论</h2>
-          <p className="muted">
-            加入后，你会和大家轮流发言。AI 由房主的后端提供，你不需要填写密钥或口令。
-          </p>
+          <p className="muted">和大家轮流发言，不需要密钥或口令。</p>
         </section>
         <label className="field">
           <span>你的名字</span>
@@ -59,8 +57,8 @@ export function Join() {
         </label>
         <p className="fineprint">
           {ui.join && isLanBackend(ui.join.backend)
-            ? `这是局域网房间，开在房主的电脑或手机上（${host}）：讨论内容只在那台设备的内存里，房主那边关掉就没了。局域网里不加密，别在公共 Wi-Fi 上用。`
-            : `讨论内容会临时保存在房主的后端（${host}），讨论结束 1 小时后自动删除。`}
+            ? `局域网房间开在房主的设备上（${host}），内容只在它的内存里。局域网不加密，别在公共 Wi-Fi 上用。`
+            : `内容临时存在房主的后端（${host}），结束 1 小时后删除。`}
           你的小结和复盘只保存在这台设备上。
           {ongoing && '加入后，你正在进行的讨论会结束。'}
         </p>

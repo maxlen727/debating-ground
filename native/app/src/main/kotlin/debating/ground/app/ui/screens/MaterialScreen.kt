@@ -225,7 +225,7 @@ private fun Paste(st: AppState, model: AppModel) {
                         text = SAMPLE_MATERIAL_TEXT
                     }, enabled = !busy, small = true)
                 }
-                FinePrint("材料只保存在这台设备上。讨论时只把目录和与眼下话题最相关的几节发给 AI，不会每次都发整篇。读链接时由这台手机直接去取那个网页，只读不改。PDF 只在这台手机上解析，不上传。")
+                FinePrint("材料和 PDF 只留在这台手机上，讨论时只把相关的几节发给 AI。")
                 if (st.ui.materials.isNotEmpty()) {
                     Spacer(Modifier.height(6.dp))
                     SectionLabel("读过的材料")
