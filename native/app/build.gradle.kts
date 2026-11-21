@@ -15,7 +15,8 @@ android {
         targetSdk = 37
         // CI（android.yml）用 -PversionCode / -PversionName 传进来：versionCode 是构建序号，每次都比上一次大，手机才会当成更新
         versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 1
-        versionName = (project.findProperty("versionName") as String?) ?: "0.0.0-dev"
+        // 本地构建的默认版本号不带后缀：debug 包自己会加上 -dev，不然会显示成 0.0.0-dev-dev
+        versionName = (project.findProperty("versionName") as String?) ?: "0.0.0"
     }
 
     // 正式签名：用原来套壳版的同一把密钥（同样的环境变量）。密钥只在 CI 里从仓库 Secrets 解出来，
