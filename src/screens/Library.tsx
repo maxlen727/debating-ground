@@ -65,7 +65,7 @@ export function Library() {
         {library.length === 0 ? (
           <Empty
             title="知识库还是空的"
-            text="每讨论完一个概念，复盘会整理成一篇它的笔记：用你自己的话说清它是什么、什么时候用、你举过的例子和容易错的地方，还有几道自检题。以后再讨论同一个概念，新的理解会接着沉淀进这篇笔记。"
+            text="每讨论完一个概念，复盘会整理成它的笔记，越讨论越完整。"
             action={
               <button className="primary" onClick={() => go('learn')}>
                 开始学习
@@ -199,10 +199,7 @@ function SelfChecks({ n }: { n: Note }) {
           );
         })}
       </ol>
-      <p className="fineprint">
-        先不看答案，用自己的话说一遍，再对照参考要点。只看得懂不算，说得出来才算。想完整地检验一次，点下面的“讲给
-        AI 听”。
-      </p>
+      <p className="fineprint">先用自己的话说一遍，再展开参考要点对照。</p>
     </section>
   );
 }
@@ -246,7 +243,7 @@ export function CardView() {
         <section className="note-gist">
           {material ? (
             <p className="muted">
-              围绕这篇材料的每次讨论都沉淀在这里：从它里面弄懂的要点、例子和容易错的地方。讨论过的核心概念各有一篇自己的笔记，在下面的“相关概念”里。
+              围绕这篇材料的讨论都记在这里；核心概念的笔记在下面的“相关概念”里。
             </p>
           ) : (
             <p className="display-sm">

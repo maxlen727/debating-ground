@@ -174,11 +174,7 @@ function Paste() {
               用示例文章试试
             </button>
           </div>
-          <p className="fineprint">
-            材料只保存在这台设备上。讨论时只把目录和与眼下话题最相关的几节发给
-            AI，不会每次都发整篇。读链接时，由本机服务或你的后端去取这个网页，只读不改。PDF
-            只在这台设备上解析，不上传。
-          </p>
+          <p className="fineprint">材料和 PDF 只留在这台设备上，讨论时只把相关的几节发给 AI。</p>
         </section>
         {ui.materials.length > 0 && (
           <section>

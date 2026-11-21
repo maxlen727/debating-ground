@@ -220,7 +220,7 @@ fun InviteSheet(s: Session, model: AppModel) {
             })
         }
         val left = maxOf(0L, (room.expiresAt - System.currentTimeMillis() + 30_000) / 60_000)
-        FinePrint("拿到链接的人都能加入，只发给一起讨论的同学。房间约 ${if (left >= 60) "${(left + 30) / 60} 小时" else "$left 分钟"}后到期，讨论内容随房间一起删除。")
+        FinePrint("只发给一起讨论的同学。房间约 ${if (left >= 60) "${(left + 30) / 60} 小时" else "$left 分钟"}后到期，内容随之删除。")
     }
 }
 
@@ -270,7 +270,7 @@ fun SeatSheet(s: Session, model: AppModel) {
             }
         }
         if (mine != null) GhostButton("离开席位，改为旁听", { rooms.pickSeat(null) }, Modifier.fillMaxWidth())
-        FinePrint("没人坐的席位由 AI 担任。比赛开始后也可以上场或换席位，轮到你的席位时会提醒你发言。")
+        FinePrint("没人坐的席位由 AI 担任，开赛后也能换。")
     }
 }
 
@@ -494,7 +494,7 @@ fun JoinScreen(st: AppState, model: AppModel) {
                     }
                     Text(if (join == null) "加入同学的讨论" else "同学邀请你一起讨论", style = TextStyles.title, color = t.ink.color())
                     Text(
-                        if (join == null) "把同学发给你的邀请链接贴在下面。" else "加入后，你会和大家轮流发言。AI 由房主的后端提供，你不需要填写密钥或口令。",
+                        if (join == null) "把同学发给你的邀请链接贴在下面。" else "和大家轮流发言，不需要密钥或口令。",
                         style = TextStyles.small,
                         color = t.muted.color(),
                     )
@@ -508,7 +508,7 @@ fun JoinScreen(st: AppState, model: AppModel) {
                     FinePrint("只在这场讨论里显示。")
                     val host = runCatching { URI(join.backend).host }.getOrNull() ?: join.backend
                     val ongoing = st.session?.let { !it.finished && it.link?.roomId != join.roomId } == true
-                    FinePrint("讨论内容会临时保存在房主的后端（$host），讨论结束 1 小时后自动删除。你的小结和复盘只保存在这台设备上。" + if (ongoing) "加入后，你正在进行的讨论会结束。" else "")
+                    FinePrint("内容临时存在房主那边（$host），结束后删除。你的小结和复盘只留在这台设备上。" + if (ongoing) "加入后，你正在进行的讨论会结束。" else "")
                 }
                 Spacer(Modifier.height(bottom))
             }
@@ -531,8 +531,8 @@ fun InviteFriendsSheet(st: AppState, model: AppModel, onClose: () -> Unit) {
     val busy = st.ui.busy != null
     Sheet("邀请同学一起讨论", onClose) {
         if (!ready) {
-            Text("多人讨论需要一个运行房间的地方：你自己部署的后端，或者这台手机（同一个 Wi-Fi 里的局域网房间）。", style = TextStyles.small, color = t.ink.color())
-            FinePrint("在“设置”里选“直接连接”并连好，就能在这台手机上开局域网房间，不用部署任何东西；也可以选“我的后端”，一键部署到你自己的 Cloudflare 账号（免费额度就够）。")
+            Text("多人讨论要有地方开房间：这台手机（同一个 Wi-Fi 里），或你部署的后端。", style = TextStyles.small, color = t.ink.color())
+            FinePrint("在设置里连好“直接连接”就能开局域网房间，不用部署。")
             PrimaryButton("去设置", {
                 onClose()
                 l.go("settings")
@@ -562,10 +562,10 @@ fun InviteFriendsSheet(st: AppState, model: AppModel, onClose: () -> Unit) {
         }
         if (lan) {
             FinePrint(
-                "房间开在这台手机上：和你连同一个 Wi-Fi 的同学，用浏览器打开邀请链接就能加入，装了思辨场 App 的也可以在 App 里打开。AI 用你的直接连接和额度，同学拿不到 API Key。每个房间最多 8 人、150 次 AI 调用。讨论时别退出 App，退出房间就没了。局域网里走的是不加密的连接，只在信得过的网络里用（家里、宿舍、教室），别在公共 Wi-Fi 上开。",
+                "房间开在这台手机上，同一个 Wi-Fi 的同学用浏览器或 App 就能加入，拿不到你的 Key。最多 8 人、150 次 AI 调用。讨论时别退出 App。局域网不加密，别在公共 Wi-Fi 上开。",
             )
         } else {
-            FinePrint("AI 使用你的后端和额度，同学不需要访问口令。每个房间最多 8 人、150 次 AI 调用；如果配了讯飞朗读，朗读另算，最多 120 次。讨论内容临时保存在你的后端，结束 1 小时后自动删除。")
+            FinePrint("AI 用你的后端和额度，同学不需要口令。最多 8 人、150 次 AI 调用；讨论内容结束 1 小时后删除。")
         }
         ErrorBanner(st.ui.error) { l.clearError() }
         PrimaryButton(st.ui.busy ?: "创建房间", { model.run { inviteFriends(name) } }, Modifier.fillMaxWidth(), enabled = !busy && name.isNotBlank())

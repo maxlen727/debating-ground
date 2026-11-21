@@ -67,8 +67,8 @@ class DataTest {
         val names = Regex("""^\s+(\w+): \{\s*name: '([^']+)'""", RegexOption.MULTILINE).findAll(web).associate { it.groupValues[1] to it.groupValues[2] }
         assertEquals(names, MODE_NAMES)
         // 说明文字和学习页的顺序也一致
-        val info = Regex("""(\w+): \{\s*name: '([^']+)',\s*short: '([^']+)',\s*desc:\s*'([^']+)',\s*when: '([^']+)'""").findAll(web)
-            .associate { it.groupValues[1] to debating.ground.app.data.ModeInfo(it.groupValues[2], it.groupValues[3], it.groupValues[4], it.groupValues[5]) }
+        val info = Regex("""(\w+): \{\s*name: '([^']+)',\s*short: '([^']+)',\s*desc:\s*'([^']+)'""").findAll(web)
+            .associate { it.groupValues[1] to debating.ground.app.data.ModeInfo(it.groupValues[2], it.groupValues[3], it.groupValues[4]) }
         assertEquals(info, debating.ground.app.data.MODES)
         val order = Regex("""MODE_ORDER: ModeId\[\] = \[([^\]]+)\]""").find(web)!!.groupValues[1].split(",").map { it.trim().trim('\'') }
         assertEquals(order, debating.ground.app.data.MODE_ORDER)

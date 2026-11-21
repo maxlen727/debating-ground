@@ -23,14 +23,14 @@ val STATUS_LABEL = mapOf("mastered" to "已掌握", "partial" to "还模糊", "m
 fun modeName(mode: String) = MODE_NAMES[mode] ?: mode
 
 /** 讨论方式的说明，和 shared/modes.ts 的 MODES 一致（ModesTest 比对）。 */
-data class ModeInfo(val name: String, val short: String, val desc: String, val whenToUse: String)
+data class ModeInfo(val name: String, val short: String, val desc: String)
 
 val MODES = mapOf(
-    "socratic" to ModeInfo("苏格拉底追问", "追问", "AI 陪你一步步想，用好问题和例子帮你发现哪里没想清；遇到想深挖的词，从那句话展开一个分支单独聊。", "刚接触一个概念，想一步步把它想清楚"),
-    "roundtable" to ModeInfo("圆桌讨论", "圆桌", "三位不同学科背景的 AI 各说各的视角，你来主持；想听谁细说，就从他那句话展开一个分支。", "想从几个角度看同一个概念"),
-    "teach" to ModeInfo("讲给 AI 听", "讲解", "你来讲，AI 扮演刚接触这个概念的学生，听你讲、复述、提疑问。从概念笔记里开始，讲完的复盘会更新这篇笔记。", "已经有些理解，检验能不能讲清楚"),
-    "debate" to ModeInfo("正反辩论", "辩论", "分正反方按赛制交锋，席位和流程都可以自定。", "概念有争议或有多种解释"),
-    "canvas" to ModeInfo("知识画布", "画布", "讨论像一棵树：遇到想深挖的词，就从那句话分出一枝单独聊，聊完带回主干。", "一个概念牵出很多新概念，想深挖又怕聊跑题"),
+    "socratic" to ModeInfo("苏格拉底追问", "追问", "AI 一步步追问，陪你把它想清楚。"),
+    "roundtable" to ModeInfo("圆桌讨论", "圆桌", "三位不同背景的 AI 各说视角，你来主持。"),
+    "teach" to ModeInfo("讲给 AI 听", "讲解", "你来讲，AI 当学生听你讲、提疑问。"),
+    "debate" to ModeInfo("正反辩论", "辩论", "分正反方，按赛制交锋。"),
+    "canvas" to ModeInfo("知识画布", "画布", "从一句话分出枝来深挖，聊完带回主干。"),
 )
 
 /** 学习页上列出的讨论方式和顺序。“讲给 AI 听”从概念笔记里开始；知识画布并进了追问和圆桌（#142），旧的画布讨论照常显示。 */

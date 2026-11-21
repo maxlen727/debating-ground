@@ -132,9 +132,9 @@ export function InviteSheet({ s }: { s: S }) {
             )}
           </div>
           <p className="fineprint">
-            拿到链接的人都能加入，只发给一起讨论的同学。房间约{' '}
+            只发给一起讨论的同学。房间约{' '}
             {left >= 60 ? Math.round(left / 60) + ' 小时' : left + ' 分钟'}
-            后到期，讨论内容随房间一起删除。
+            后到期，内容随之删除。
           </p>
         </>
       ) : (

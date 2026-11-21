@@ -49,8 +49,7 @@ export function Settings() {
             {
               {
                 demo: '演示模式用本地模板走完整个流程，不需要网络和密钥。',
-                remote:
-                  '连接你自己部署在 Cloudflare 上的思辨场后端。AI 服务商的密钥存在后端里，这台设备只需要后端地址和访问口令。',
+                remote: '连接你部署在 Cloudflare 上的后端，密钥留在后端里。',
                 api: '在你的电脑上运行思辨场时使用：密钥只存在本机服务的内存里。',
               }[config.aiMode]
             }
@@ -241,7 +240,7 @@ function RemotePanel() {
         />
       </label>
       <p className="note">
-        “连接并测试”会让后端调用一次模型，可能产生少量费用。后端地址和访问口令保存在这台设备的浏览器里，不会写进讨论记录、知识库或导出文件。还没有后端？看看
+        测试会调用一次模型，可能产生少量费用。地址和口令只存在这台设备上。还没有后端？看看
         <a href={DOCS} target="_blank" rel="noreferrer">
           怎么自己部署
         </a>
@@ -345,7 +344,7 @@ function LocalPanel() {
         />
       </label>
       <p className="note">
-        “连接并测试”会把密钥发送到你填写的接口，发起一次少量计费的测试。密钥只存在本机服务的内存里，不写入讨论记录、知识库或浏览器存储；停止服务或断开连接就会清除。
+        测试会用这个密钥发起一次少量计费的调用。密钥只在本机服务的内存里，停止服务就清除。
       </p>
       <button className="primary block" disabled={busy || !ai.available} onClick={onConnect}>
         连接并测试

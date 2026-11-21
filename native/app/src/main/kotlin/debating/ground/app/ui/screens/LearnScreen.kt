@@ -84,7 +84,7 @@ private val EXAMPLES = listOf("机会成本", "贝叶斯定理", "边际效用",
 fun LearnScreen(st: AppState, model: AppModel) {
     val t = LocalTokens.current
     val l = model.learning
-    val (config, _, session, library, ui) = st
+    val (config, _, session, _, ui) = st
     val busy = ui.busy != null
     val canStart = !busy && config.concept.trim().isNotEmpty() && (ui.context == null || ui.context.text.trim().isNotEmpty())
     WithFloatingDock(dock = {
@@ -170,9 +170,8 @@ fun LearnScreen(st: AppState, model: AppModel) {
                 }
                 // 同学发来了邀请链接：在 App 里加入
                 GhostButton("加入同学的讨论", { l.go("join") }, Modifier.fillMaxWidth(), small = true, icon = IconPaths.PEOPLE)
-                if (library.isEmpty()) FinePrint("讨论结束后会生成理解复盘，整理进这个概念的笔记；以后再讨论它，新的理解会接着沉淀进去。")
                 if (config.aiMode == "demo") {
-                    FinePrint("当前是演示模式：“机会成本”有完整示例，其他概念用通用模板。要让 AI 真正参与讨论，在设置里连接你自己部署的后端。")
+                    FinePrint("演示模式只有“机会成本”是完整示例。在设置里连接 AI，就能讨论任何概念。")
                 }
                 Box(Modifier.size(8.dp))
                 Spacer(Modifier.height(bottom))
@@ -268,7 +267,6 @@ private fun ModeCard(mode: String, on: Boolean, enabled: Boolean, modifier: Modi
             modifier = Modifier.padding(top = 4.dp),
         )
         Text(info.desc, color = t.muted.color(), style = TextStyles.small.copy(fontSize = 13.sp))
-        Text("适合：${info.whenToUse}", color = t.muted.color().copy(alpha = 0.85f), style = TextStyles.small.copy(fontSize = 11.5.sp))
     }
 }
 
