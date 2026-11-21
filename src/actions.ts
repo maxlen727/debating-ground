@@ -1232,7 +1232,7 @@ export async function addMaterial(title: string, text: string, mode: ModeId, sou
 }
 /**
  * 读取一个链接的正文（#157）：交给本机服务或你的后端去取（浏览器不能直接取别的网站），取到了交给页面填进框里，
- * 学习者核对后再开始研读。取不到或不是全文，都说明原因。
+ * 学习者核对后再开始讨论。取不到或不是全文，都说明原因。
  */
 export async function fetchLink(link: string): Promise<Extract<LinkResult, { ok: true }> | null> {
   const { config, ai, ui } = getState();
@@ -1266,7 +1266,7 @@ export async function fetchLink(link: string): Promise<Extract<LinkResult, { ok:
   return r;
 }
 
-/** 读学习者选的 PDF 文件（#162）：只在这台设备上解析，取出的文字交给页面填进框里，核对后再开始研读。 */
+/** 读学习者选的 PDF 文件（#162）：只在这台设备上解析，取出的文字交给页面填进框里，核对后再开始讨论。 */
 export async function importPdf(file: File): Promise<Extract<PdfResult, { ok: true }> | null> {
   if (getState().ui.busy) return null;
   const r = await task('正在读取 PDF', () => readPdf(file));

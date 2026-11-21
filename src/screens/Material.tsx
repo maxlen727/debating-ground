@@ -99,7 +99,7 @@ function Paste() {
       <TopBar title="读材料" sub="贴一篇论文或文章，一个点一个点弄懂" back="learn" />
       <div className="stack pad">
         <section className="stack-sm">
-          {/* 读链接（#157）：取到的正文填进下面的框，核对后再开始研读 */}
+          {/* 读链接（#157）：取到的正文填进下面的框，核对后再开始讨论 */}
           <div className="row link-row">
             <input
               type="url"
